@@ -1,0 +1,15 @@
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/devops-dashboard.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/noc-tools.css') }}">
+<script>
+(function () {
+  try {
+    if (sessionStorage.getItem("dashboardTabNav")) {
+      document.documentElement.classList.add("dashboard-tab-nav-loading");
+    }
+  } catch (e) {}
+})();
+</script>
+<script defer src="{{ url_for('static', filename='js/dashboard-tab-nav.js') }}"></script>

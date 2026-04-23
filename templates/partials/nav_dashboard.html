@@ -1,0 +1,9 @@
+<div class="app-nav-wrap">
+  <nav class="global-tabs" aria-label="Secciones de dashboard">
+    <a class="global-tab{% if nav_tab == 'index' %} active{% endif %}" href="{{ url_for('index') }}">Consulta ID</a>
+    <a class="global-tab{% if nav_tab == 'rama' %} active{% endif %}" href="{{ url_for('dash_rama') }}">RAMA / CTO</a>
+    <a class="global-tab{% if nav_tab == 'olt' %} active{% endif %}" href="{{ url_for('dash_olt') }}">OLT / LT</a>
+    <a class="global-tab{% if nav_tab == 'camino' %} active{% endif %}" href="{{ url_for('dash_camino_optico') }}">Camino óptico</a>
+  </nav>
+  <p class="dashboard-tab-nav-loading-caption" aria-hidden="true">Cargando</p>
+</div>

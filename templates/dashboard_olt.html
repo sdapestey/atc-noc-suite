@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>OLT / LT · ATC GPON Inventory</title>
+{% include 'partials/noc_head.html' %}
+
+<script src="{{ url_for('static', filename='js/noc-tools.js') }}"></script>
+<script>
+const state = {};
+const ltInventarioCargado = {};
+const ltCargando = {};
+let _toastTimerOlt = null;
+
+function toastOlt(msg) {
+  const el = document.getElementById("toast-olt");
+  if (!el) return;
+  el.textContent = msg;
+  el.classList.add("show");
+  if (_toastTimerOlt) clearTimeout(_toastTimerOlt);
+  _toastTimerOlt = setTimeout(() => el.classList.remove("show"), 2000);
+}
+
+function copyTextToClipboardOlt(text) {
+  const done = () => toastOlt("Copiado (pegá en Excel con Ctrl+V)");
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    return navigator.clipboard.writeText(text).then(done).catch(fallback);
+  }
+  fallback();
+  function fallback() {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    try {
+      document.execCommand("copy");
+      done();
+    } catch (e) {
+      toastOlt("No se pudo copiar");
+    }
+    document.body.removeChild(ta);
+  }
+}
+
+function copiarDashboardOlt() {
+  const lines = [];
+  lines.push([
+    "Sitio_principal", "Sitio_codigo", "OLT", "LT", "RAMAs", "CTO", "ONT", "Rojas", "Amarillas", "Verdes", "Peor_RX",
+  ].join("\t"));
+  let n = 0;
+  document.querySelectorAll("tr.ltrow").forEach((tr) => {
+    const pb = tr.closest(".principal-block");
+    const sec = tr.closest(".olt-section");
+    if (!pb || pb.style.display === "none" || !sec || sec.classList.contains("search-hide")) return;
+    if (getComputedStyle(tr).display === "none") return;
+    const principal = (tr.getAttribute("data-principal") || pb.getAttribute("data-principal") || "").trim();
+    const sitio = (tr.getAttribute("data-sitio") || "").trim();
+    const olt = (tr.getAttribute("data-olt") || "").trim();
+    const cells = [...tr.querySelectorAll("td")].slice(1).map((td) => td.innerText.trim());
+    lines.push([principal, sitio, olt, ...cells].join("\t"));
+    n++;
+  });
+  if (n === 0) {
+    toastOlt("No hay filas LT visibles (expandí sitio/OLT o ajustá el filtro)");
+    return;
+  }
+  copyTextToClipboardOlt(lines.join("\n"));
+}
+
+/* ===============================
+   CIERRE RECURSIVO
+   =============================== */
+function childrenByParent(parentId) {
+  return Array.from(document.querySelectorAll("[data-parent]")).filter(
+    (el) => el.getAttribute("data-parent") === parentId
+  );
+}
+
+function closeNode(id) {
+    state[id] = false;
+    const arrow = document.getElementById('arrow-' + id);
+    if (arrow) arrow.textContent = '▶';
+
+    childrenByParent(id).forEach(el => {
+        el.classList.add('hidden');
+        const child = el.getAttribute('data-node-id');
+        if (child) closeNode(child);
+    });
+}
+
+/* ===============================
+   TOGGLE GENÉRICO
+   =============================== */
+function toggleNode(id) {
+    if (state[id]) {
+        closeNode(id);
+        return;
+    }
+
+    state[id] = true;
+    const arrow = document.getElementById('arrow-' + id);
+    if (arrow) arrow.textContent = '▼';
+
+    childrenByParent(id).forEach(el => {
+        el.classList.remove('hidden');
+    });
+}
+
+/** Abre un nodo sin alternar (para filtro / resultados). */
+function ensureNodeOpen(id) {
+  if (!id || state[id]) return;
+  state[id] = true;
+  const arrow = document.getElementById("arrow-" + id);
+  if (arrow) arrow.textContent = "▼";
+  childrenByParent(id).forEach((el) => {
+    el.classList.remove("hidden");
+  });
+}
+
+/* ===============================
+   LT: solo inventario; potencias por RAMA / CTO / ID
+   =============================== */
+function _esc(s) {
+  return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+
+function _addSem(row, res) {
+  if (!res) return;
+  const r = row.querySelector(".rojas");
+  const a = row.querySelector(".amarillas");
+  const v = row.querySelector(".verdes");
+  if (r) r.textContent = (parseInt(r.textContent, 10) || 0) + (res.ROJAS || 0);
+  if (a) a.textContent = (parseInt(a.textContent, 10) || 0) + (res.AMARILLAS || 0);
+  if (v) v.textContent = (parseInt(v.textContent, 10) || 0) + (res.VERDES || 0);
+}
+
+function _clasif(rx) {
+  if (rx == null || rx === "" || rx === "-") return null;
+  const v = parseFloat(String(rx).replace(",", "."));
+  if (!isFinite(v)) return null;
+  if (v < -27) return "rojo";
+  if (v <= -25) return "amarillo";
+  return "verde";
+}
+
+function _addSemFromRx(row, rx) {
+  const c = _clasif(rx);
+  if (c === "rojo") _addSem(row, { ROJAS: 1, AMARILLAS: 0, VERDES: 0 });
+  else if (c === "amarillo") _addSem(row, { ROJAS: 0, AMARILLAS: 1, VERDES: 0 });
+  else if (c === "verde") _addSem(row, { ROJAS: 0, AMARILLAS: 0, VERDES: 1 });
+}
+
+function _recomputePeor(wrap, row) {
+  let min = null;
+  wrap.querySelectorAll("tr[data-aid]").forEach(tr => {
+    const rxCell = tr.children[3];
+    if (!rxCell) return;
+    const t = rxCell.textContent.trim();
+    if (t === "-" || t === "") return;
+    const v = parseFloat(t.replace(",", "."));
+    if (isFinite(v) && (min === null || v < min)) min = v;
+  });
+  const pe = row.querySelector(".peor");
+  if (pe) pe.textContent = min != null ? String(min) : "-";
+}
+
+function sortNaturalKeys(keys) {
+  return [...keys].sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: "base" }));
+}
+
+/** Árbol RAMA → (subramas FATC bajo RATC) → CTO → tabla ONT (depth 1–4 = jerarquía visual) */
+function buildRamaBlockHtml(uid, rama, block, parentRamaId, depth) {
+  block = block || {};
+  const d = typeof depth === "number" && depth > 0 ? depth : 1;
+  const enc = encodeURIComponent(rama).replace(/%/g, "_");
+  const ramaId = parentRamaId ? parentRamaId + "_S_" + enc : uid + "_R_" + enc;
+  const nestedHidden = parentRamaId ? " hidden" : "";
+  const parentAttr = parentRamaId ? ` data-parent="${parentRamaId}"` : "";
+  const u = String(rama).toUpperCase();
+  const kindLabel =
+    u.indexOf("-RATC-") !== -1 ? "RAMA" : u.indexOf("-FATC-") !== -1 ? "FATC" : "Rama";
+
+  let html = `
+            <div class="node olt-tree-row olt-tree-depth-${d}${nestedHidden}"
+                 data-node-id="${ramaId}"${parentAttr}
+                 data-olt-tree-kind="${kindLabel}"
+                 onclick="toggleNode('${ramaId}')">
+                <span class="olt-tree-kind">${kindLabel}</span>
+                <span class="arrow" id="arrow-${ramaId}">▶</span> <span class="olt-tree-label">${_esc(rama)}</span>
+                <button type="button" class="btn-mini pot-rama" data-pot-rama="${encodeURIComponent(rama)}">Consultar</button>
+            </div>`;
+
+  const ctos = block.CTOS || {};
+  const ctoDepth = d + 1;
+  const tblDepth = d + 2;
+
+  for (const cto of sortNaturalKeys(Object.keys(ctos))) {
+    const ctoId = ramaId + "_C_" + encodeURIComponent(cto).replace(/%/g, "_");
+
+    html += `
+                <div class="node olt-tree-row olt-tree-depth-${ctoDepth} olt-tree-cto hidden"
+                     data-parent="${ramaId}"
+                     data-node-id="${ctoId}"
+                     data-olt-tree-kind="CTO"
+                     onclick="toggleNode('${ctoId}')">
+                    <span class="olt-tree-kind">CTO</span>
+                    <span class="arrow" id="arrow-${ctoId}">▶</span> <span class="olt-tree-label">${_esc(cto)}</span>
+                    <button type="button" class="btn-mini pot-cto" data-pot-cto="${encodeURIComponent(cto)}">Consultar</button>
+                </div>
+
+                <table class="hidden olt-tree-table olt-tree-depth-${tblDepth}" data-parent="${ctoId}">
+                <tr><th>AID</th><th>Operador</th><th>TX</th><th>RX</th><th></th></tr>`;
+
+    (ctos[cto] || []).forEach((o) => {
+      html += `
+                    <tr data-aid="${_esc(o.AID)}" data-rama="${encodeURIComponent(rama)}" data-cto="${encodeURIComponent(cto)}">
+                      <td>${_esc(o.AID)}</td>
+                      <td>${_esc(o.OPERADOR)}</td>
+                      <td>-</td>
+                      <td>-</td>
+                      <td><button type="button" class="btn-mini btn-aid pot-aid" data-pot-aid="${encodeURIComponent(o.AID)}">ID</button></td>
+                    </tr>`;
+    });
+
+    html += `</table>`;
+  }
+
+  const subs = block.SUBRAMAS || {};
+  for (const sub of sortNaturalKeys(Object.keys(subs))) {
+    html += buildRamaBlockHtml(uid, sub, subs[sub], ramaId, d + 1);
+  }
+
+  return html;
+}
+
+function showLtLoading(uid) {
+  const row = document.getElementById("lt-row-" + uid);
+  const detailRow = document.getElementById("detail-" + uid);
+  const arrow = document.getElementById("arrow-" + uid);
+  if (!row || !detailRow) return;
+  row.classList.add("lt-row-loading");
+  row.setAttribute("aria-busy", "true");
+  if (arrow) arrow.textContent = "▼";
+  detailRow.classList.remove("hidden");
+  detailRow.innerHTML =
+    '<td colspan="9"><div class="lt-detail-loading" role="status" aria-live="polite">' +
+    '<span class="lt-detail-spinner" aria-hidden="true"></span>' +
+    "<span>Cargando inventario de red…</span></div></td>";
+}
+
+function hideLtLoading(uid) {
+  const row = document.getElementById("lt-row-" + uid);
+  if (row) {
+    row.classList.remove("lt-row-loading");
+    row.removeAttribute("aria-busy");
+  }
+}
+
+function toggleLTCargar(lt, uid) {
+  const detailRow = document.getElementById("detail-" + uid);
+  const row = document.getElementById("lt-row-" + uid);
+  if (!detailRow || !row) return;
+
+  if (state[uid]) {
+    closeNode(uid);
+    return;
+  }
+
+  if (ltInventarioCargado[uid]) {
+    toggleNode(uid);
+    return;
+  }
+
+  if (ltCargando[uid]) return;
+  ltCargando[uid] = true;
+
+  const peCell = row.querySelector(".peor");
+  const prevPe = peCell ? peCell.textContent : "-";
+  if (peCell) peCell.textContent = "…";
+
+  row.querySelector(".rojas").innerText = "0";
+  row.querySelector(".amarillas").innerText = "0";
+  row.querySelector(".verdes").innerText = "0";
+
+  showLtLoading(uid);
+
+  cargarInventarioLT(lt, uid, row)
+    .then((wrap) => {
+      ltInventarioCargado[uid] = true;
+      if (peCell) peCell.textContent = prevPe;
+      toggleNode(uid);
+    })
+    .catch(() => {
+      if (peCell) peCell.textContent = prevPe;
+      const dr = document.getElementById("detail-" + uid);
+      if (dr) {
+        dr.classList.remove("hidden");
+        dr.innerHTML =
+          '<td colspan="9"><p class="lt-detail-error">No se pudo cargar el inventario. Reintentá o revisá la consola de red.</p></td>';
+      }
+      toastOlt("Error al cargar inventario LT");
+    })
+    .finally(() => {
+      ltCargando[uid] = false;
+      hideLtLoading(uid);
+    });
+}
+
+function cargarInventarioLT(lt, uid, row) {
+  const detailRow = document.getElementById("detail-" + uid);
+  return fetch("/dashboard/olt/consultar", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: "lt=" + encodeURIComponent(lt),
+  })
+    .then((r) => {
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    })
+    .then((data) => {
+      let html =
+        '<p class="hint">Inventario cargado. Expandí cada <strong>RAMA</strong> (RATC) para ver FATC → CTO → ONT. <span class="muted">Las mismas ramas FATC se listan bajo cada RATC (sin vínculo padre/hijo en BD).</span> <strong>Consultar</strong> / <strong>ID</strong> para potencias en Altiplano.</p>';
+
+      const ramas = sortNaturalKeys(Object.keys(data.RAMAS || {}));
+      for (const rama of ramas) {
+        html += buildRamaBlockHtml(uid, rama, data.RAMAS[rama], null, 1);
+      }
+
+      detailRow.innerHTML = `<td colspan="9">${html}</td>`;
+      detailRow.classList.remove("hidden");
+
+      const wrap = detailRow.querySelector("td");
+      bindPotenciaButtons(wrap, row);
+      return wrap;
+    });
+}
+
+function findTrByAid(wrap, aid) {
+  const s = String(aid);
+  return Array.from(wrap.querySelectorAll("tr[data-aid]")).find((tr) => tr.getAttribute("data-aid") === s);
+}
+
+/** Clic en Consultar/ID: listeners directos (stopPropagation evitaba que el delegado en el td recibiera el evento). */
+function bindPotenciaButtons(wrap, row) {
+  wrap.querySelectorAll("button.pot-rama").forEach((br) => {
+    br.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      potenciaRama(decodeURIComponent(br.getAttribute("data-pot-rama") || ""), wrap, row, br);
+    });
+  });
+  wrap.querySelectorAll("button.pot-cto").forEach((bc) => {
+    bc.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      potenciaCto(decodeURIComponent(bc.getAttribute("data-pot-cto") || ""), wrap, row, bc);
+    });
+  });
+  wrap.querySelectorAll("button.pot-aid").forEach((ba) => {
+    ba.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      potenciaAid(decodeURIComponent(ba.getAttribute("data-pot-aid") || ""), wrap, row, ba);
+    });
+  });
+}
+
+function _setPotButtonLoading(btn, loading) {
+  if (!btn) return;
+  if (loading) {
+    if (!btn.dataset.potLabel) btn.dataset.potLabel = (btn.textContent || "").trim() || "Consultar";
+    btn.disabled = true;
+    btn.classList.add("pot-btn-loading");
+    btn.innerHTML = "";
+    const inner = document.createElement("span");
+    inner.className = "pot-btn-loading-inner";
+    const sp = document.createElement("span");
+    sp.className = "pot-txrx-spin";
+    sp.setAttribute("aria-hidden", "true");
+    const lab = document.createElement("span");
+    lab.className = "pot-txrx-label";
+    lab.textContent = "Cargando TX/RX";
+    inner.appendChild(sp);
+    inner.appendChild(lab);
+    btn.appendChild(inner);
+    btn.setAttribute("aria-busy", "true");
+  } else {
+    btn.disabled = false;
+    btn.classList.remove("pot-btn-loading");
+    btn.removeAttribute("aria-busy");
+    btn.textContent = btn.dataset.potLabel || "Consultar";
+  }
+}
+
+function potenciaRama(rama, wrap, row, btnEl) {
+  _setPotButtonLoading(btnEl, true);
+  fetch("/dashboard/rama/consultar", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: "rama=" + encodeURIComponent(rama),
+  })
+    .then((r) => {
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    })
+    .then((data) => {
+      const res = data.__dashboard_resumen__;
+      if (res) _addSem(row, res);
+
+      Object.keys(data).forEach((k) => {
+        if (k === "__dashboard_resumen__") return;
+        const byAid = data[k];
+        Object.keys(byAid).forEach((aid) => {
+          const cell = byAid[aid];
+          const tr = findTrByAid(wrap, aid);
+          if (!tr) return;
+          if (decodeURIComponent(tr.getAttribute("data-rama") || "") !== rama) return;
+          if (tr.children[2] && tr.children[3]) {
+            tr.children[2].textContent = cell.TX ?? "-";
+            tr.children[3].textContent = cell.RX ?? "-";
+          }
+        });
+      });
+      _recomputePeor(wrap, row);
+    })
+    .catch(() => toastOlt("Error al consultar potencias (rama)"))
+    .finally(() => _setPotButtonLoading(btnEl, false));
+}
+
+function potenciaCto(cto, wrap, row, btnEl) {
+  _setPotButtonLoading(btnEl, true);
+  fetch("/dashboard/cto/consultar", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: "cto=" + encodeURIComponent(cto),
+  })
+    .then((r) => {
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    })
+    .then((arr) => {
+      if (!Array.isArray(arr)) return;
+      arr.forEach((rec) => {
+        const tr = findTrByAid(wrap, rec.AID);
+        if (!tr || decodeURIComponent(tr.getAttribute("data-cto") || "") !== cto) return;
+        if (tr.children[2] && tr.children[3]) {
+          tr.children[2].textContent = rec.TX ?? "-";
+          tr.children[3].textContent = rec.RX ?? "-";
+          _addSemFromRx(row, rec.RX);
+        }
+      });
+      _recomputePeor(wrap, row);
+    })
+    .catch(() => toastOlt("Error al consultar potencias (CTO)"))
+    .finally(() => _setPotButtonLoading(btnEl, false));
+}
+
+function potenciaAid(aid, wrap, row, btnEl) {
+  _setPotButtonLoading(btnEl, true);
+  fetch("/potencias", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: "value=" + encodeURIComponent(aid),
+  })
+    .then((r) => {
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    })
+    .then((data) => {
+      if (!data || data.AID == null) return;
+      const tr = findTrByAid(wrap, data.AID);
+      if (!tr || tr.children[2] == null) return;
+      tr.children[2].textContent = data.TX ?? "-";
+      tr.children[3].textContent = data.RX ?? "-";
+      _addSemFromRx(row, data.RX);
+      _recomputePeor(wrap, row);
+    })
+    .catch(() => toastOlt("Error al consultar potencias (ID)"))
+    .finally(() => _setPotButtonLoading(btnEl, false));
+}
+
+function aplicarBusquedaOlt() {
+  const raw = (document.getElementById("bus-olt")?.value || "").trim();
+  const q = raw.toLowerCase();
+  document.querySelectorAll(".principal-block").forEach((pb) => {
+    const pName = (pb.getAttribute("data-principal") || "").toLowerCase();
+    const sections = pb.querySelectorAll(".olt-section");
+    if (!q) {
+      sections.forEach((sec) => sec.classList.remove("search-hide"));
+      pb.classList.remove("search-hide");
+      return;
+    }
+    let visible = 0;
+    sections.forEach((sec) => {
+      const st = (sec.getAttribute("data-search") || "").toLowerCase();
+      const ok = st.includes(q);
+      sec.classList.toggle("search-hide", !ok);
+      if (ok) visible++;
+    });
+    if (visible === 0 && pName.includes(q)) {
+      sections.forEach((sec) => {
+        sec.classList.remove("search-hide");
+        visible++;
+      });
+    }
+    pb.classList.toggle("search-hide", visible === 0);
+
+    if (q && visible > 0 && !pb.classList.contains("search-hide")) {
+      const pid = pb.getAttribute("data-pid");
+      if (pid) ensureNodeOpen(pid);
+      pb.querySelectorAll(".olt-section:not(.search-hide)").forEach((sec) => {
+        const oid = sec.getAttribute("data-node-id");
+        if (oid) ensureNodeOpen(oid);
+      });
+    }
+  });
+}
+
+window.addEventListener("load", () => {
+  const inp = document.getElementById("bus-olt");
+  if (inp) inp.addEventListener("input", aplicarBusquedaOlt);
+
+  function ltFromToggleCell(td) {
+    if (!td) return null;
+    const raw = (td.dataset.lt || "").trim();
+    if (raw) return raw;
+    const j = td.dataset.ltJson;
+    if (j == null || j === "") return null;
+    try {
+      return JSON.parse(j);
+    } catch (err) {
+      return null;
+    }
+  }
+
+  document.body.addEventListener("click", (e) => {
+    const td = e.target.closest("td.lt-row-toggle");
+    if (!td) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const uid = td.dataset.uid;
+    const lt = ltFromToggleCell(td);
+    if (lt == null || uid == null) return;
+    toggleLTCargar(lt, uid);
+  });
+
+  document.body.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    const td = e.target.closest("td.lt-row-toggle");
+    if (!td || document.activeElement !== td) return;
+    e.preventDefault();
+    const uid = td.dataset.uid;
+    const lt = ltFromToggleCell(td);
+    if (lt == null || uid == null) return;
+    toggleLTCargar(lt, uid);
+  });
+
+  if (window.initNocPage) {
+    initNocPage({
+      page: "olt",
+      searchSelector: "#bus-olt",
+      onClear: function () {
+        const el = document.getElementById("bus-olt");
+        if (el) el.value = "";
+        if (typeof aplicarBusquedaOlt === "function") aplicarBusquedaOlt();
+      },
+      onSearchChange: function () {
+        if (typeof aplicarBusquedaOlt === "function") aplicarBusquedaOlt();
+      },
+    });
+  }
+});
+</script>
+</head>
+
+<body class="theme-devops page-olt">
+
+<div class="container">
+  <div class="topbar">
+    <div class="brand">
+      <div class="brand-row">
+        {% include 'partials/brand_logo.html' %}
+        <h1>GPON Inventory</h1>
+      </div>
+      <p class="page-lead"><strong>OLT / LT</strong> — <strong>Sitio principal</strong> → sitio (código) → OLT → LT → RAMA → CTO → AID. Expandí un <strong>LT</strong> para inventario; potencias con <strong>Consultar</strong> en RAMA/CTO o <strong>ID</strong>.</p>
+    </div>
+    {% include 'partials/noc_topbar.html' %}
+  </div>
+
+  {% include 'partials/nav_dashboard.html' %}
+
+  <div class="controls-olt">
+    <input type="search" id="bus-olt" placeholder="Buscar sitio, OLT, LT, código (ej. MR01, Moreno, BA_OLTA)…" autocomplete="off" aria-label="Filtrar árbol OLT">
+    <div class="toolbar-actions" role="toolbar" aria-label="Exportar y copiar">
+      <button type="button" class="btn" onclick="copiarDashboardOlt()" title="TSV para Excel">Copiar vista</button>
+      <a class="btn btn-ghost" href="/dashboard/olt/export.csv">Exportar CSV</a>
+    </div>
+    <p class="controls-hint olt-controls-hint"><strong class="hint-kicker">NOC</strong> Copiar usa filas LT visibles. CSV = inventario completo (todas las LT).</p>
+  </div>
+
+{% for bloque in olts %}
+{% set pid = 'p' ~ loop.index0 %}
+<div class="principal-block"
+     data-search="{{ bloque.SEARCH_TEXT }}"
+     data-principal="{{ bloque.PRINCIPAL }}"
+     data-pid="{{ pid }}">
+  <div class="site node" onclick="toggleNode('{{ pid }}')">
+    <span class="arrow" id="arrow-{{ pid }}">▶</span> {{ bloque.PRINCIPAL }}
+  </div>
+
+  {% for o in bloque.OLTS %}
+  {% set oid = pid ~ '_o' ~ loop.index0 %}
+  <div class="olt-section hidden indent1"
+       data-parent="{{ pid }}"
+       data-node-id="{{ oid }}"
+       data-search="{{ o.SEARCH_TEXT }}">
+    <div class="olt node"
+         onclick="toggleNode('{{ oid }}')">
+      <div class="olt-label">
+        <span class="arrow" id="arrow-{{ oid }}">▶</span>
+        <strong>{{ o.SITIO_CODIGO }}</strong>
+        <span class="muted">{{ o.OLT_LOGICO }}</span>
+      </div>
+    </div>
+
+    <table class="hidden indent2" data-parent="{{ oid }}">
+    <tr>
+    <th></th><th>LT</th><th>RAMAs</th><th>CTO</th><th>ONT</th>
+    <th>🔴</th><th>🟡</th><th>🟢</th><th>Peor RX</th>
+    </tr>
+
+    {% for l in o.LTS %}
+    {% set uid = l.LT|replace('.','_') %}
+    <tr class="ltrow" id="lt-row-{{ uid }}"
+        data-principal="{{ bloque.PRINCIPAL }}"
+        data-sitio="{{ o.SITIO_CODIGO }}"
+        data-olt="{{ o.OLT_LOGICO }}">
+    <td class="node lt-row-toggle"
+        role="button"
+        tabindex="0"
+        aria-label="Expandir inventario LT"
+        data-lt="{{ l.LT|e }}"
+        data-lt-json="{{ l.LT|tojson|e }}"
+        data-uid="{{ uid }}">
+      <span class="arrow" id="arrow-{{ uid }}">▶</span>
+    </td>
+    <td>{{ l.LT }}</td>
+    <td>{{ l.RAMAS }}</td>
+    <td>{{ l.CTO_COUNT }}</td>
+    <td>{{ l.ONT_COUNT }}</td>
+    <td class="rojas">0</td>
+    <td class="amarillas">0</td>
+    <td class="verdes">0</td>
+    <td class="peor">-</td>
+    </tr>
+
+    <tr id="detail-{{ uid }}" class="hidden" data-parent="{{ uid }}"><td colspan="9"></td></tr>
+    {% endfor %}
+    </table>
+  </div>
+  {% endfor %}
+</div>
+{% endfor %}
+
+</div>
+
+<div id="toast-olt" class="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

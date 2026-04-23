@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>RAMA / CTO · ATC GPON Inventory</title>
+{% include 'partials/noc_head.html' %}
+
+<script src="{{ url_for('static', filename='js/noc-tools.js') }}"></script>
+<script>
+let _toastTimer = null;
+let _jumpTimer = null;
+let _lastJumpKey = "";
+
+function toast(msg) {
+  const el = document.getElementById("toast");
+  if (!el) return;
+  el.textContent = msg;
+  el.classList.add("show");
+  if (_toastTimer) clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => el.classList.remove("show"), 1600);
+}
+
+function copyTextToClipboard(text) {
+  const done = () => toast("Copiado al portapapeles (pegá en Excel con Ctrl+V)");
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    return navigator.clipboard.writeText(text).then(done).catch(fallback);
+  }
+  fallback();
+  function fallback() {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    try {
+      document.execCommand("copy");
+      done();
+    } catch (e) {
+      toast("No se pudo copiar");
+    }
+    document.body.removeChild(ta);
+  }
+}
+
+function copiarDashboardRama() {
+  const lines = [];
+  lines.push(["Sitio_principal", "RAMA", "CTO", "AID", "Operador", "ONT", "TX", "RX"].join("\t"));
+  let n = 0;
+  document.querySelectorAll("[data-rama-card] tr[data-aid]").forEach((tr) => {
+    const card = tr.closest("[data-rama-card]");
+    if (!card || card.style.display === "none") return;
+    const pb = tr.closest(".principal-block");
+    if (!pb || pb.style.display === "none") return;
+    if (getComputedStyle(tr).display === "none") return;
+    const principal = (pb.getAttribute("data-principal-name") || "").trim();
+    const rama = tr.getAttribute("data-rama") || "";
+    const cto = tr.getAttribute("data-cto") || "";
+    const cells = [...tr.querySelectorAll("td")].map((td) => td.innerText.trim());
+    lines.push([principal, rama, cto, ...cells].join("\t"));
+    n++;
+  });
+  if (n === 0) {
+    toast("No hay filas visibles: expandí RAMA/CTO o ajustá el filtro");
+    return;
+  }
+  copyTextToClipboard(lines.join("\n"));
+}
+
+function setExpanded(el, expanded) {
+  el.setAttribute("aria-expanded", expanded ? "true" : "false");
+}
+
+function toggle(el) {
+  const next = el.nextElementSibling;
+  if (!next) return;
+  const willExpand = next.classList.contains("hidden");
+  next.classList.toggle("hidden");
+  setExpanded(el, willExpand);
+}
+
+function expandAll(open) {
+  document.querySelectorAll("[data-toggle-node]").forEach(n => {
+    const next = n.nextElementSibling;
+    if (!next) return;
+    if (open) next.classList.remove("hidden");
+    else next.classList.add("hidden");
+    setExpanded(n, open);
+  });
+}
+
+function clearSearchHighlights() {
+  document.querySelectorAll(".search-hit-cto").forEach((el) => el.classList.remove("search-hit-cto"));
+  document.querySelectorAll(".search-hit-rama").forEach((el) => el.classList.remove("search-hit-rama"));
+}
+
+function applySearchHighlights(qn) {
+  clearSearchHighlights();
+  if (!qn) return;
+  document.querySelectorAll("[data-rama-card].filter-match").forEach((card) => {
+    if (card.style.display === "none") return;
+    const rama = (card.getAttribute("data-rama") || "").toLowerCase();
+    const ctos = (card.getAttribute("data-ctos") || "").toLowerCase();
+    const ramaRow = card.querySelector(".rama-row[data-toggle-node]");
+
+    if (rama.includes(qn)) {
+      ramaRow?.classList.add("search-hit-rama");
+    }
+    if (ctos.includes(qn)) {
+      ramaRow?.classList.add("search-hit-rama");
+      card.querySelectorAll("[data-cto-node]").forEach((node) => {
+        const cto = (node.getAttribute("data-cto") || "").trim().toLowerCase();
+        if (cto && (cto.includes(qn) || (qn.length >= cto.length && qn.includes(cto)))) {
+          node.classList.add("search-hit-cto");
+        }
+      });
+    }
+  });
+}
+
+function expandPathToCard(card, q) {
+  if (!card) return;
+  const qn = (q || "").trim().toLowerCase();
+  const pb = card.closest(".principal-block");
+  const siteHead = pb?.querySelector(":scope > .site-head");
+  const siteBody = siteHead?.nextElementSibling;
+  if (siteHead && siteBody) {
+    siteBody.classList.remove("hidden");
+    setExpanded(siteHead, true);
+  }
+  const ramaRow = card.querySelector(".rama-row[data-toggle-node]");
+  const ramaBody = ramaRow?.nextElementSibling;
+  if (ramaRow && ramaBody) {
+    ramaBody.classList.remove("hidden");
+    setExpanded(ramaRow, true);
+  }
+  if (!qn) return;
+  const ctos = (card.getAttribute("data-ctos") || "").toLowerCase();
+  const matchCto = ctos.includes(qn);
+  if (!matchCto) return;
+  card.querySelectorAll("[data-cto-node]").forEach((ctoNode) => {
+    const body = ctoNode.nextElementSibling;
+    if (body) {
+      body.classList.remove("hidden");
+      setExpanded(ctoNode, true);
+    }
+  });
+}
+
+function aplicarFiltro() {
+  const raw = (document.getElementById("q")?.value || "").trim();
+  const q = raw.toLowerCase();
+  const rows = document.querySelectorAll("[data-rama-card]");
+  const counter = document.getElementById("visibleCount");
+
+  if (!q) {
+    clearSearchHighlights();
+    document.querySelectorAll(".principal-block").forEach((pb) => {
+      pb.style.display = "";
+    });
+    rows.forEach((card) => {
+      card.style.display = "";
+      card.classList.remove("filter-match");
+    });
+    if (counter) counter.textContent = `${rows.length} RAMAs`;
+    _lastJumpKey = "";
+    document.querySelectorAll(".rama-row.is-target").forEach((el) => el.classList.remove("is-target"));
+    return;
+  }
+
+  expandAll(false);
+  clearSearchHighlights();
+
+  let visible = 0;
+  let firstMatch = null;
+
+  rows.forEach((card) => {
+    const rama = (card.getAttribute("data-rama") || "").toLowerCase();
+    const ctos = (card.getAttribute("data-ctos") || "").toLowerCase();
+    const pb = card.closest(".principal-block");
+    const pname = (pb?.getAttribute("data-principal-name") || "").toLowerCase();
+    const ok = rama.includes(q) || ctos.includes(q) || pname.includes(q);
+    card.style.display = ok ? "" : "none";
+    card.classList.toggle("filter-match", ok);
+    if (ok) {
+      visible++;
+      if (!firstMatch) firstMatch = card;
+      expandPathToCard(card, q);
+    }
+  });
+
+  document.querySelectorAll(".principal-block").forEach((pb) => {
+    const any = pb.querySelector("[data-rama-card].filter-match");
+    pb.style.display = any ? "" : "none";
+  });
+
+  applySearchHighlights(q);
+
+  if (counter) counter.textContent = `${visible} RAMAs`;
+
+  if (q && visible === 1 && firstMatch) {
+    scheduleJump(q, firstMatch);
+  }
+}
+
+function scheduleJump(key, card) {
+  if (_jumpTimer) clearTimeout(_jumpTimer);
+  _jumpTimer = setTimeout(() => jumpToCard(key, card), 220);
+}
+
+function jumpToCard(key, card) {
+  if (!card) return;
+  if (_lastJumpKey === key) return;
+  _lastJumpKey = key;
+
+  const q = (document.getElementById("q")?.value || "").trim().toLowerCase();
+  expandPathToCard(card, q);
+
+  const ramaRow = card.querySelector(".rama-row[data-toggle-node]");
+  card.scrollIntoView({ behavior: "smooth", block: "center" });
+  document.querySelectorAll(".rama-row.is-target").forEach((el) => el.classList.remove("is-target"));
+  if (ramaRow) ramaRow.classList.add("is-target");
+
+  const btn = card.querySelector("button.btn");
+  if (btn) btn.focus({ preventScroll: true });
+}
+
+function _parseRx(text) {
+  if (text == null) return null;
+  const s = String(text).trim().replace(",", ".");
+  const v = Number(s);
+  return Number.isFinite(v) ? v : null;
+}
+
+function _clasePorRx(rx) {
+  // Reglas pedidas:
+  // - Warning (rojo): RX < -27
+  // - Alerta (amarillo): -27 <= RX <= -25
+  // - Bueno (verde): RX > -25 (no se resalta)
+  if (rx == null) return null;
+  if (rx < -27) return "rx-warn";
+  if (rx <= -25) return "rx-alert";
+  return null;
+}
+
+function _aplicarResaltadoFila(tr, rxText) {
+  tr.classList.remove("rx-warn", "rx-alert");
+  const rx = _parseRx(rxText);
+  const cls = _clasePorRx(rx);
+  if (cls) tr.classList.add(cls);
+}
+
+function consultarRama(rama, btn) {
+  btn.disabled = true;
+  btn.innerText = "⏳";
+  const row = btn.closest(".rama-row");
+
+  fetch("/dashboard/rama/consultar", {
+    method:"POST",
+    headers:{ "Content-Type":"application/x-www-form-urlencoded" },
+    body:"rama="+encodeURIComponent(rama)
+  })
+  .then(r=>r.json())
+  .then(data=>{
+    const res = data.__dashboard_resumen__;
+    if (res && row) {
+      const elR = row.querySelector('[data-semaforo="rojo"]');
+      const elA = row.querySelector('[data-semaforo="amarillo"]');
+      const elV = row.querySelector('[data-semaforo="verde"]');
+      if (elR) elR.textContent = res.ROJAS;
+      if (elA) elA.textContent = res.AMARILLAS;
+      if (elV) elV.textContent = res.VERDES;
+    }
+    document.querySelectorAll(`[data-rama='${rama}']`).forEach(tr=>{
+      const cto = tr.dataset.cto;
+      const aid = tr.dataset.aid;
+      if (data[cto] && data[cto][aid]) {
+        tr.children[3].innerText = data[cto][aid].TX ?? "-";
+        tr.children[4].innerText = data[cto][aid].RX ?? "-";
+        _aplicarResaltadoFila(tr, tr.children[4].innerText);
+      }
+    });
+    btn.innerText = "OK";
+    toast(`Potencias actualizadas: ${rama}`);
+  })
+  .finally(()=>btn.disabled=false);
+}
+
+window.addEventListener("load", () => {
+  const input = document.getElementById("q");
+  const pre = new URLSearchParams(window.location.search).get("q");
+  if (input && pre) {
+    input.value = pre;
+  }
+  aplicarFiltro();
+  if (input) {
+    input.addEventListener("input", () => {
+      _lastJumpKey = "";
+      aplicarFiltro();
+    });
+
+    input.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter") return;
+      e.preventDefault();
+      const q = (input.value || "").trim().toLowerCase();
+      const first = Array.from(document.querySelectorAll("[data-rama-card]")).find(c => c.style.display !== "none");
+      if (q && first) jumpToCard(q, first);
+    });
+  }
+
+  if (window.initNocPage) {
+    initNocPage({
+      page: "rama",
+      searchSelector: "#q",
+      onClear: function () {
+        const el = document.getElementById("q");
+        if (el) el.value = "";
+        if (typeof aplicarFiltro === "function") aplicarFiltro();
+      },
+      onSearchChange: function () {
+        if (typeof aplicarFiltro === "function") aplicarFiltro();
+      },
+    });
+  }
+});
+</script>
+</head>
+
+<body class="theme-devops">
+
+<div class="container">
+  <div class="topbar">
+    <div class="brand">
+      <div class="brand-row">
+        {% include 'partials/brand_logo.html' %}
+        <h1>GPON Inventory</h1>
+      </div>
+      <small><strong>RAMA / CTO</strong> — expandí nodos y consultá potencias por rama (Altiplano)</small>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;">
+      <span id="visibleCount" class="count">—</span>
+      {% include 'partials/noc_topbar.html' %}
+    </div>
+  </div>
+
+  {% include 'partials/nav_dashboard.html' %}
+
+  <div class="panel">
+    <div class="controls">
+      <div class="field" role="search">
+        <span class="search-icon" aria-hidden="true">⌕</span>
+        <input id="q" placeholder="Buscar por sitio, RAMA o CTO… (ej: San Fernando / SF01-RATC / SF01-FATC-8-202018)" autocomplete="off" aria-label="Filtrar árbol">
+      </div>
+      <div class="toolbar-actions" role="toolbar" aria-label="Exportar y vista">
+        <button class="btn" type="button" onclick="copiarDashboardRama()" title="TSV: columnas separadas por tabulador">Copiar vista</button>
+        <a class="btn btn-ghost" href="/dashboard/rama/export.csv">Exportar CSV</a>
+        <button class="btn btn-primary" type="button" onclick="expandAll(true)">Expandir todo</button>
+        <button class="btn btn-ghost" type="button" onclick="expandAll(false)">Colapsar todo</button>
+      </div>
+    </div>
+    <div class="controls-hint">
+      <strong class="hint-kicker">NOC</strong>
+      Copiar respeta el filtro y las filas visibles. CSV descarga el inventario completo desde servidor (UTF‑8, abre bien en Excel).
+    </div>
+
+{% for bloque in ramas %}
+<div class="principal-block" data-principal-search="{{ bloque.SEARCH_TEXT }}" data-principal-name="{{ bloque.PRINCIPAL }}">
+  <div class="card node site-head" data-toggle-node aria-expanded="false" onclick="toggle(this)">
+    <span class="arrow">▶</span> {{ bloque.PRINCIPAL }}
+  </div>
+
+  <div class="hidden indent1">
+{% for r in bloque.RAMAS %}
+<div class="card indent1" data-rama-card data-rama="{{ r.RAMA }}" data-ctos="{{ r.CTOS.keys()|list|join(' ') }}">
+
+  <div class="rama-row node" data-toggle-node aria-expanded="false" onclick="toggle(this)">
+    <span><span class="arrow">▶</span> <span class="mono">{{ r.RAMA }}</span></span>
+    <span class="badge hide-sm">CTO {{ r.CTO_COUNT }}</span>
+    <span class="badge hide-sm">ONT {{ r.ONT_COUNT }}</span>
+    <span class="badge red semaforo-dot" title="RX &lt; -27 dBm" data-semaforo="rojo">{{ r.ROJAS }}</span>
+    <span class="badge yellow semaforo-dot" title="-27 a -25 dBm" data-semaforo="amarillo">{{ r.AMARILLAS }}</span>
+    <span class="badge green semaforo-dot" title="RX &gt; -25 dBm" data-semaforo="verde">{{ r.VERDES }}</span>
+    <button class="btn" type="button" onclick="event.stopPropagation(); consultarRama('{{ r.RAMA }}', this)">Consultar</button>
+  </div>
+
+  <div class="hidden indent2">
+  {% for cto, onts in r.CTOS.items() %}
+    <div class="node indent2" data-toggle-node data-cto-node data-cto="{{ cto|e }}" aria-expanded="false" onclick="toggle(this)">
+      <span class="arrow">▶</span> CTO <span class="mono">{{ cto }}</span>
+    </div>
+
+    <div class="hidden indent3">
+      <table>
+        <tr>
+          <th>AID</th>
+          <th>Operador</th>
+          <th>ONT</th>
+          <th>TX</th>
+          <th>RX</th>
+        </tr>
+        {% for o in onts %}
+        <tr data-rama="{{ r.RAMA }}" data-cto="{{ cto }}" data-aid="{{ o.AID }}">
+          <td class="mono">{{ o.AID }}</td>
+          <td>{{ o.OPERADOR }}</td>
+          <td class="mono">{{ o.ONT }}</td>
+          <td>-</td>
+          <td>-</td>
+        </tr>
+        {% endfor %}
+      </table>
+    </div>
+  {% endfor %}
+  </div>
+
+</div>
+{% endfor %}
+  </div>
+</div>
+{% endfor %}
+
+</div>
+
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

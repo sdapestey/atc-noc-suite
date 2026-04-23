@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Camino óptico · ATC GPON Inventory</title>
+{% include 'partials/noc_head.html' %}
+<script src="{{ url_for('static', filename='js/noc-tools.js') }}"></script>
+</head>
+<body class="theme-devops page-camino">
+<div class="container">
+  <div class="topbar">
+    <div class="brand">
+      <div class="brand-row">
+        {% include 'partials/brand_logo.html' %}
+        <h1>GPON Inventory</h1>
+      </div>
+      <p class="page-lead">
+        <strong>Camino óptico</strong> — inventario <code class="inline-code">cm.inventory_fat_occupation</code> +
+        <code class="inline-code">cm.cm_report_isp</code>. Buscá por CTO (FATC), rama (RATC) o Access ID.
+      </p>
+    </div>
+    {% include 'partials/noc_topbar.html' %}
+  </div>
+
+  {% include 'partials/nav_dashboard.html' %}
+
+  <div class="panel camino-panel">
+    <div class="camino-panel-inner">
+    <div class="row camino-row">
+      <div>
+        <span class="t">Modo</span>
+        <div class="modes">
+          <label><input type="radio" name="tipo" value="cto" checked> CTO (FATC)</label>
+          <label><input type="radio" name="tipo" value="rama"> Rama (RATC)</label>
+          <label><input type="radio" name="tipo" value="access_id"> Access ID</label>
+        </div>
+      </div>
+    </div>
+    <div class="row camino-row">
+      <div class="camino-field-wrap">
+        <label class="t" for="q">Valor</label>
+        <input type="text" id="q" placeholder="Ej: TG01-FATC-8-110066  ·  TG01-RATC-0-000808  ·  1052404324" autocomplete="off">
+      </div>
+      <button type="button" class="btn btn-primary" id="btn">Buscar</button>
+    </div>
+    </div>
+  </div>
+
+  <div id="out"></div>
+</div>
+
+<script>
+(function(){
+  const out = document.getElementById("out");
+  const q = document.getElementById("q");
+  const btn = document.getElementById("btn");
+
+  function esc(s){
+    if (s === null || s === undefined) return "";
+    return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  }
+
+  function gmapsSearchUrl(query) {
+    const q = query == null ? "" : String(query).trim();
+    if (!q) return null;
+    return "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(q);
+  }
+
+  function mapsLinkHref(href, label) {
+    if (!href) return "";
+    return (
+      '<a class="camino-maps-link" href="' +
+      esc(href) +
+      '" target="_blank" rel="noopener noreferrer" title="Abrir en Google Maps">' +
+      esc(label || "Mapa") +
+      "</a>"
+    );
+  }
+
+  function stepsFromIsp(isp){
+    if (!isp || typeof isp !== "object") return [];
+    const o = isp;
+    return [
+      ["Cabecera / sitio", [o.headend, o.headend_name].filter(Boolean).join(" — ")],
+      ["OLT", [o.olt_name, o.olt_slot, o.olt_port].filter(Boolean).join(" · ")],
+      ["Patch cord", o.cable_patch_cord_name],
+      ["Cable troncal", [o.cable_trunk_name, o.cable_trunk_fiber != null ? "fibra " + o.cable_trunk_fiber : ""].filter(Boolean).join(" — ")],
+      ["FEC / bandeja", [o.fec_name, o.fec_port != null ? "puerto " + o.fec_port : ""].filter(Boolean).join(" · ")],
+      ["Path / sistema", o.pp_name],
+      ["Sistema óptico (rama)", o.path_atc],
+      ["Cable alimentador (CATC)", [o.cable_feeder_name, o.cable_feeder_description].filter(Boolean).join(" — ")],
+    ].filter(function(x){ return x[1]; });
+  }
+
+  function renderIspBlock(isp, title, opts){
+    opts = opts || {};
+    const cableMaps = opts.cableMaps === true;
+    if (!isp) {
+      return '<p class="muted">Sin fila en <code>cm_report_isp</code> para esta rama (nombre exacto de <code>path_atc</code>).</p>';
+    }
+    const steps = stepsFromIsp(isp);
+    let html = '<div class="path-block"><h3>' + esc(title || "Tramo hacia el sitio (report ISP)") + '</h3><ol class="path-steps">';
+    steps.forEach(function(s){
+      const stepLabel = s[0];
+      const valText = s[1];
+      let extra = "";
+      if (cableMaps && valText && (stepLabel === "Cable troncal" || stepLabel === "Cable alimentador (CATC)")) {
+        const uh = gmapsSearchUrl(valText);
+        extra = uh ? " " + mapsLinkHref(uh, "Ver en Maps") : "";
+      }
+      html += "<li><strong>" + esc(stepLabel) + ":</strong> " + esc(valText) + extra + "</li>";
+    });
+    html += "</ol></div>";
+    return html;
+  }
+
+  function renderFatOntRow(o){
+    return (
+      "<tr><td>" + esc(o.access_id) + "</td>" +
+      "<td>" + esc(o.object_name_ui || "—") + "</td>" +
+      "<td>" + esc(o.OPERADOR || "—") + "</td>" +
+      "<td>" + esc(o.path_atc || "—") + "</td>" +
+      "<td>" + esc(o.port_name || "") + (o.port_number != null ? " (" + esc(o.port_number) + ")" : "") + "</td>" +
+      '<td class="small">' + esc(o.componente_fullname || o.component_name || "—") + "</td>" +
+      '<td class="small">' + esc(o.location_fullname || "") + "</td></tr>"
+    );
+  }
+
+  function render(data){
+    if (data.error) {
+      out.innerHTML = '<div class="err">' + esc(data.error) + "</div>";
+      return;
+    }
+    if (data.tipo === "rama") {
+      const r = data.resumen || {};
+      let html = '<div class="panel camino-result"><h2 class="camino-result-title">Rama ' + esc(data.rama) + "</h2>";
+      html += '<div class="stats">';
+      html += '<div class="stat"><b>' + esc(String(r.cto_count)) + '</b><span>CTOs</span></div>';
+      html += '<div class="stat"><b>' + esc(String(r.ont_count)) + '</b><span>ONT</span></div>';
+      html += "</div>";
+      html += renderIspBlock(data.camino_isp, "Camino hacia cabecera (una rama representativa)");
+      html += "<p class=\"muted\">CTOs que cuelgan de esta rama (inventario en servicio):</p>";
+      html += "<table><thead><tr><th>CTO</th><th>ONT</th></tr></thead><tbody>";
+      (data.ctos || []).forEach(function(c){
+        html += "<tr><td>" + esc(c.cto) + "</td><td>" + esc(c.onts) + "</td></tr>";
+      });
+      html += "</tbody></table></div>";
+      out.innerHTML = html;
+      return;
+    }
+    if (data.tipo === "cto") {
+      const res = data.resumen || {};
+      let html = '<div class="panel camino-result"><h2 class="camino-result-title">CTO ' + esc(data.cto) + "</h2>";
+      html += '<div class="stats">';
+      html += '<div class="stat"><b>' + esc(String(res.ont_count)) + '</b><span>ONT</span></div>';
+      html += '<div class="stat"><b>' + esc(String(res.rama_count)) + '</b><span>Ramas distintas</span></div>';
+      html += "</div>";
+      const ramas = res.ramas || [];
+      if (ramas.length > 1) {
+        html += "<p class=\"muted\">Esta CTO tiene más de una rama en inventario; se muestran bloques ISP por cada una.</p>";
+        ramas.forEach(function(rama){
+          const isp = (data.caminos_isp_por_rama || {})[rama];
+          html += renderIspBlock(isp, "Rama " + rama);
+        });
+      } else {
+        const isp = ramas.length ? (data.caminos_isp_por_rama || {})[ramas[0]] : null;
+        html += renderIspBlock(isp, "Desde esta CTO hacia el sitio");
+      }
+      html += "<p class=\"muted\">ONT conectadas a esta CTO:</p>";
+      html += "<table><thead><tr><th>Access ID</th><th>ONT</th><th>Operador</th><th>Rama</th><th>Puerto</th><th>Componente</th><th>Cadena instalaciones</th></tr></thead><tbody>";
+      (data.onts || []).forEach(function(o){ html += renderFatOntRow(o); });
+      html += "</tbody></table></div>";
+      out.innerHTML = html;
+      return;
+    }
+    if (data.tipo === "access_id") {
+      const d = data.detalle || {};
+      const isp = d.camino_isp;
+      const ctoQuery = [d.location_description, d.site_description, d.site_fullname]
+        .filter(function (x) { return x && String(x).trim(); })
+        .join(", ");
+      const ramaQuery = [d.path_atc, isp && isp.headend_name]
+        .filter(function (x) { return x && String(x).trim(); })
+        .join(" · ");
+
+      const ctoHref = gmapsSearchUrl(ctoQuery || d.location_description);
+      const ramaHref = gmapsSearchUrl(ramaQuery || d.path_atc);
+
+      let html = '<div class="panel camino-result"><h2 class="camino-result-title">Access ID ' + esc(d.access_id) + "</h2>";
+      html += '<p class="camino-meta-line">';
+      html += "<strong>CTO:</strong> <span class=\"camino-meta-val\">" + esc(d.location_description) + "</span> ";
+      html += mapsLinkHref(ctoHref, "Ver en Maps");
+      html += ' <span class="camino-meta-sep" aria-hidden="true">·</span> ';
+      html += "<strong>Rama:</strong> <span class=\"camino-meta-val\">" + esc(d.path_atc) + "</span> ";
+      html += mapsLinkHref(ramaHref, "Ver en Maps");
+      html += "</p>";
+      html += '<p class="muted camino-maps-hint">Los enlaces «Ver en Maps» abren una búsqueda en Google Maps con el identificador (no hay coordenadas en inventario).</p>';
+      html += renderIspBlock(isp, "Camino hacia el sitio", { cableMaps: true });
+      html += "<details class=\"det\" open><summary>Detalle inventario FAT</summary>";
+      html += '<div class="kv">';
+      [
+        ["Sitio", d.site_fullname],
+        ["Descripción sitio", d.site_description],
+        ["Physical path", d.physical_path],
+        ["Feeder CATC (Bentley)", d.feeder_bentley],
+        ["Feeder CM", d.feeder_cm],
+        ["OLT / ODF fibra", d.olt_odf_fiber],
+        ["ONT (serial)", d.object_name_ui],
+        ["Operador", d.OPERADOR],
+        ["Alias CTO", d.alias_atc],
+        ["Tipo ubicación", d.location_type],
+      ].forEach(function(kv){
+        if (kv[1]) html += "<div>" + esc(kv[0]) + "</div><div>" + esc(kv[1]) + "</div>";
+      });
+      html += "</div></details></div>";
+      out.innerHTML = html;
+      return;
+    }
+    out.innerHTML = '<div class="err">Respuesta no reconocida</div>';
+  }
+
+  function tipoSeleccionado(){
+    const r = document.querySelector('input[name="tipo"]:checked');
+    return r ? r.value : "cto";
+  }
+
+  function buscar(){
+    const valor = q.value.trim();
+    if (!valor) {
+      out.innerHTML = '<div class="err">Ingresá un valor.</div>';
+      return;
+    }
+    btn.disabled = true;
+    out.innerHTML = '<p class="muted">Consultando… <span class="camino-spin" aria-hidden="true"></span></p>';
+    fetch("/dashboard/camino-optico/consultar", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Accept": "application/json" },
+      body: JSON.stringify({ tipo: tipoSeleccionado(), valor: valor }),
+    })
+      .then(function(res){ return res.json().then(function(j){ return { ok: res.ok, j: j }; }); })
+      .then(function(x){
+        if (!x.ok && x.j && x.j.error) {
+          render(x.j);
+          return;
+        }
+        if (!x.ok) {
+          out.innerHTML = '<div class="err">Error HTTP</div>';
+          return;
+        }
+        render(x.j);
+      })
+      .catch(function(){
+        out.innerHTML = '<div class="err">Error de red o servidor.</div>';
+      })
+      .finally(function(){ btn.disabled = false; });
+  }
+
+  btn.addEventListener("click", buscar);
+  q.addEventListener("keydown", function(e){ if (e.key === "Enter") buscar(); });
+})();
+</script>
+<script>
+window.addEventListener("load", function () {
+  if (window.initNocPage) initNocPage({ page: "camino" });
+});
+</script>
+</body>
+</html>
