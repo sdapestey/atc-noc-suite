@@ -1,6 +1,6 @@
 # ATC GPON Inventory
 
-Panel Flask para consultas de inventario GPON (Postgres + Altiplano). Código del proyecto en el directorio `dbeaver_web`.
+Panel Flask para consultas de inventario GPON (Postgres + Altiplano). Código del proyecto en el directorio `gpon-inventory`.
 
 ## Configuración
 
