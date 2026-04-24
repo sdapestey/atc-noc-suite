@@ -89,6 +89,7 @@ def export_index_query_csv(value: str) -> str:
     buf = io.StringIO()
     w = csv.writer(buf)
     value = (value or "").strip()
+    value_upper = value.upper()
     if not value:
         w.writerow(["error", "valor vacío"])
         return buf.getvalue()
@@ -134,7 +135,7 @@ def export_index_query_csv(value: str) -> str:
             return buf.getvalue()
         w.writerow(["error", "sin datos"])
         return buf.getvalue()
-    elif "FATC" in value:
+    elif "FATC" in value_upper:
         rows = consultar_cto_estructura(value)
         w.writerow(["AID", "OPERADOR", "PRINCIPAL", "RAMA", "ONT", "SN", "STATUS"])
         for r in rows:
@@ -147,7 +148,7 @@ def export_index_query_csv(value: str) -> str:
                 r.get("SN", ""),
                 r["STATUS"],
             ])
-    elif "RATC" in value:
+    elif "RATC" in value_upper:
         data = consultar_rama_estructura(value)
         w.writerow(["CTO", "AID", "OPERADOR", "ONT", "SN", "STATUS"])
         for cto, rows in data.items():

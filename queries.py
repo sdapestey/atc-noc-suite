@@ -51,6 +51,52 @@ QUERIES = {
     """,
 
     # ===============================
+    # Fallback de alias en aux.bajada_inventario.access_id
+    # ===============================
+    "access_id_desde_alias_bajada": """
+        WITH b AS (
+            SELECT
+                btrim(access_id) AS alias_access_id,
+                btrim(cto) AS aid_candidate,
+                btrim(object_name) AS object_name_raw
+            FROM aux.bajada_inventario
+            WHERE LOWER(btrim(access_id)) = LOWER(btrim(%s))
+            ORDER BY reserved_date DESC NULLS LAST, provided_date DESC NULLS LAST
+            LIMIT 1
+        )
+        SELECT
+            f.access_id,
+            f.status,
+            f.location_description AS cto,
+            f.path_atc AS rama,
+            s.object_name AS object_name_raw,
+            REPLACE(s.object_name, ':1-1', '') AS object_name_ui,
+            s.serial_number AS serial_number,
+            o.invocator_system
+        FROM cm.inventory_fat_occupation f
+        LEFT JOIN altiplano.serial s
+               ON s.access_id = f.access_id
+        LEFT JOIN cm.inventory_olt_occupation o
+               ON o.access_id = f.access_id
+        JOIN b ON (
+            (b.aid_candidate ~ '^[0-9]+$' AND f.access_id::text = b.aid_candidate)
+            OR
+            (
+                LOWER(btrim(SPLIT_PART(COALESCE(s.object_name, ''), ':', 1))) =
+                LOWER(btrim(SPLIT_PART(COALESCE(b.object_name_raw, ''), ':', 1)))
+            )
+        )
+        ORDER BY
+            CASE
+                WHEN (b.aid_candidate ~ '^[0-9]+$' AND f.access_id::text = b.aid_candidate)
+                THEN 0
+                ELSE 1
+            END,
+            f.access_id
+        LIMIT 1
+    """,
+
+    # ===============================
     # ONT por CTO (todas las ONT de una CTO)
     # ===============================
     "onts_por_cto": """

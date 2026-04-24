@@ -308,9 +308,24 @@ def consultar_access_id_desde_alias(alias: str) -> dict | None:
     if not raw:
         return None
 
+    # Fuente principal: alias en altiplano.serial.object_name.
     with db_cursor() as cur:
         cur.execute(QUERIES["access_id_desde_alias"], (raw,))
         row = cur.fetchone()
+
+    # Fallback 1: alias existe directamente como access_id en aux.bajada_inventario.
+    # Este caso aparece en algunos registros de Metrotel/IPLAN.
+    if not row:
+        detalle_bajada = consultar_access_id_detalle_desde_bajada_inventario(raw)
+        if detalle_bajada:
+            detalle_bajada["fuente_detalle"] = "alias_bajada_inventario"
+            return detalle_bajada
+
+    # Fallback 2: alias presente en bajada_inventario pero mapeable a inventario activo.
+    if not row:
+        with db_cursor() as cur:
+            cur.execute(QUERIES["access_id_desde_alias_bajada"], (raw,))
+            row = cur.fetchone()
 
     if not row:
         return None

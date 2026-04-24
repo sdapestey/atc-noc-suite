@@ -62,6 +62,15 @@ def _update_route_and_maps_from_result(resultado: dict, ruta: dict) -> str | Non
     return _build_google_maps_search_url(coords["lat"], coords["lon"])
 
 
+def _is_alias_identifier(value_upper: str) -> bool:
+    """Indica si el valor de búsqueda tiene formato alias soportado."""
+    return (
+        value_upper.startswith("SRVC_LOC_")
+        or value_upper.startswith("RES_MT_")
+        or value_upper.startswith("RES_IP_")
+    )
+
+
 def register(app):
     """Registra todas las rutas HTTP en la app Flask.
 
@@ -133,11 +142,7 @@ def register(app):
                 es_rama = True
                 ruta["rama"] = value
 
-            elif (
-                value_upper.startswith("SRVC_LOC_")
-                or value_upper.startswith("RES_MT_")
-                or value_upper.startswith("RES_IP_")
-            ):
+            elif _is_alias_identifier(value_upper):
                 resultado = consultar_access_id_desde_alias(value)
                 busqueda_aid = None
                 if resultado:
@@ -178,6 +183,12 @@ def register(app):
 
         if "RATC" in valor_upper:
             return jsonify(consultar_rama_potencias(valor))
+
+        if _is_alias_identifier(valor_upper):
+            resolved = consultar_access_id_desde_alias(valor)
+            if not resolved:
+                return jsonify([])
+            return jsonify(consultar_access_id_potencias(str(resolved.get("AID") or valor)))
 
         return jsonify([])
 

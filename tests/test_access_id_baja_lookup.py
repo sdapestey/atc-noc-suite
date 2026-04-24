@@ -514,3 +514,123 @@ def test_index_post_alias_res_ip_ok(client, monkeypatch):
     html = r.get_data(as_text=True)
     assert "<th>AID</th>" in html
     assert "1058880001" in html
+
+
+def test_potencias_alias_srvc_loc_ok(client, monkeypatch):
+    import web.routes as routes
+
+    monkeypatch.setattr(
+        routes,
+        "consultar_access_id_desde_alias",
+        lambda _alias: {"AID": "1058516041"},
+    )
+    monkeypatch.setattr(
+        routes,
+        "consultar_access_id_potencias",
+        lambda _aid: {"AID": _aid, "TX": -18.2, "RX": -22.4},
+    )
+
+    r = client.post("/potencias", data={"value": "Srvc_loc_2157"})
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body["AID"] == "1058516041"
+    assert body["TX"] == -18.2
+    assert body["RX"] == -22.4
+
+
+def test_consultar_access_id_desde_alias_fallback_bajada_ok(monkeypatch):
+    from services import inventory as inv
+
+    primary_sql_marker = "WHERE LOWER(btrim(SPLIT_PART(COALESCE(s.object_name, ''), ':', 1)))"
+    fallback_sql_marker = "WITH b AS ("
+    fallback_row = (
+        "1058516041",
+        "IN SERVICE",
+        "SM01-FATC-8-103157",
+        "SM01-RATC-0-000001",
+        "BA_OLTA_SM01_03-1-3-3:1-1",
+        "BA_OLTA_SM01_03-1-3-3",
+        "ALCLF00ABCD12",
+        4000,
+    )
+
+    @contextmanager
+    def fake_db():
+        class FakeCur:
+            def execute(self, sql, params=None):
+                self._sql = sql or ""
+
+            def fetchone(self):
+                s = self._sql or ""
+                if primary_sql_marker in s:
+                    return None
+                if fallback_sql_marker in s:
+                    return fallback_row
+                return None
+
+        yield FakeCur()
+
+    monkeypatch.setattr(inv, "db_cursor", fake_db)
+    out = inv.consultar_access_id_desde_alias("Srvc_loc_2157")
+    assert out is not None
+    assert out["AID"] == "1058516041"
+    assert out["OPERADOR"] == "METROTEL"
+    assert out["CTO"] == "SM01-FATC-8-103157"
+
+
+def test_consultar_access_id_desde_alias_fallback_bajada_sin_match(monkeypatch):
+    from services import inventory as inv
+
+    @contextmanager
+    def fake_db():
+        class FakeCur:
+            def execute(self, sql, params=None):
+                self._sql = sql or ""
+
+            def fetchone(self):
+                return None
+
+        yield FakeCur()
+
+    monkeypatch.setattr(inv, "db_cursor", fake_db)
+    assert inv.consultar_access_id_desde_alias("Srvc_loc_999999") is None
+
+
+def test_consultar_access_id_desde_alias_fallback_directo_bajada_access_id(monkeypatch):
+    from services import inventory as inv
+
+    @contextmanager
+    def fake_db():
+        class FakeCur:
+            def execute(self, sql, params=None):
+                self._sql = sql or ""
+
+            def fetchone(self):
+                # No hay match por fuente principal ni por query de fallback SQL.
+                return None
+
+        yield FakeCur()
+
+    monkeypatch.setattr(inv, "db_cursor", fake_db)
+    monkeypatch.setattr(
+        inv,
+        "consultar_access_id_detalle_desde_bajada_inventario",
+        lambda _aid: {
+            "AID": "Srvc_loc_2157",
+            "OPERADOR": "METROTEL",
+            "Status": "Registro aux.bajada_inventario",
+            "CTO": "SM01-FATC-8-103157",
+            "RAMA": None,
+            "ONT": "BA_OLTA_SM01_03-1-3-3",
+            "SN": "—",
+            "TX": None,
+            "RX": None,
+            "fuente_detalle": "bajada_inventario",
+        },
+    )
+    out = inv.consultar_access_id_desde_alias("Srvc_loc_2157")
+    assert out is not None
+    assert out["AID"] == "Srvc_loc_2157"
+    assert out["OPERADOR"] == "METROTEL"
+    assert out["CTO"] == "SM01-FATC-8-103157"
+    assert out["fuente_detalle"] == "alias_bajada_inventario"
