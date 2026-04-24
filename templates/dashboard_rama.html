@@ -5,12 +5,6 @@
 <title>RAMA / CTO · ATC GPON Inventory</title>
 {% include 'partials/noc_head.html' %}
 
-<style>
-.cto-head-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.cto-head-row .cto-select { flex-shrink: 0; width: auto; margin: 0; }
-.rama-cto-select-all-label { font-size: 0.88rem; cursor: pointer; user-select: none; }
-</style>
-
 <script src="{{ url_for('static', filename='js/noc-tools.js') }}"></script>
 <script>
 let _toastTimer = null;
@@ -280,9 +274,17 @@ function jumpToCard(key, card) {
 
 function _parseRx(text) {
   if (text == null) return null;
-  const s = String(text).trim().replace(",", ".");
-  const v = Number(s);
+  const s = String(text).trim().replace(",", ".").replace(/dbm$/i, "").trim();
+  const v = parseFloat(s);
   return Number.isFinite(v) ? v : null;
+}
+
+function _formatPowerDbm(v) {
+  if (v === null || v === undefined) return "-";
+  const raw = String(v).trim();
+  if (!raw || raw === "-" || raw === "⏳") return raw || "-";
+  if (/dbm$/i.test(raw)) return raw;
+  return raw + " dBm";
 }
 
 function _clasePorRx(rx) {
@@ -328,8 +330,8 @@ function consultarRama(rama, btn) {
       const cto = tr.dataset.cto;
       const aid = tr.dataset.aid;
       if (data[cto] && data[cto][aid]) {
-        tr.children[3].innerText = data[cto][aid].TX ?? "-";
-        tr.children[4].innerText = data[cto][aid].RX ?? "-";
+        tr.children[3].innerText = _formatPowerDbm(data[cto][aid].TX);
+        tr.children[4].innerText = _formatPowerDbm(data[cto][aid].RX);
         _aplicarResaltadoFila(tr, tr.children[4].innerText);
       }
     });
@@ -401,7 +403,7 @@ window.addEventListener("load", () => {
       </div>
       <small><strong>RAMA / CTO</strong> — expandí nodos y consultá potencias por rama (Altiplano)</small>
     </div>
-    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;">
+    <div class="topbar-meta">
       <span id="visibleCount" class="count">—</span>
       {% include 'partials/noc_topbar.html' %}
     </div>
@@ -447,7 +449,7 @@ window.addEventListener("load", () => {
   </div>
 
   <div class="hidden indent2">
-    <p class="hint" style="margin:0 0 8px 0;">
+    <p class="hint rama-hint-no-margin">
       <label class="rama-cto-select-all-label">
         <input type="checkbox" class="cto-select-all-in-rama" title="Marcar todas las CTO de esta RAMA" aria-label="Seleccionar todas las CTO de esta RAMA">
         Seleccionar todas las CTO de esta RAMA
@@ -460,13 +462,14 @@ window.addEventListener("load", () => {
     </div>
 
     <div class="hidden indent3">
+      <div class="table-wrap">
       <table>
         <tr>
           <th>AID</th>
           <th>Operador</th>
           <th>ONT</th>
-          <th>TX</th>
-          <th>RX</th>
+          <th>TX (dBm)</th>
+          <th>RX (dBm)</th>
         </tr>
         {% for o in onts %}
         <tr data-rama="{{ r.RAMA }}" data-cto="{{ cto }}" data-aid="{{ o.AID }}">
@@ -478,6 +481,7 @@ window.addEventListener("load", () => {
         </tr>
         {% endfor %}
       </table>
+      </div>
     </div>
   {% endfor %}
   </div>

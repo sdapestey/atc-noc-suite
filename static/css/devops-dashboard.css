@@ -445,6 +445,16 @@ input[type="search"] {
   transform: translateY(1px);
 }
 
+.btn:focus-visible,
+.chip:focus-visible,
+.crumb-btn:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .btn[disabled],
 .btn:disabled {
   opacity: 0.5;
@@ -652,14 +662,22 @@ input[type="search"] {
 }
 
 /* ----- Tables ----- */
+.table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius);
+  background: var(--canvas-inset);
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius);
-  overflow: hidden;
-  background: var(--canvas-inset);
+  border: none;
+  border-radius: 0;
+  overflow: visible;
+  background: transparent;
 }
 
 th,
@@ -683,6 +701,32 @@ th {
 
 tr:hover td {
   background: var(--row-hover-bg);
+}
+
+.table-wrap table tr:last-child td {
+  border-bottom: none;
+}
+
+.table-kv th {
+  width: 220px;
+}
+
+.helper-note {
+  margin: 6px 0 0;
+  font-size: 0.88rem;
+}
+
+.muted-caption {
+  font-size: 0.82rem;
+}
+
+.source-note {
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.empty-state-note {
+  padding: 4px 2px;
 }
 
 .cto-header {
@@ -811,6 +855,13 @@ tr:hover td {
   align-items: center;
 }
 
+.topbar-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
 .controls-hint {
   padding: 8px 16px 12px;
   font-size: 12px;
@@ -875,6 +926,29 @@ tr:hover td {
   background: var(--success-muted);
   border-radius: var(--radius);
   margin: 2px 0;
+}
+
+.rama-hint-no-margin {
+  margin: 0 0 8px;
+}
+
+.cto-head-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.cto-head-row .cto-select {
+  flex-shrink: 0;
+  width: auto;
+  margin: 0;
+}
+
+.rama-cto-select-all-label {
+  font-size: 0.88rem;
+  cursor: pointer;
+  user-select: none;
 }
 
 .site-head .muted {
@@ -1315,6 +1389,151 @@ button.pot-btn-loading .pot-txrx-label {
 .camino-panel {
   padding: 0;
   margin-bottom: 20px;
+}
+
+/* ----- Dashboard Altiplano ----- */
+.altiplano-subtabs-shell {
+  border-bottom: 1px solid var(--border-default);
+  margin-bottom: 12px;
+}
+
+.altiplano-subtabs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.altiplano-subtab {
+  appearance: none;
+  border: 1px solid var(--border-default);
+  background: var(--canvas-subtle);
+  color: var(--fg-muted);
+  border-radius: 10px 10px 0 0;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.altiplano-subtab:hover {
+  color: var(--fg-default);
+  border-color: var(--fg-subtle);
+}
+
+.altiplano-subtab.is-active {
+  background: var(--canvas-default);
+  color: var(--fg-default);
+  border-color: var(--border-default);
+  border-bottom-color: var(--canvas-default);
+}
+
+.altiplano-subtabs-shell--nested {
+  margin: 0 0 12px;
+}
+
+.altiplano-subtabs--nested {
+  gap: 6px;
+}
+
+.altiplano-subtab--nested {
+  border-radius: 999px;
+  padding: 7px 12px;
+  border-color: var(--border-muted);
+  background: var(--canvas-subtle);
+}
+
+.altiplano-subtab--nested.is-active {
+  border-color: var(--accent-border);
+  background: var(--accent-muted);
+  color: var(--accent);
+}
+
+.altiplano-subtab--highlight {
+  border-color: rgba(248, 81, 73, 0.35);
+  color: var(--danger-text);
+  background: rgba(248, 81, 73, 0.08);
+}
+
+.altiplano-panel {
+  padding: 0;
+  margin-bottom: 12px;
+}
+
+.altiplano-panel-inner {
+  padding: 16px 18px;
+}
+
+.altiplano-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+}
+
+.altiplano-row-gap-top {
+  margin-top: 12px;
+}
+
+.altiplano-field {
+  flex: 1 1 180px;
+  min-width: 180px;
+}
+
+.altiplano-field-site {
+  min-width: 220px;
+}
+
+.altiplano-field-device,
+.altiplano-field-fiber,
+.altiplano-field-access {
+  min-width: 240px;
+}
+
+.altiplano-field-sm {
+  min-width: 110px;
+  max-width: 140px;
+}
+
+.altiplano-field-vno {
+  min-width: 180px;
+  max-width: 220px;
+}
+
+.altiplano-actions {
+  display: flex;
+  align-items: flex-end;
+}
+
+.altiplano-panel input[type="text"],
+.altiplano-panel select {
+  width: 100%;
+  padding: 10px 12px;
+  padding-right: 34px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-default);
+  background: var(--canvas-inset);
+  color: var(--fg-default);
+  font-size: 14px;
+  font-family: inherit;
+}
+
+.altiplano-panel input[type="text"]:focus,
+.altiplano-panel select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-muted);
+}
+
+.altiplano-panel input[readonly] {
+  color: var(--fg-muted);
+}
+
+.altiplano-result {
+  margin-top: 12px;
+  padding: 14px 16px;
 }
 
 .camino-panel-inner {

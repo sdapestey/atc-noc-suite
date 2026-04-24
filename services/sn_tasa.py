@@ -19,6 +19,12 @@ def normalize_tasa_change_sn(raw: str) -> str:
     - Igual para MSTC (prefijo 4D535443): ``MSTC`` + últimos 8 hex.
     - Si ya viene ``ASKY``/``MSTC`` + 8 hex (12 caracteres), se deja en mayúsculas.
     - En cualquier otro caso se devuelve trim + mayúsculas (comportamiento previo).
+
+    Args:
+        raw: Serial ingresado por usuario.
+
+    Returns:
+        Serial normalizado para enviar al endpoint NBI de TASA.
     """
     s = (raw or "").strip().upper()
     if not s:

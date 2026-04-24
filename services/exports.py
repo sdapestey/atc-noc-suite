@@ -13,7 +13,11 @@ from .inventory import (
 
 
 def export_dashboard_ramas_csv() -> str:
-    """Inventario plano para CSV (misma fuente que el dashboard RAMA)."""
+    """Genera CSV plano del dashboard RAMA.
+
+    Returns:
+        String CSV UTF-8 (sin BOM) listo para enviar en response HTTP.
+    """
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow(["PRINCIPAL", "RAMA", "CTO", "AID", "OPERADOR", "ONT", "TX", "RX"])
@@ -37,7 +41,11 @@ def export_dashboard_ramas_csv() -> str:
 
 
 def export_dashboard_olts_csv() -> str:
-    """Filas LT por OLT para CSV (misma fuente que el dashboard OLT)."""
+    """Genera CSV de filas LT por OLT.
+
+    Returns:
+        String CSV UTF-8 (sin BOM) con métricas por LT.
+    """
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow([
@@ -66,7 +74,18 @@ def export_dashboard_olts_csv() -> str:
 
 
 def export_index_query_csv(value: str) -> str:
-    """CSV coherente con la última búsqueda del índice (ID / FATC / RATC)."""
+    """Exporta a CSV una búsqueda del índice (`/`).
+
+    Args:
+        value: Valor buscado por el usuario (AID, FATC o RATC).
+
+    Returns:
+        String CSV con el resultado normalizado.
+
+    Notes:
+        Si no hay datos, devuelve una fila con `error` para facilitar lectura
+        operativa en planillas.
+    """
     buf = io.StringIO()
     w = csv.writer(buf)
     value = (value or "").strip()

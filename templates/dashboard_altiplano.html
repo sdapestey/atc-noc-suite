@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Altiplano · ATC GPON Inventory</title>
+{% include 'partials/noc_head.html' %}
+<script src="{{ url_for('static', filename='js/noc-tools.js') }}"></script>
+</head>
+<body class="theme-devops page-altiplano">
+<div class="container">
+  <div class="topbar">
+    <div class="brand">
+      <div class="brand-row">
+        {% include 'partials/brand_logo.html' %}
+        <h1>ATC GPON Inventory</h1>
+      </div>
+      <p class="page-lead">
+        <strong>Altiplano</strong> — creación de intent <code class="inline-code">ont-connection</code>.
+      </p>
+    </div>
+    {% include 'partials/noc_topbar.html' %}
+  </div>
+
+  {% include 'partials/nav_dashboard.html' %}
+
+  <div class="altiplano-subtabs-shell">
+    <div class="altiplano-subtabs" role="tablist" aria-label="Secciones Altiplano">
+      <button id="alt-tab-inp" class="altiplano-subtab is-active" type="button" role="tab" aria-selected="true" aria-controls="altiplano-panel-inp">INP</button>
+      <button id="alt-tab-vno" class="altiplano-subtab" type="button" role="tab" aria-selected="false" aria-controls="altiplano-panel-vno">VNO</button>
+    </div>
+  </div>
+
+  <div id="altiplano-panel-inp" role="tabpanel" aria-labelledby="alt-tab-inp">
+    <div class="panel altiplano-panel">
+      <div class="altiplano-panel-inner">
+      <div class="row altiplano-row">
+        <div class="altiplano-field altiplano-field-site">
+          <label class="t" for="sitio">Sitio</label>
+          <select id="sitio">
+            <option value="">Seleccionar sitio...</option>
+            <optgroup label="Moreno">
+              <option value="MR01_01">MR01_01</option>
+              <option value="MR01_02">MR01_02</option>
+              <option value="MR01_03">MR01_03</option>
+            </optgroup>
+            <optgroup label="Escobar">
+              <option value="ES01_01">ES01_01</option>
+              <option value="ES01_02">ES01_02</option>
+            </optgroup>
+            <optgroup label="San Fernando">
+              <option value="SF01_01">SF01_01</option>
+              <option value="SF01_02">SF01_02</option>
+              <option value="SF01_03">SF01_03</option>
+              <option value="SF01_04">SF01_04</option>
+              <option value="SF01_05">SF01_05</option>
+            </optgroup>
+            <optgroup label="San Isidro">
+              <option value="SI01_01">SI01_01</option>
+              <option value="SI01_02">SI01_02</option>
+              <option value="SI01_03">SI01_03</option>
+              <option value="SI01_04">SI01_04</option>
+              <option value="SI02_01">SI02_01</option>
+              <option value="SI02_02">SI02_02</option>
+              <option value="SI02_03">SI02_03</option>
+              <option value="SI02_04">SI02_04</option>
+              <option value="SI03_01">SI03_01</option>
+              <option value="SI03_02">SI03_02</option>
+              <option value="SI03_03">SI03_03</option>
+              <option value="SI03_04">SI03_04</option>
+            </optgroup>
+            <optgroup label="San Martin">
+              <option value="SM01_01">SM01_01</option>
+              <option value="SM01_02">SM01_02</option>
+              <option value="SM01_03">SM01_03</option>
+              <option value="SM01_04">SM01_04</option>
+              <option value="SM01_05">SM01_05</option>
+              <option value="SM01_06">SM01_06</option>
+              <option value="SM02_01">SM02_01</option>
+              <option value="SM02_02">SM02_02</option>
+              <option value="SM02_03">SM02_03</option>
+              <option value="SM02_04">SM02_04</option>
+              <option value="SM02_05">SM02_05</option>
+              <option value="SM02_06">SM02_06</option>
+            </optgroup>
+            <optgroup label="Tigre">
+              <option value="TG01_01">TG01_01</option>
+              <option value="TG01_02">TG01_02</option>
+              <option value="TG01_03">TG01_03</option>
+              <option value="TG01_04">TG01_04</option>
+              <option value="TG01_05">TG01_05</option>
+              <option value="TG02_01">TG02_01</option>
+              <option value="TG02_02">TG02_02</option>
+              <option value="TG02_03">TG02_03</option>
+              <option value="TG02_04">TG02_04</option>
+              <option value="TG02_05">TG02_05</option>
+              <option value="TG02_06">TG02_06</option>
+            </optgroup>
+            <optgroup label="Vicente Lopez">
+              <option value="VL01_01">VL01_01</option>
+              <option value="VL01_02">VL01_02</option>
+              <option value="VL01_03">VL01_03</option>
+            </optgroup>
+          </select>
+        </div>
+        <div class="altiplano-field altiplano-field-device">
+          <label class="t" for="device_name">Device Name (derivado)</label>
+          <input id="device_name" type="text" value="BA_OLTA_" readonly>
+        </div>
+        <div class="altiplano-field altiplano-field-sm">
+          <label class="t" for="lt">LT</label>
+          <input id="lt" type="text" autocomplete="off">
+        </div>
+        <div class="altiplano-field altiplano-field-sm">
+          <label class="t" for="pon">PON</label>
+          <input id="pon" type="text" autocomplete="off">
+        </div>
+        <div class="altiplano-field altiplano-field-sm">
+          <label class="t" for="ont">ONT</label>
+          <input id="ont" type="text" autocomplete="off">
+        </div>
+      </div>
+      <div class="row altiplano-row altiplano-row-gap-top">
+        <div class="altiplano-field altiplano-field-vno">
+          <label class="t" for="vno">VNO</label>
+          <select id="vno">
+            <option value="">Seleccionar VNO...</option>
+            <option value="1001">1001 - TASA</option>
+            <option value="3001">3001 - DIRECTV</option>
+            <option value="3950">3950 - IPLAN</option>
+            <option value="4000">4000 - METROTEL</option>
+            <option value="4010">4010 - METROTEL</option>
+            <option value="962">962 - SION</option>
+            <option value="963">963 - SION</option>
+            <option value="2800">2800 - ATC</option>
+            <option value="2805">2805 - ATC</option>
+            <option value="2806">2806 - ATC</option>
+          </select>
+        </div>
+        <div class="altiplano-field altiplano-field-fiber">
+          <label class="t" for="fiber_name">Fiber Name</label>
+          <input id="fiber_name" type="text" readonly>
+        </div>
+        <div class="altiplano-field altiplano-field-access">
+          <label class="t" for="access_id">Access ID</label>
+          <input id="access_id" type="text" placeholder="1051234567" autocomplete="off">
+        </div>
+        <div class="altiplano-actions">
+          <button id="btn-clear" type="button" class="btn btn-ghost">Limpiar campos</button>
+          <button id="btn-create" type="button" class="btn btn-primary">Crear ONT Connection</button>
+        </div>
+      </div>
+      </div>
+    </div>
+
+    <div id="altiplano-result" class="panel altiplano-result">
+      <p class="muted">Completá los campos y ejecutá la creación del intent.</p>
+    </div>
+  </div>
+
+  <div id="altiplano-panel-vno" role="tabpanel" aria-labelledby="alt-tab-vno" hidden>
+    <div class="altiplano-subtabs-shell altiplano-subtabs-shell--nested">
+      <div class="altiplano-subtabs altiplano-subtabs--nested" role="tablist" aria-label="VNO operadores">
+        <button id="alt-vno-tab-tasa" class="altiplano-subtab altiplano-subtab--nested is-active" type="button" role="tab" aria-selected="true" aria-controls="alt-vno-panel-tasa">TASA</button>
+        <button id="alt-vno-tab-directv" class="altiplano-subtab altiplano-subtab--nested" type="button" role="tab" aria-selected="false" aria-controls="alt-vno-panel-directv">DIRECTV</button>
+        <button id="alt-vno-tab-iplan" class="altiplano-subtab altiplano-subtab--nested" type="button" role="tab" aria-selected="false" aria-controls="alt-vno-panel-iplan">IPLAN</button>
+        <button id="alt-vno-tab-metrotel" class="altiplano-subtab altiplano-subtab--nested" type="button" role="tab" aria-selected="false" aria-controls="alt-vno-panel-metrotel">METROTEL</button>
+        <button id="alt-vno-tab-sion" class="altiplano-subtab altiplano-subtab--nested" type="button" role="tab" aria-selected="false" aria-controls="alt-vno-panel-sion">SION</button>
+        <button id="alt-vno-tab-cambio-cto" class="altiplano-subtab altiplano-subtab--nested altiplano-subtab--highlight" type="button" role="tab" aria-selected="false" aria-controls="alt-vno-panel-cambio-cto">CAMBIO DE CTO</button>
+      </div>
+    </div>
+
+    <div id="alt-vno-panel-tasa" class="panel altiplano-result" role="tabpanel" aria-labelledby="alt-vno-tab-tasa">
+      <p class="muted">Próximamente.</p>
+    </div>
+    <div id="alt-vno-panel-directv" class="panel altiplano-result" role="tabpanel" aria-labelledby="alt-vno-tab-directv" hidden>
+      <p class="muted">Próximamente.</p>
+    </div>
+    <div id="alt-vno-panel-iplan" class="panel altiplano-result" role="tabpanel" aria-labelledby="alt-vno-tab-iplan" hidden>
+      <p class="muted">Próximamente.</p>
+    </div>
+    <div id="alt-vno-panel-metrotel" class="panel altiplano-result" role="tabpanel" aria-labelledby="alt-vno-tab-metrotel" hidden>
+      <p class="muted">Próximamente.</p>
+    </div>
+    <div id="alt-vno-panel-sion" class="panel altiplano-result" role="tabpanel" aria-labelledby="alt-vno-tab-sion" hidden>
+      <p class="muted">Próximamente.</p>
+    </div>
+    <div id="alt-vno-panel-cambio-cto" class="panel altiplano-result" role="tabpanel" aria-labelledby="alt-vno-tab-cambio-cto" hidden>
+      <p class="muted">TODO.</p>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const btn = document.getElementById("btn-create");
+  const btnClear = document.getElementById("btn-clear");
+  const out = document.getElementById("altiplano-result");
+  const topTabs = [
+    { tab: "alt-tab-inp", panel: "altiplano-panel-inp" },
+    { tab: "alt-tab-vno", panel: "altiplano-panel-vno" },
+  ];
+  const vnoTabs = [
+    { tab: "alt-vno-tab-tasa", panel: "alt-vno-panel-tasa" },
+    { tab: "alt-vno-tab-directv", panel: "alt-vno-panel-directv" },
+    { tab: "alt-vno-tab-iplan", panel: "alt-vno-panel-iplan" },
+    { tab: "alt-vno-tab-metrotel", panel: "alt-vno-panel-metrotel" },
+    { tab: "alt-vno-tab-sion", panel: "alt-vno-panel-sion" },
+    { tab: "alt-vno-tab-cambio-cto", panel: "alt-vno-panel-cambio-cto" },
+  ];
+
+  function getValue(id) {
+    const el = document.getElementById(id);
+    return el ? String(el.value || "").trim() : "";
+  }
+
+  function activateTabs(items, activeTabId) {
+    items.forEach(function (item) {
+      const tabEl = document.getElementById(item.tab);
+      const panelEl = document.getElementById(item.panel);
+      const isActive = item.tab === activeTabId;
+      if (tabEl) {
+        tabEl.classList.toggle("is-active", isActive);
+        tabEl.setAttribute("aria-selected", isActive ? "true" : "false");
+      }
+      if (panelEl) panelEl.hidden = !isActive;
+    });
+  }
+
+  function renderResult(payload, ok) {
+    const msg = payload && payload.message ? payload.message : (ok ? "OK" : "Error");
+    const target = payload && payload.target ? payload.target : "";
+    let html = "";
+    html += '<p><strong>' + (ok ? "Solicitud exitosa" : "Solicitud fallida") + ":</strong> " + msg + "</p>";
+    if (target) {
+      html += '<p><strong>Target:</strong> <code class="inline-code">' + target + "</code></p>";
+    }
+    out.innerHTML = html;
+  }
+
+  function buildDeviceName() {
+    const sitio = getValue("sitio");
+    return "BA_OLTA_" + sitio;
+  }
+
+  function buildFiberName() {
+    const device = buildDeviceName();
+    const lt = getValue("lt");
+    const pon = getValue("pon");
+    if (!lt || !pon) return "";
+    return device + "-" + lt + "-" + pon;
+  }
+
+  function refreshDerivedFields() {
+    const deviceEl = document.getElementById("device_name");
+    const fiberEl = document.getElementById("fiber_name");
+    if (deviceEl) deviceEl.value = buildDeviceName();
+    if (fiberEl) fiberEl.value = buildFiberName();
+  }
+
+  function submitIntent() {
+    const required = [
+      ["sitio", "Sitio"],
+      ["lt", "LT"],
+      ["pon", "PON"],
+      ["ont", "ONT"],
+      ["vno", "VNO"],
+      ["access_id", "Access ID"],
+    ];
+    for (let i = 0; i < required.length; i++) {
+      const id = required[i][0];
+      const label = required[i][1];
+      if (!getValue(id)) {
+        renderResult({ message: "Completá el campo requerido: " + label }, false);
+        return;
+      }
+    }
+
+    const deviceName = buildDeviceName();
+    const fiberName = buildFiberName();
+    const body = {
+      operador: "TASA",
+      entorno_nbi: "INP",
+      sitio: getValue("sitio"),
+      device_name: deviceName,
+      lt: getValue("lt"),
+      pon: getValue("pon"),
+      ont: getValue("ont"),
+      vno: getValue("vno"),
+      fiber_name: fiberName,
+      access_id: getValue("access_id"),
+    };
+
+    btn.disabled = true;
+    out.innerHTML = '<p class="muted">Creando intent... <span aria-hidden="true">⏳</span></p>';
+    fetch("/dashboard/altiplano/ont-connection", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Accept": "application/json" },
+      body: JSON.stringify(body),
+    })
+      .then(function (res) {
+        return res.json().then(function (j) { return { ok: res.ok, payload: j || {} }; });
+      })
+      .then(function (r) {
+        renderResult(r.payload, r.ok);
+      })
+      .catch(function () {
+        renderResult({ message: "Error de red o servidor" }, false);
+      })
+      .finally(function () {
+        btn.disabled = false;
+      });
+  }
+
+  function clearFields() {
+    const toClear = ["sitio", "lt", "pon", "ont", "vno", "access_id"];
+    toClear.forEach(function (id) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.value = "";
+    });
+    refreshDerivedFields();
+    out.innerHTML = '<p class="muted">Campos limpiados. Completá los datos para crear el intent.</p>';
+  }
+
+  ["sitio", "lt", "pon"].forEach(function (id) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (id === "sitio") {
+      el.addEventListener("change", refreshDerivedFields);
+    } else {
+      el.addEventListener("input", refreshDerivedFields);
+    }
+  });
+  topTabs.forEach(function (item) {
+    const tabEl = document.getElementById(item.tab);
+    if (tabEl) tabEl.addEventListener("click", function () { activateTabs(topTabs, item.tab); });
+  });
+  vnoTabs.forEach(function (item) {
+    const tabEl = document.getElementById(item.tab);
+    if (tabEl) tabEl.addEventListener("click", function () { activateTabs(vnoTabs, item.tab); });
+  });
+  activateTabs(topTabs, "alt-tab-inp");
+  activateTabs(vnoTabs, "alt-vno-tab-tasa");
+  refreshDerivedFields();
+  btn.addEventListener("click", submitIntent);
+  if (btnClear) btnClear.addEventListener("click", clearFields);
+})();
+</script>
+<script>
+window.addEventListener("load", function () {
+  if (window.initNocPage) initNocPage({ page: "altiplano" });
+});
+</script>
+</body>
+</html>

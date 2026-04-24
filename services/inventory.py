@@ -267,6 +267,15 @@ def consultar_access_id_baja_o_ausente(access_id: str) -> dict:
 
 
 def consultar_access_id_estructura(access_id):
+    """Obtiene topología básica de un Access ID desde inventario activo.
+
+    Args:
+        access_id: Identificador numérico del servicio.
+
+    Returns:
+        Diccionario con AID, operador, estado, CTO, rama, ONT y SN.
+        Retorna `None` cuando el AID no existe en inventario activo.
+    """
     with db_cursor() as cur:
         cur.execute(QUERIES["access_id_topologia"], (access_id,))
         row = cur.fetchone()
@@ -290,7 +299,52 @@ def consultar_access_id_estructura(access_id):
     }
 
 
+def consultar_access_id_desde_alias(alias: str) -> dict | None:
+    """
+    Busca un acceso por alias no numérico (ej: Srvc_loc_*, RES_MT_*), case-insensitive.
+    Retorna el mismo shape que consultar_access_id_estructura para reutilizar render de índice.
+    """
+    raw = (alias or "").strip()
+    if not raw:
+        return None
+
+    with db_cursor() as cur:
+        cur.execute(QUERIES["access_id_desde_alias"], (raw,))
+        row = cur.fetchone()
+
+    if not row:
+        return None
+
+    aid, status, cto, rama, obj_raw, obj_ui, serial_number, op_id = row
+    sn = (str(serial_number).strip() if serial_number else "") or obj_ui
+    return {
+        "AID": str(aid),
+        "OPERADOR": nombre_operador(op_id),
+        "Status": status,
+        "CTO": cto,
+        "RAMA": rama,
+        "ONT": obj_ui or "—",
+        "SN": sn or "—",
+        "TX": None,
+        "RX": None,
+        "fuente_detalle": "alias_inventario",
+    }
+
+
 def consultar_access_id_potencias(access_id):
+    """Consulta TX/RX de un Access ID puntual.
+
+    Flujo:
+    1) Resuelve la estructura del AID.
+    2) Busca ONT de la CTO para conocer NE/operador.
+    3) Consulta Altiplano y devuelve solo la potencia del AID requerido.
+
+    Args:
+        access_id: Access ID a consultar.
+
+    Returns:
+        Dict con `AID`, `TX` y `RX` (valores numéricos o `None`).
+    """
     base = consultar_access_id_estructura(access_id)
     if not base:
         return {"AID": access_id, "TX": None, "RX": None}
@@ -311,6 +365,14 @@ def consultar_access_id_potencias(access_id):
 
 
 def consultar_cto_estructura(cto):
+    """Devuelve el inventario en servicio de una CTO.
+
+    Args:
+        cto: Identificador FATC de la CTO.
+
+    Returns:
+        Lista de ONTs con metadatos de operador, rama, SN y estado.
+    """
     with db_cursor() as cur:
         cur.execute(QUERIES["onts_por_cto"], (cto,))
         rows = cur.fetchall()
@@ -355,6 +417,14 @@ def _potencias_desde_filas_ont_cto(rows):
 
 
 def consultar_cto_potencias(cto):
+    """Devuelve TX/RX de todas las ONT de una CTO.
+
+    Args:
+        cto: CTO FATC.
+
+    Returns:
+        Lista de dicts `{AID, TX, RX}`. Lista vacía si no hay datos.
+    """
     if cto is None or not str(cto).strip():
         return []
 
@@ -403,6 +473,15 @@ def consultar_cto_coordenadas(cto):
 
 
 def consultar_rama_estructura(rama):
+    """Obtiene ONTs en servicio agrupadas por CTO para una rama dada.
+
+    Args:
+        rama: Identificador RATC.
+
+    Returns:
+        `defaultdict(list)` donde cada clave es una CTO y el valor
+        es una lista de ONTs con sus metadatos.
+    """
     with db_cursor() as cur:
         cur.execute(
             """
@@ -434,6 +513,14 @@ def consultar_rama_estructura(rama):
 
 
 def consultar_rama_potencias(rama):
+    """Devuelve TX/RX de todas las ONT de una rama.
+
+    Args:
+        rama: Identificador RATC.
+
+    Returns:
+        Lista de registros `{AID, TX, RX}` consolidada por CTO.
+    """
     if rama is None or not str(rama).strip():
         return []
 

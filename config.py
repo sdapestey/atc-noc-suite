@@ -15,6 +15,7 @@ except ImportError:
 
 
 def _database_from_url(url: str) -> dict:
+    """Parsea `DATABASE_URL` y devuelve parámetros compatibles con psycopg2."""
     p = urlparse(url)
     if p.scheme not in ("postgresql", "postgres"):
         raise ValueError("DATABASE_URL debe ser postgresql://...")
@@ -43,6 +44,7 @@ def get_db_params() -> dict:
 
 
 def get_altiplano_credentials() -> tuple[str, str]:
+    """Credenciales globales de Altiplano (fallback por defecto)."""
     user = os.environ.get("ALTIPLANO_USER", "")
     password = os.environ.get("ALTIPLANO_PASSWORD", "")
     return user, password
@@ -61,6 +63,7 @@ def get_altiplano_operator_credentials(operator: str) -> tuple[str, str]:
         "IPLAN": "IPLAN",
         "ATC": "ATC",
         "SION": "SION",
+        "INP": "INP",
     }.get(op)
     if not op_key:
         return get_altiplano_credentials()
@@ -77,6 +80,7 @@ def get_altiplano_nbi_target(operator: str) -> tuple[str, str, str]:
     """
     op = (operator or "").strip().upper()
     defaults = {
+        "INP": ("10.200.3.100", "32443", "inp-altiplano-ac"),
         "TASA": ("10.200.4.101", "32443", "tasa-altiplano-ac"),
         "DIRECTV": ("10.200.7.107", "32443", "dtv-altiplano-ac"),
         "METROTEL": ("10.200.5.102", "32443", "metro-altiplano-ac"),
@@ -86,6 +90,7 @@ def get_altiplano_nbi_target(operator: str) -> tuple[str, str, str]:
     }
     host, port, base = defaults.get(op, ("", "", ""))
     env_prefix = {
+        "INP": "ALTIPLANO_INP",
         "TASA": "ALTIPLANO_TASA",
         "DIRECTV": "ALTIPLANO_DTV",
         "METROTEL": "ALTIPLANO_METRO",
@@ -144,6 +149,7 @@ def get_dashboard_olt_cache_seconds() -> int:
 
 
 class Config:
+    """Configuración base de Flask y parámetros globales del proyecto."""
     SECRET_KEY = os.environ.get("SECRET_KEY", "dev-only-change-in-production")
     HOST = os.environ.get("FLASK_HOST", "0.0.0.0")
     PORT = int(os.environ.get("FLASK_PORT", "9002"))

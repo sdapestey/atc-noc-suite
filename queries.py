@@ -28,6 +28,29 @@ QUERIES = {
     """,
 
     # ===============================
+    # Access ID por alias/identificador no numérico (ej: Srvc_loc_*, RES_MT_*)
+    # ===============================
+    "access_id_desde_alias": """
+        SELECT
+            f.access_id,
+            f.status,
+            f.location_description AS cto,
+            f.path_atc AS rama,
+            s.object_name AS object_name_raw,
+            REPLACE(s.object_name, ':1-1', '') AS object_name_ui,
+            s.serial_number AS serial_number,
+            o.invocator_system
+        FROM cm.inventory_fat_occupation f
+        LEFT JOIN altiplano.serial s
+               ON s.access_id = f.access_id
+        LEFT JOIN cm.inventory_olt_occupation o
+               ON o.access_id = f.access_id
+        WHERE LOWER(btrim(SPLIT_PART(COALESCE(s.object_name, ''), ':', 1))) = LOWER(btrim(%s))
+        ORDER BY f.access_id
+        LIMIT 1
+    """,
+
+    # ===============================
     # ONT por CTO (todas las ONT de una CTO)
     # ===============================
     "onts_por_cto": """

@@ -23,7 +23,15 @@ def _cto_maps_url_for_fatc_location(cto_fat: str) -> str | None:
 
 
 def _report_isp_por_rama(cur, path_atc):
-    """Una fila reciente de cm_report_isp por sistema óptico (rama)."""
+    """Obtiene una fila reciente de `cm_report_isp` para una rama.
+
+    Args:
+        cur: Cursor abierto de Postgres.
+        path_atc: Rama/path ATC.
+
+    Returns:
+        Diccionario con columnas del reporte ISP o `None` si no hay fila.
+    """
     if not path_atc:
         return None
     cur.execute(
@@ -66,7 +74,15 @@ def _report_isp_por_rama(cur, path_atc):
 
 
 def dashboard_camino_optico_cto(cto):
-    """ONT de la CTO + camino hacia sitio (FAT + report ISP por rama)."""
+    """Consulta detalle de una CTO para el dashboard Camino Óptico.
+
+    Args:
+        cto: Identificador FATC.
+
+    Returns:
+        Dict con resumen, ONTs, caminos ISP por rama y link de mapas.
+        Si no hay datos, devuelve `{"error": ...}`.
+    """
     cto = (cto or "").strip()
     if not cto:
         return {"error": "CTO vacío"}
@@ -141,7 +157,14 @@ def dashboard_camino_optico_cto(cto):
 
 
 def dashboard_camino_optico_rama(rama):
-    """Conteo CTO / ONT por rama + listado de CTOs + tramo ISP."""
+    """Consulta vista agregada por rama para Camino Óptico.
+
+    Args:
+        rama: Identificador RATC.
+
+    Returns:
+        Dict con conteos (CTO/ONT), lista de CTOs y tramo ISP.
+    """
     rama = (rama or "").strip()
     if not rama:
         return {"error": "Rama vacía"}
@@ -182,7 +205,15 @@ def dashboard_camino_optico_rama(rama):
 
 
 def dashboard_camino_optico_access_id(access_id):
-    """Una ONT: detalle FAT + tramo ISP."""
+    """Consulta una ONT puntual por Access ID para Camino Óptico.
+
+    Args:
+        access_id: Access ID numérico.
+
+    Returns:
+        Dict con detalle FAT, operador, tramo ISP y link de mapas.
+        Si el formato es inválido o no hay datos, devuelve `{"error": ...}`.
+    """
     aid = (access_id or "").strip()
     if not aid or not str(aid).isdigit():
         return {"error": "Access ID inválido (solo números)"}

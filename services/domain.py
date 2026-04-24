@@ -40,10 +40,12 @@ OLT_PRESENCIA_FORZADA = [
 
 
 def nombre_operador(op_id: Any) -> str:
+    """Mapea `operator_id` a nombre comercial legible."""
     return OPERADORES.get(op_id, str(op_id))
 
 
 def natural_sort_key_str(s: Optional[str]):
+    """Genera clave de orden natural (texto + números)."""
     if s is None:
         return ()
     parts = re.split(r"(\d+)", str(s))
@@ -57,11 +59,13 @@ def natural_sort_key_str(s: Optional[str]):
 
 
 def calcular_ne(object_name_raw: str) -> str:
+    """Deriva el NE (`<OLT>.LT<n>`) desde `object_name` de Altiplano."""
     p = object_name_raw.split("-")
     return f"{p[0]}.LT{p[1]}"
 
 
 def lt_desde_object_name(object_name_raw: Optional[str]) -> Optional[str]:
+    """Deriva LT lógica desde `object_name`; retorna `None` si no aplica."""
     if not object_name_raw:
         return None
     p = object_name_raw.split("-")
@@ -71,6 +75,7 @@ def lt_desde_object_name(object_name_raw: Optional[str]) -> Optional[str]:
 
 
 def principal_y_sitio_desde_olt(olt_logico: str) -> Tuple[str, str, str]:
+    """Obtiene sitio principal y código de sitio a partir del nombre de OLT."""
     o = (olt_logico or "").strip()
     m = re.match(r"^BA_OLTA_([A-Z]{2}\d{2})_(\d{2})$", o, re.I)
     if not m:
@@ -83,11 +88,13 @@ def principal_y_sitio_desde_olt(olt_logico: str) -> Tuple[str, str, str]:
 
 
 def principal_sort_key(nombre: str):
+    """Clave de orden para sitios principales con prioridades de negocio."""
     prio = {"Moreno": 0, "Otros": 99}
     return (prio.get(nombre, 50), natural_sort_key_str(nombre))
 
 
 def region_desde_rama(rama: str) -> str:
+    """Extrae región base (ej. `TG01`) desde un identificador de rama."""
     if not rama:
         return ""
     s = str(rama).strip()
@@ -101,6 +108,7 @@ def region_desde_rama(rama: str) -> str:
 
 
 def clasificar_rx_dbm(rx: Any) -> Optional[str]:
+    """Clasifica RX dBm en `rojo`, `amarillo`, `verde` o `None`."""
     if rx is None:
         return None
     try:

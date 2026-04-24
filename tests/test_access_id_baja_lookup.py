@@ -417,3 +417,100 @@ def test_index_post_aid_bajada_muestra_tabla_aunque_haya_baja_aux(client, monkey
     assert "Access ID dado de baja" not in html
     assert "<th>AID</th>" in html
     assert "999001" in html
+
+
+def test_index_post_alias_srvc_loc_ok(client, monkeypatch):
+    import web.routes as routes
+
+    monkeypatch.setattr(
+        routes,
+        "consultar_access_id_desde_alias",
+        lambda _alias: {
+            "AID": "1058516041",
+            "OPERADOR": "METROTEL",
+            "Status": "IN SERVICE",
+            "CTO": "TG01-FATC-8-1",
+            "RAMA": "TG01-RATC-0-1",
+            "ONT": "SRVC_LOC_2157",
+            "SN": "ALCLF00ABCD12",
+            "TX": None,
+            "RX": None,
+            "fuente_detalle": "alias_inventario",
+        },
+    )
+    monkeypatch.setattr(routes, "consultar_cto_coordenadas", lambda _cto: None)
+
+    r = client.post("/", data={"value": "Srvc_loc_2157"})
+    assert r.status_code == 200
+    html = r.get_data(as_text=True)
+    assert "<th>AID</th>" in html
+    assert "1058516041" in html
+    assert "Access ID dado de baja" not in html
+
+
+def test_index_post_alias_res_mt_ok_case_insensitive(client, monkeypatch):
+    import web.routes as routes
+
+    monkeypatch.setattr(
+        routes,
+        "consultar_access_id_desde_alias",
+        lambda _alias: {
+            "AID": "1057770001",
+            "OPERADOR": "IPLAN",
+            "Status": "IN SERVICE",
+            "CTO": "SF01-FATC-8-200189",
+            "RAMA": "SF01-RATC-0-000308",
+            "ONT": "RES_MT_172",
+            "SN": "HWTCABC12345",
+            "TX": None,
+            "RX": None,
+            "fuente_detalle": "alias_inventario",
+        },
+    )
+    monkeypatch.setattr(routes, "consultar_cto_coordenadas", lambda _cto: None)
+
+    r = client.post("/", data={"value": "res_mt_172"})
+    assert r.status_code == 200
+    html = r.get_data(as_text=True)
+    assert "<th>AID</th>" in html
+    assert "1057770001" in html
+
+
+def test_index_post_alias_no_existe_banner(client, monkeypatch):
+    import web.routes as routes
+
+    monkeypatch.setattr(routes, "consultar_access_id_desde_alias", lambda _alias: None)
+
+    r = client.post("/", data={"value": "Srvc_loc_999999"})
+    assert r.status_code == 200
+    html = r.get_data(as_text=True)
+    assert "Access ID no encontrado." in html
+    assert "Srvc_loc_999999" in html
+
+
+def test_index_post_alias_res_ip_ok(client, monkeypatch):
+    import web.routes as routes
+
+    monkeypatch.setattr(
+        routes,
+        "consultar_access_id_desde_alias",
+        lambda _alias: {
+            "AID": "1058880001",
+            "OPERADOR": "IPLAN",
+            "Status": "IN SERVICE",
+            "CTO": "TG01-FATC-8-100987",
+            "RAMA": "TG01-RATC-0-000308",
+            "ONT": "RES_IP_61",
+            "SN": "HWTCABC00061",
+            "TX": None,
+            "RX": None,
+            "fuente_detalle": "alias_inventario",
+        },
+    )
+    monkeypatch.setattr(routes, "consultar_cto_coordenadas", lambda _cto: None)
+
+    r = client.post("/", data={"value": "RES_IP_61"})
+    assert r.status_code == 200
+    html = r.get_data(as_text=True)
+    assert "<th>AID</th>" in html
+    assert "1058880001" in html

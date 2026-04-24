@@ -188,6 +188,14 @@ function _esc(s) {
   return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 }
 
+function _formatPowerDbm(v) {
+  if (v === null || v === undefined) return "-";
+  const raw = String(v).trim();
+  if (!raw || raw === "-" || raw === "⏳") return raw || "-";
+  if (/dbm$/i.test(raw)) return raw;
+  return raw + " dBm";
+}
+
 function _addSem(row, res) {
   if (!res) return;
   const r = row.querySelector(".rojas");
@@ -273,7 +281,7 @@ function buildRamaBlockHtml(uid, rama, block, parentRamaId, depth) {
                 </div>
 
                 <table class="hidden olt-tree-table olt-tree-depth-${tblDepth}" data-parent="${ctoId}">
-                <tr><th>AID</th><th>Operador</th><th>ONT</th><th>TX</th><th>RX</th><th></th></tr>`;
+                <tr><th>AID</th><th>Operador</th><th>ONT</th><th>TX (dBm)</th><th>RX (dBm)</th><th></th></tr>`;
 
     (ctos[cto] || []).forEach((o) => {
       html += `
@@ -524,8 +532,8 @@ function potenciaRama(rama, wrap, row, btnEl) {
           if (!tr) return;
           if (decodeURIComponent(tr.getAttribute("data-rama") || "") !== rama) return;
           if (tr.children[3] && tr.children[4]) {
-            tr.children[3].textContent = cell.TX ?? "-";
-            tr.children[4].textContent = cell.RX ?? "-";
+            tr.children[3].textContent = _formatPowerDbm(cell.TX);
+            tr.children[4].textContent = _formatPowerDbm(cell.RX);
           }
         });
       });
@@ -552,8 +560,8 @@ function potenciaCto(cto, wrap, row, btnEl) {
         const tr = findTrByAid(wrap, rec.AID);
         if (!tr || decodeURIComponent(tr.getAttribute("data-cto") || "") !== cto) return;
         if (tr.children[3] && tr.children[4]) {
-          tr.children[3].textContent = rec.TX ?? "-";
-          tr.children[4].textContent = rec.RX ?? "-";
+          tr.children[3].textContent = _formatPowerDbm(rec.TX);
+          tr.children[4].textContent = _formatPowerDbm(rec.RX);
           _addSemFromRx(row, rec.RX);
         }
       });
@@ -578,8 +586,8 @@ function potenciaAid(aid, wrap, row, btnEl) {
       if (!data || data.AID == null) return;
       const tr = findTrByAid(wrap, data.AID);
       if (!tr || tr.children[3] == null) return;
-      tr.children[3].textContent = data.TX ?? "-";
-      tr.children[4].textContent = data.RX ?? "-";
+      tr.children[3].textContent = _formatPowerDbm(data.TX);
+      tr.children[4].textContent = _formatPowerDbm(data.RX);
       _addSemFromRx(row, data.RX);
       _recomputePeor(wrap, row);
     })

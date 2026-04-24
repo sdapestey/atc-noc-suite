@@ -12,6 +12,12 @@ _olt = {"payload": None, "expires_at": 0.0}
 
 
 def get_cached_rama(ttl_seconds: int, factory: Callable[[], T]) -> T:
+    """Devuelve payload cacheado del árbol RAMA o lo recalcula.
+
+    Args:
+        ttl_seconds: Tiempo de vida en segundos. Si es `<= 0`, no cachea.
+        factory: Función que construye el payload fresco.
+    """
     if ttl_seconds <= 0:
         return factory()
     with _lock_rama:
@@ -25,6 +31,12 @@ def get_cached_rama(ttl_seconds: int, factory: Callable[[], T]) -> T:
 
 
 def get_cached_olt(ttl_seconds: int, factory: Callable[[], T]) -> T:
+    """Devuelve payload cacheado del árbol OLT o lo recalcula.
+
+    Args:
+        ttl_seconds: Tiempo de vida en segundos. Si es `<= 0`, no cachea.
+        factory: Función que construye el payload fresco.
+    """
     if ttl_seconds <= 0:
         return factory()
     with _lock_olt:

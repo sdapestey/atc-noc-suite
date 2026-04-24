@@ -21,6 +21,15 @@ from .domain import (
 
 
 def _compute_dashboard_ramas():
+    """Construye el árbol base de dashboard RAMA desde Postgres.
+
+    Returns:
+        Lista de bloques por sitio principal con esta estructura:
+        `[{PRINCIPAL, SEARCH_TEXT, RAMAS:[...]}]`.
+
+    Notes:
+        No consulta potencias; solo arma inventario estructural para UI y exportación.
+    """
     with db_cursor() as cur:
         cur.execute(
             """
@@ -99,6 +108,15 @@ def dashboard_ramas():
 
 
 def consultar_dashboard_rama(rama):
+    """Consulta potencias de una rama y devuelve resumen semafórico.
+
+    Args:
+        rama: Identificador de rama (ej. `XX01-RATC-...`).
+
+    Returns:
+        Dict por CTO/AID con TX/RX y una clave extra `__dashboard_resumen__`
+        con conteos `ROJAS`, `AMARILLAS`, `VERDES`.
+    """
     if rama is None or not str(rama).strip():
         return {
             "__dashboard_resumen__": {"ROJAS": 0, "AMARILLAS": 0, "VERDES": 0},

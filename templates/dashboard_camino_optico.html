@@ -116,11 +116,11 @@
       html += "</div>";
       html += renderIspBlock(data.camino_isp, "Camino hacia cabecera (una rama representativa)");
       html += "<p class=\"muted\">CTOs que cuelgan de esta rama (inventario en servicio):</p>";
-      html += "<table><thead><tr><th>CTO</th><th>ONT</th></tr></thead><tbody>";
+      html += '<div class="table-wrap"><table><thead><tr><th>CTO</th><th>ONT</th></tr></thead><tbody>';
       (data.ctos || []).forEach(function(c){
         html += "<tr><td>" + esc(c.cto) + "</td><td>" + esc(c.onts) + "</td></tr>";
       });
-      html += "</tbody></table></div>";
+      html += "</tbody></table></div></div>";
       out.innerHTML = html;
       return;
     }
@@ -155,9 +155,9 @@
         html += renderIspBlock(isp, "Desde esta CTO hacia el sitio");
       }
       html += "<p class=\"muted\">ONT conectadas a esta CTO:</p>";
-      html += "<table><thead><tr><th>Access ID</th><th>ONT</th><th>Operador</th><th>Rama</th><th>Puerto</th><th>Componente</th><th>Cadena instalaciones</th></tr></thead><tbody>";
+      html += '<div class="table-wrap"><table><thead><tr><th>Access ID</th><th>ONT</th><th>Operador</th><th>Rama</th><th>Puerto</th><th>Componente</th><th>Cadena instalaciones</th></tr></thead><tbody>';
       (data.onts || []).forEach(function(o){ html += renderFatOntRow(o); });
-      html += "</tbody></table></div>";
+      html += "</tbody></table></div></div>";
       out.innerHTML = html;
       return;
     }

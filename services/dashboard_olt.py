@@ -21,11 +21,13 @@ from .domain import (
 
 
 def _is_fatc_path(path: str) -> bool:
+    """Indica si un path_atc corresponde a una rama FATC."""
     u = str(path).upper()
     return "-FATC-" in u
 
 
 def _is_ratc_path(path: str) -> bool:
+    """Indica si un path_atc corresponde a una rama RATC."""
     u = str(path).upper()
     return "-RATC-" in u
 
@@ -67,6 +69,7 @@ def _nest_fatc_under_ratc(ramas_out: dict) -> dict:
 
 
 def _lt_natural_order(lt_str: str):
+    """Clave de orden para LT agrupando por principal/sitio y número de LT."""
     olt = lt_str.split(".")[0] if "." in lt_str else lt_str
     principal, codigo, _ = principal_y_sitio_desde_olt(olt)
     m = re.search(r"\.LT(\d+)$", lt_str, re.I)
@@ -102,8 +105,18 @@ def _pon_num_desde_object_name(object_name_raw: str):
 
 def _pon_por_access_ids(cur, access_ids):
     """
-    Preferir PON explícito desde aux.bajada_inventario por access_id.
-    Si la tabla/columna no existe, devuelve vacío y aplica fallback.
+    Busca PON explícito en `aux.bajada_inventario` para una lista de Access ID.
+
+    Args:
+        cur: Cursor abierto de Postgres.
+        access_ids: Lista de Access ID.
+
+    Returns:
+        Mapa `{access_id: "PON <n>"}`.
+
+    Notes:
+        Si la tabla o columna no existe, retorna `{}` para usar fallback
+        por parsing de `object_name`.
     """
     ids = [str(a).strip() for a in access_ids if str(a).strip()]
     if not ids:
@@ -238,8 +251,14 @@ def estructura_dashboard_lt(lt):
 
 def _compute_dashboard_olts():
     """
-    Árbol: Sitio principal → OLT (BA_OLTA_…) → filas LT.
-    Incluye OLT MR01_01..03 aunque no haya aún ONT en inventario.
+    Construye árbol de inventario OLT/LT sin consultar potencias.
+
+    Returns:
+        Lista jerárquica por sitio principal con OLTs y filas LT.
+
+    Notes:
+        Fuerza presencia de ciertas OLTs (`OLT_PRESENCIA_FORZADA`) aunque
+        todavía no tengan ONTs cargadas en inventario.
     """
     with db_cursor() as cur:
         cur.execute(

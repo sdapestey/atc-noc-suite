@@ -18,6 +18,16 @@ logger = logging.getLogger(__name__)
 _token_cache = {}
 
 
+def _extract_altiplano_error_message(response: requests.Response) -> str:
+    """Obtiene un mensaje de error breve desde una respuesta HTTP de Altiplano."""
+    try:
+        body = response.json()
+        msg = body.get("errors") or body.get("error-message") or str(body)
+    except ValueError:
+        msg = (response.text or "").strip()
+    return msg[:260] if msg else f"HTTP {response.status_code}"
+
+
 def _obtener_token(auth_url, username=None, password=None, force_refresh=False):
     """
     Devuelve un token cacheado para Altiplano.
@@ -50,7 +60,16 @@ def _obtener_token(auth_url, username=None, password=None, force_refresh=False):
 
 def cambiar_sn_ont(access_id, operador, ont_target, new_sn):
     """
-    Cambia expected-serial-number en el intent ONT de Altiplano.
+    Cambia el serial esperado de una ONT en Altiplano.
+
+    Args:
+        access_id: Access ID asociado a la ONT.
+        operador: Operador comercial (ej. TASA, DIRECTV).
+        ont_target: Target técnico del intent ONT.
+        new_sn: Nuevo serial a configurar.
+
+    Returns:
+        Dict con `ok` y `message`. En éxito también incluye `sn`.
     """
     aid = str(access_id or "").strip()
     op = str(operador or "").strip().upper()
@@ -127,13 +146,167 @@ def cambiar_sn_ont(access_id, operador, ont_target, new_sn):
     if 200 <= res.status_code < 300:
         return {"ok": True, "message": "SN actualizado correctamente", "sn": sn}
 
-    msg = ""
+    msg = _extract_altiplano_error_message(res)
+    return {"ok": False, "message": f"Altiplano rechazó la operación: {msg}"}
+
+
+def crear_ont_connection_intent(
+    operador,
+    entorno_nbi,
+    device_name,
+    lt,
+    pon,
+    ont,
+    vno,
+    fiber_name,
+    access_id,
+    pir=1000,
+    cir=35,
+    intent_type_version="11",
+):
+    """
+    Crea un intent `ont-connection` en Altiplano.
+
+    Args:
+        operador: Operador de negocio (credenciales por operador).
+        entorno_nbi: Entorno de destino NBI (por ejemplo INP).
+        device_name: Equipo OLT lógico.
+        lt: LT de la ONT.
+        pon: PON de la ONT.
+        ont: Índice/puerto ONT.
+        vno: VNO a aplicar en el target.
+        fiber_name: Nombre de fibra (normalmente derivado en backend/UI).
+        access_id: Access ID comercial.
+        pir: Perfil PIR a enviar en el intent.
+        cir: Perfil CIR a enviar en el intent.
+        intent_type_version: Versión del intent-type en Altiplano.
+
+    Returns:
+        Dict normalizado con `ok`, `message` y, en éxito, `target`.
+        En caso de error de red o validación devuelve `ok=False`.
+    """
+    op = str(operador or "").strip().upper()
+    nbi_env = str(entorno_nbi or "").strip().upper()
+    device = str(device_name or "").strip()
+    lt_s = str(lt or "").strip()
+    pon_s = str(pon or "").strip()
+    ont_s = str(ont or "").strip()
+    vno_s = str(vno or "").strip()
+    fiber = str(fiber_name or "").strip()
+    aid = str(access_id or "").strip()
+    ver = str(intent_type_version or "").strip() or "11"
+
+    if not op:
+        return {"ok": False, "message": "Operador requerido"}
+    if not nbi_env:
+        nbi_env = "INP"
+    if not device:
+        return {"ok": False, "message": "Device Name requerido"}
+    if not lt_s or not pon_s or not ont_s:
+        return {"ok": False, "message": "LT, PON y ONT son requeridos"}
+    if not vno_s:
+        return {"ok": False, "message": "VNO requerido"}
+    if not fiber:
+        return {"ok": False, "message": "Fiber Name requerido"}
+    if not aid:
+        return {"ok": False, "message": "Access ID requerido"}
+
     try:
-        j = res.json()
-        msg = j.get("errors") or j.get("error-message") or str(j)
-    except ValueError:
-        msg = (res.text or "").strip()
-    msg = msg[:260] if msg else f"HTTP {res.status_code}"
+        pir_n = int(pir)
+        cir_n = int(cir)
+    except (TypeError, ValueError):
+        return {"ok": False, "message": "PIR/CIR inválidos"}
+    if pir_n <= 0 or cir_n < 0:
+        return {"ok": False, "message": "PIR/CIR fuera de rango"}
+
+    host, port, base_url = get_altiplano_nbi_target(nbi_env)
+    if not host or not port or not base_url:
+        return {"ok": False, "message": f"Entorno NBI no soportado: {nbi_env}"}
+
+    username, pwd = get_altiplano_operator_credentials(op)
+    if not username or not pwd:
+        return {"ok": False, "message": f"Credenciales no configuradas para operador {op}"}
+
+    auth_url = f"https://{host}:{port}/{base_url}/rest/auth/login"
+    token = _obtener_token(auth_url, username=username, password=pwd)
+    if not token:
+        return {"ok": False, "message": "No se pudo autenticar contra Altiplano"}
+
+    target = f"{device}-{lt_s}-{pon_s}-{ont_s}#{vno_s}#gpon"
+    url = (
+        f"https://{host}:{port}/{base_url}/rest/restconf/data/ibn:ibn"
+        "?altiplano-triggerSyncUponSuccess=true"
+    )
+    logger.info(
+        "Altiplano ont-connection request: operador=%s entorno=%s url=%s",
+        op,
+        nbi_env,
+        url,
+    )
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/yang-data+json",
+        "Content-Type": "application/yang-data+json",
+    }
+    payload = {
+        "ibn:intent": {
+            "target": target,
+            "intent-type": "ont-connection",
+            "intent-specific-data": {
+                "ont-connection:ont-connection": {
+                    "pir": pir_n,
+                    "cir": cir_n,
+                    "fiber-name": fiber,
+                    "access-id": aid,
+                }
+            },
+            "intent-type-version": ver,
+            "required-network-state": "active",
+        }
+    }
+
+    try:
+        res = requests.post(url, json=payload, headers=headers, verify=False, timeout=45)
+    except requests.RequestException as ex:
+        return {"ok": False, "message": f"Error de red hacia Altiplano: {ex}"}
+
+    if res.status_code == 401:
+        token = _obtener_token(
+            auth_url,
+            username=username,
+            password=pwd,
+            force_refresh=True,
+        )
+        if not token:
+            return {"ok": False, "message": "Token expirado y no se pudo renovar"}
+        headers["Authorization"] = f"Bearer {token}"
+        try:
+            res = requests.post(url, json=payload, headers=headers, verify=False, timeout=45)
+        except requests.RequestException as ex:
+            return {"ok": False, "message": f"Error de red hacia Altiplano: {ex}"}
+
+    if 200 <= res.status_code < 300:
+        logger.info(
+            "Altiplano ont-connection success: operador=%s entorno=%s status=%s",
+            op,
+            nbi_env,
+            res.status_code,
+        )
+        return {
+            "ok": True,
+            "message": "ONT Connection creada correctamente",
+            "target": target,
+            "status_code": res.status_code,
+        }
+
+    msg = _extract_altiplano_error_message(res)
+    logger.warning(
+        "Altiplano ont-connection failed: operador=%s entorno=%s status=%s error=%s",
+        op,
+        nbi_env,
+        res.status_code,
+        msg,
+    )
     return {"ok": False, "message": f"Altiplano rechazó la operación: {msg}"}
 
 
@@ -153,8 +326,18 @@ def normalizar_object_name(object_name_raw: str) -> str:
 
 def obtener_potencias_por_cto(NE, onts_cto):
     """
-    Obtiene TX / RX de Altiplano para una lista de ONT de una CTO.
-    Replica el flujo efectivo de consulta_cto.py, pero de forma modular.
+    Obtiene TX/RX de Altiplano para ONTs de una CTO.
+
+    Args:
+        NE: Nombre del Network Element (OLT) en Altiplano.
+        onts_cto: Lista de tuplas `(access_id, object_name_raw, operator_id)`.
+
+    Returns:
+        Diccionario `{access_id: (tx, rx)}` para ONTs con consulta exitosa.
+
+    Notas:
+        - Actualmente soporta dominios/operadores TASA y DIRECTV.
+        - Cuando una ONT falla, se omite y el proceso continúa con el resto.
     """
 
     resultados = {}

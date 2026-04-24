@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<title>Consulta ID · ATC GPON Inventory</title>
+<title>Consulta · ATC GPON Inventory</title>
 {% include 'partials/noc_head.html' %}
 
 <script src="{{ url_for('static', filename='js/noc-tools.js') }}"></script>
@@ -34,6 +34,14 @@ function filtrarOperador(op) {
 
 function _hasPower(v) {
   return !(v === null || v === undefined || String(v).trim() === "" || String(v).trim() === "-");
+}
+
+function _formatPowerDbm(v) {
+  if (v === null || v === undefined) return "-";
+  const raw = String(v).trim();
+  if (!raw || raw === "-" || raw === "⏳") return raw || "-";
+  if (/dbm$/i.test(raw)) return raw;
+  return raw + " dBm";
 }
 
 function _setStatusCell(el, mode) {
@@ -82,8 +90,8 @@ function cargarPotencias(valor) {
       const rx = document.getElementById("rx");
       const estadoId = document.getElementById("estado-id");
       if (tx && rx && estadoId) {
-        tx.innerText = data.TX ?? "-";
-        rx.innerText = data.RX ?? "-";
+        tx.innerText = _formatPowerDbm(data.TX);
+        rx.innerText = _formatPowerDbm(data.RX);
         _setStatusCell(
           estadoId,
           (_hasPower(data.TX) || _hasPower(data.RX)) ? "up" : "down"
@@ -99,8 +107,8 @@ function cargarPotencias(valor) {
         const tx = document.getElementById("tx-" + r.AID);
         const rx = document.getElementById("rx-" + r.AID);
         const st = document.getElementById("st-" + r.AID);
-        if (tx) tx.innerText = r.TX ?? "-";
-        if (rx) rx.innerText = r.RX ?? "-";
+        if (tx) tx.innerText = _formatPowerDbm(r.TX);
+        if (rx) rx.innerText = _formatPowerDbm(r.RX);
         if (st) {
           _setStatusCell(st, (_hasPower(r.TX) || _hasPower(r.RX)) ? "up" : "down");
           seen.add("st-" + r.AID);
@@ -201,7 +209,9 @@ function copiarTodo() {
 
       let fila = [];
       row.querySelectorAll("th, td").forEach(cell => {
-        fila.push(cell.innerText.trim());
+        const cleanCell = cell.cloneNode(true);
+        cleanCell.querySelectorAll("button, .btn, a.btn, #btn-cambiar-sn").forEach(actionEl => actionEl.remove());
+        fila.push(cleanCell.innerText.trim());
       });
 
       texto += fila.join("\t") + "\n";
@@ -255,7 +265,7 @@ window.addEventListener("load", () => {
         {% include 'partials/brand_logo.html' %}
         <h1>ATC GPON Inventory</h1>
       </div>
-      <small><strong>Consulta ID</strong> — buscá por <span class="kbd">Access ID</span>, <span class="kbd">CTO</span> o <span class="kbd">RAMA</span></small>
+      <small><strong>Consulta</strong> — buscá por <span class="kbd">Access ID</span>, <span class="kbd">CTO</span> o <span class="kbd">RAMA</span></small>
     </div>
     {% include 'partials/noc_topbar.html' %}
   </div>
@@ -282,7 +292,7 @@ window.addEventListener("load", () => {
       El Access ID <span class="mono">{{ busqueda_aid.AID }}</span> fue dado de baja el <strong>{{ busqueda_aid.fecha_baja_fmt }}</strong>
       por <strong>{{ busqueda_aid.OPERADOR }}</strong>.</p>
       {% if busqueda_aid.CTO or busqueda_aid.ONT %}
-      <p class="muted" style="margin:6px 0 0;font-size:0.88rem;">
+      <p class="muted helper-note">
         {% if busqueda_aid.CTO %}<span><strong>CTO:</strong> <span class="mono">{{ busqueda_aid.CTO }}</span></span>{% endif %}
         {% if busqueda_aid.CTO and busqueda_aid.ONT %} · {% endif %}
         {% if busqueda_aid.ONT %}<span><strong>ONT:</strong> <span class="mono">{{ busqueda_aid.ONT }}</span></span>{% endif %}
@@ -328,7 +338,7 @@ window.addEventListener("load", () => {
       <div class="row">
         <span class="label">RAMA (path ATC)</span>
         {% if tabla_cto[0].RAMA %}
-        <form method="POST" style="display:inline;margin:0;">
+        <form method="POST">
           <input type="hidden" name="value" value="{{ tabla_cto[0].RAMA }}">
           <button class="crumb-btn mono" type="submit" title="Ver todas las ONU bajo esta RAMA">{{ tabla_cto[0].RAMA }}</button>
         </form>
@@ -395,13 +405,14 @@ window.addEventListener("load", () => {
     <div class="content">
       {% if resultado %}
       <div class="section-title">
-        <h2>Detalle{% if resultado.get('fuente_detalle') == 'bajada_inventario' %} <span class="muted" style="font-size:0.75rem;font-weight:500;">(aux.bajada_inventario)</span>{% endif %}</h2>
+        <h2>Detalle{% if resultado.get('fuente_detalle') == 'bajada_inventario' %} <span class="muted source-note">(aux.bajada_inventario)</span>{% endif %}</h2>
         <span class="pill"><span class="dot good"></span> TX/RX via Altiplano</span>
         {% if resultado.get('fuente_detalle') == 'bajada_inventario' %}
-        <span class="muted" style="font-size:0.82rem;">(si el AID está en inventario activo)</span>
+        <span class="muted muted-caption">(si el AID está en inventario activo)</span>
         {% endif %}
       </div>
-      <table>
+      <div class="table-wrap">
+      <table class="table-kv">
         <tr><th>AID</th><td class="mono">{{ resultado.AID }}</td></tr>
         <tr><th>Operador</th><td>{{ resultado.OPERADOR }}</td></tr>
         <tr><th>Status</th><td>{{ resultado.Status }}</td></tr>
@@ -425,10 +436,11 @@ window.addEventListener("load", () => {
             </button>
           </td>
         </tr>
-        <tr><th>TX</th><td id="tx" class="mono">⏳</td></tr>
-        <tr><th>RX</th><td id="rx" class="mono">⏳</td></tr>
+        <tr><th>TX (dBm)</th><td id="tx" class="mono">⏳</td></tr>
+        <tr><th>RX (dBm)</th><td id="rx" class="mono">⏳</td></tr>
         <tr><th>Estado</th><td id="estado-id" class="mono status-pending">Cargando...</td></tr>
       </table>
+      </div>
       {% endif %}
 
       {% if tabla_cto and not es_rama %}
@@ -436,10 +448,11 @@ window.addEventListener("load", () => {
         <h2>ONUs por CTO</h2>
         <span class="muted">Tip: filtrá por operador arriba</span>
       </div>
+      <div class="table-wrap">
       <table>
         <tr>
           <th>AID</th><th>Operador</th><th>Sitio</th><th>RAMA</th><th>ONT</th><th>SN</th>
-          <th>Status</th><th>TX</th><th>RX</th><th>Estado</th>
+          <th>Status</th><th>TX (dBm)</th><th>RX (dBm)</th><th>Estado</th>
         </tr>
         {% for r in tabla_cto %}
         <tr data-operador="{{ r.OPERADOR }}">
@@ -456,13 +469,15 @@ window.addEventListener("load", () => {
         </tr>
         {% endfor %}
       </table>
+      </div>
       {% endif %}
 
       {% if es_rama %}
       {% for cto, rows in tabla_cto.items() %}
       <div class="cto-header">CTO <span class="mono">{{ cto }}</span></div>
+      <div class="table-wrap">
       <table>
-        <tr><th>AID</th><th>Operador</th><th>ONT</th><th>SN</th><th>TX</th><th>RX</th><th>Estado</th></tr>
+        <tr><th>AID</th><th>Operador</th><th>ONT</th><th>SN</th><th>TX (dBm)</th><th>RX (dBm)</th><th>Estado</th></tr>
         {% for r in rows %}
         <tr data-operador="{{ r.OPERADOR }}">
           <td class="mono">{{ r.AID }}</td>
@@ -475,11 +490,12 @@ window.addEventListener("load", () => {
         </tr>
         {% endfor %}
       </table>
+      </div>
       {% endfor %}
       {% endif %}
 
       {% if not resultado and not tabla_cto and not es_rama and not busqueda_aid %}
-      <div class="muted" style="padding: 4px 2px;">
+      <div class="muted empty-state-note">
         Ingresá un valor y tocá <strong>Buscar</strong>. Las potencias TX/RX se cargan automáticamente.
       </div>
       {% endif %}
