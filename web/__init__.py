@@ -25,6 +25,11 @@ def create_app() -> Flask:
     )
     app.config.from_object(Config)
 
+    if not Config.DEBUG and Config.SECRET_KEY == "dev-only-change-in-production":
+        app.logger.warning(
+            "SECRET_KEY sigue siendo el valor por defecto; definí SECRET_KEY en el entorno en producción."
+        )
+
     @app.context_processor
     def noc_page_time():
         return {"page_generated_at": datetime.now().strftime("%d/%m/%Y %H:%M")}

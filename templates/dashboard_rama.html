@@ -5,6 +5,12 @@
 <title>RAMA / CTO · ATC GPON Inventory</title>
 {% include 'partials/noc_head.html' %}
 
+<style>
+.cto-head-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.cto-head-row .cto-select { flex-shrink: 0; width: auto; margin: 0; }
+.rama-cto-select-all-label { font-size: 0.88rem; cursor: pointer; user-select: none; }
+</style>
+
 <script src="{{ url_for('static', filename='js/noc-tools.js') }}"></script>
 <script>
 let _toastTimer = null;
@@ -41,28 +47,77 @@ function copyTextToClipboard(text) {
   }
 }
 
-function copiarDashboardRama() {
+function descargarCsvRama(filename, lines, delimiter) {
+  const sep = delimiter || ",";
+  const csv = lines
+    .map((line) =>
+      String(line)
+        .split("\t")
+        .map((v) => `"${String(v).replace(/"/g, '""')}"`)
+        .join(sep)
+    )
+    .join("\r\n");
+  const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename || "rama_cto_seleccionadas.csv";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function _rowsCtosSeleccionados() {
+  const selected = Array.from(document.querySelectorAll(".cto-select:checked"));
+  if (selected.length === 0) {
+    return { error: "Seleccioná al menos una CTO", lines: [], count: 0 };
+  }
   const lines = [];
   lines.push(["Sitio_principal", "RAMA", "CTO", "AID", "Operador", "ONT", "TX", "RX"].join("\t"));
   let n = 0;
-  document.querySelectorAll("[data-rama-card] tr[data-aid]").forEach((tr) => {
-    const card = tr.closest("[data-rama-card]");
+  selected.forEach((cb) => {
+    const ctoNode = cb.closest("[data-cto-node]");
+    if (!ctoNode) return;
+    const body = ctoNode.nextElementSibling;
+    if (!body) return;
+    const card = ctoNode.closest("[data-rama-card]");
     if (!card || card.style.display === "none") return;
-    const pb = tr.closest(".principal-block");
+    const pb = ctoNode.closest(".principal-block");
     if (!pb || pb.style.display === "none") return;
-    if (getComputedStyle(tr).display === "none") return;
     const principal = (pb.getAttribute("data-principal-name") || "").trim();
-    const rama = tr.getAttribute("data-rama") || "";
-    const cto = tr.getAttribute("data-cto") || "";
-    const cells = [...tr.querySelectorAll("td")].map((td) => td.innerText.trim());
-    lines.push([principal, rama, cto, ...cells].join("\t"));
-    n++;
+    const rama = (card.getAttribute("data-rama") || "").trim();
+    const cto = (ctoNode.getAttribute("data-cto") || "").trim();
+    body.querySelectorAll("tr[data-aid]").forEach((tr) => {
+      if (getComputedStyle(tr).display === "none") return;
+      const cells = [...tr.querySelectorAll("td")].map((td) => td.innerText.trim());
+      lines.push([principal, rama, cto, ...cells].join("\t"));
+      n++;
+    });
   });
   if (n === 0) {
-    toast("No hay filas visibles: expandí RAMA/CTO o ajustá el filtro");
+    return { error: "No hay filas para exportar con esa selección", lines: [], count: 0 };
+  }
+  return { error: null, lines, count: n };
+}
+
+function copiarCtosSeleccionadas() {
+  const res = _rowsCtosSeleccionados();
+  if (res.error) {
+    toast(res.error);
     return;
   }
-  copyTextToClipboard(lines.join("\n"));
+  copyTextToClipboard(res.lines.join("\n"));
+}
+
+function exportarCtosSeleccionadasCsv() {
+  const res = _rowsCtosSeleccionados();
+  if (res.error) {
+    toast(res.error);
+    return;
+  }
+  descargarCsvRama("rama_cto_seleccionadas.csv", res.lines, ",");
+  toast("CSV exportado");
 }
 
 function setExpanded(el, expanded) {
@@ -320,6 +375,17 @@ window.addEventListener("load", () => {
       },
     });
   }
+
+  document.querySelectorAll(".cto-select-all-in-rama").forEach((master) => {
+    master.addEventListener("change", () => {
+      const card = master.closest("[data-rama-card]");
+      if (!card) return;
+      const on = master.checked;
+      card.querySelectorAll(".cto-select").forEach((cb) => {
+        cb.checked = on;
+      });
+    });
+  });
 });
 </script>
 </head>
@@ -331,7 +397,7 @@ window.addEventListener("load", () => {
     <div class="brand">
       <div class="brand-row">
         {% include 'partials/brand_logo.html' %}
-        <h1>GPON Inventory</h1>
+        <h1>ATC GPON Inventory</h1>
       </div>
       <small><strong>RAMA / CTO</strong> — expandí nodos y consultá potencias por rama (Altiplano)</small>
     </div>
@@ -350,15 +416,14 @@ window.addEventListener("load", () => {
         <input id="q" placeholder="Buscar por sitio, RAMA o CTO… (ej: San Fernando / SF01-RATC / SF01-FATC-8-202018)" autocomplete="off" aria-label="Filtrar árbol">
       </div>
       <div class="toolbar-actions" role="toolbar" aria-label="Exportar y vista">
-        <button class="btn" type="button" onclick="copiarDashboardRama()" title="TSV: columnas separadas por tabulador">Copiar vista</button>
-        <a class="btn btn-ghost" href="/dashboard/rama/export.csv">Exportar CSV</a>
-        <button class="btn btn-primary" type="button" onclick="expandAll(true)">Expandir todo</button>
+        <button class="btn" type="button" onclick="copiarCtosSeleccionadas()" title="TSV solo CTO marcadas">Copiar CTO seleccionadas</button>
+        <button class="btn" type="button" onclick="exportarCtosSeleccionadasCsv()" title="CSV cliente, UTF-8">Exportar CTO seleccionadas CSV</button>
         <button class="btn btn-ghost" type="button" onclick="expandAll(false)">Colapsar todo</button>
       </div>
     </div>
     <div class="controls-hint">
       <strong class="hint-kicker">NOC</strong>
-      Copiar respeta el filtro y las filas visibles. CSV descarga el inventario completo desde servidor (UTF‑8, abre bien en Excel).
+      Marcá CTO (o “todas en esta RAMA”) y usá copiar / exportar CSV seleccionadas (UTF‑8, descarga local).
     </div>
 
 {% for bloque in ramas %}
@@ -382,9 +447,16 @@ window.addEventListener("load", () => {
   </div>
 
   <div class="hidden indent2">
+    <p class="hint" style="margin:0 0 8px 0;">
+      <label class="rama-cto-select-all-label">
+        <input type="checkbox" class="cto-select-all-in-rama" title="Marcar todas las CTO de esta RAMA" aria-label="Seleccionar todas las CTO de esta RAMA">
+        Seleccionar todas las CTO de esta RAMA
+      </label>
+    </p>
   {% for cto, onts in r.CTOS.items() %}
-    <div class="node indent2" data-toggle-node data-cto-node data-cto="{{ cto|e }}" aria-expanded="false" onclick="toggle(this)">
-      <span class="arrow">▶</span> CTO <span class="mono">{{ cto }}</span>
+    <div class="node indent2 cto-head-row" data-toggle-node data-cto-node data-cto="{{ cto|e }}" aria-expanded="false" onclick="toggle(this)">
+      <input type="checkbox" class="cto-select" title="Seleccionar CTO para exportación" aria-label="Seleccionar CTO" onclick="event.stopPropagation()">
+      <span><span class="arrow">▶</span> CTO <span class="mono">{{ cto }}</span></span>
     </div>
 
     <div class="hidden indent3">

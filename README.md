@@ -2,13 +2,6 @@
 
 Panel Flask para consultas de inventario GPON (Postgres + Altiplano). Código del proyecto en el directorio `gpon-inventory`.
 
-## Configuración
-
-1. Copiá `.env.example` a `.env` en la raíz del proyecto.
-2. Completá al menos:
-   - **`DB_PASSWORD`** (o **`DATABASE_URL`** completa), y
-   - **`ALTIPLANO_USER`** / **`ALTIPLANO_PASSWORD`** si usás potencias TX/RX.
-
 Variables útiles: `FLASK_HOST`, `FLASK_PORT`, `FLASK_DEBUG`, `SECRET_KEY`, `DB_POOL_MAX`.
 
 ### Caché de dashboards (Postgres)

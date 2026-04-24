@@ -15,6 +15,9 @@ QUERIES = {
             -- Object name limpio solo para UI
             REPLACE(s.object_name, ':1-1', '') AS object_name_ui,
 
+            -- Serial real de ONT (fuente principal para SN en UI)
+            s.serial_number AS serial_number,
+
             o.invocator_system
         FROM cm.inventory_fat_occupation f
         LEFT JOIN altiplano.serial s
@@ -40,6 +43,9 @@ QUERIES = {
             -- Object name limpio para UI
             REPLACE(s.object_name, ':1-1', '') AS object_name_ui,
 
+            -- Serial real de ONT (fuente principal para SN en UI)
+            s.serial_number AS serial_number,
+
             o.invocator_system
         FROM cm.inventory_fat_occupation f
         JOIN altiplano.serial s
@@ -61,6 +67,7 @@ QUERIES = {
             f.path_atc AS rama,
             s.object_name AS object_name_raw,
             REPLACE(s.object_name, ':1-1', '') AS object_name_ui,
+            s.serial_number AS serial_number,
             o.invocator_system
         FROM cm.inventory_fat_occupation f
         JOIN altiplano.serial s

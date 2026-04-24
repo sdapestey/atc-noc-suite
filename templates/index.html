@@ -32,6 +32,27 @@ function filtrarOperador(op) {
   });
 }
 
+function _hasPower(v) {
+  return !(v === null || v === undefined || String(v).trim() === "" || String(v).trim() === "-");
+}
+
+function _setStatusCell(el, mode) {
+  if (!el) return;
+  el.classList.remove("status-up", "status-down", "status-pending");
+  if (mode === "up") {
+    el.innerText = "UP";
+    el.classList.add("status-up");
+    return;
+  }
+  if (mode === "down") {
+    el.innerText = "DOWN";
+    el.classList.add("status-down");
+    return;
+  }
+  el.innerText = "Cargando...";
+  el.classList.add("status-pending");
+}
+
 function cargarPotencias(valor) {
   const btn = document.getElementById("btn-copiar");
   if (btn) btn.disabled = true;
@@ -41,6 +62,10 @@ function cargarPotencias(valor) {
   if (document.getElementById("rx")) cells.push(document.getElementById("rx"));
   document.querySelectorAll("[id^='tx-'], [id^='rx-']").forEach(el => cells.push(el));
   cells.forEach(el => el.classList.add("loading"));
+  const statusCells = [];
+  if (document.getElementById("estado-id")) statusCells.push(document.getElementById("estado-id"));
+  document.querySelectorAll("[id^='st-']").forEach(el => statusCells.push(el));
+  statusCells.forEach((el) => _setStatusCell(el, "pending"));
 
   fetch("/potencias", {
     method: "POST",
@@ -53,18 +78,36 @@ function cargarPotencias(valor) {
   })
   .then(data => {
     if (data && data.AID) {
-      document.getElementById("tx").innerText = data.TX ?? "-";
-      document.getElementById("rx").innerText = data.RX ?? "-";
+      const tx = document.getElementById("tx");
+      const rx = document.getElementById("rx");
+      const estadoId = document.getElementById("estado-id");
+      if (tx && rx && estadoId) {
+        tx.innerText = data.TX ?? "-";
+        rx.innerText = data.RX ?? "-";
+        _setStatusCell(
+          estadoId,
+          (_hasPower(data.TX) || _hasPower(data.RX)) ? "up" : "down"
+        );
+      }
       if (btn) btn.disabled = false;
       cells.forEach(el => el.classList.remove("loading"));
       return;
     }
     if (Array.isArray(data)) {
+      const seen = new Set();
       data.forEach(r => {
         const tx = document.getElementById("tx-" + r.AID);
         const rx = document.getElementById("rx-" + r.AID);
+        const st = document.getElementById("st-" + r.AID);
         if (tx) tx.innerText = r.TX ?? "-";
         if (rx) rx.innerText = r.RX ?? "-";
+        if (st) {
+          _setStatusCell(st, (_hasPower(r.TX) || _hasPower(r.RX)) ? "up" : "down");
+          seen.add("st-" + r.AID);
+        }
+      });
+      document.querySelectorAll("[id^='st-']").forEach((el) => {
+        if (!seen.has(el.id)) _setStatusCell(el, "down");
       });
       if (btn) btn.disabled = false;
       cells.forEach(el => el.classList.remove("loading"));
@@ -77,8 +120,66 @@ function cargarPotencias(valor) {
   .catch(() => {
     if (btn) btn.disabled = false;
     cells.forEach(el => el.classList.remove("loading"));
+    statusCells.forEach((el) => _setStatusCell(el, "down"));
     toast("Error al cargar potencias");
   });
+}
+
+function cambiarSNDesdeUI(accessId, operador, ontTarget) {
+  const currentSnEl = document.getElementById("sn-value");
+  const current = currentSnEl ? currentSnEl.innerText.trim() : "";
+  const raw = window.prompt("Ingresá nuevo SN para la ONT:", current);
+  if (raw === null) return;
+  const sn = raw.trim().toUpperCase();
+  if (!sn) {
+    toast("SN vacío");
+    return;
+  }
+  if (sn.length < 6 || sn.length > 32) {
+    toast("SN inválido (6-32 chars)");
+    return;
+  }
+
+  const btn = document.getElementById("btn-cambiar-sn");
+  if (btn) {
+    btn.disabled = true;
+    btn.innerText = "Guardando...";
+  }
+
+  fetch("/sn/cambiar", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({
+      access_id: String(accessId || "").trim(),
+      operador: String(operador || "").trim(),
+      ont_target: String(ontTarget || "").trim(),
+      new_sn: sn,
+    }),
+  })
+  .then((r) => r.json().then((j) => ({ok: r.ok, json: j})))
+  .then(({ok, json}) => {
+    if (!ok || !json || !json.ok) {
+      throw new Error((json && json.message) || "No se pudo cambiar SN");
+    }
+    if (currentSnEl) currentSnEl.innerText = json.sn || sn;
+    toast(json.message || "SN actualizado");
+  })
+  .catch((err) => toast(err.message || "Error al cambiar SN"))
+  .finally(() => {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerText = "Cambiar SN";
+    }
+  });
+}
+
+function cambiarSNDesdeUIBtn(btn) {
+  if (!btn) return;
+  cambiarSNDesdeUI(
+    btn.getAttribute("data-access-id") || "",
+    btn.getAttribute("data-operador") || "",
+    btn.getAttribute("data-ont-target") || ""
+  );
 }
 
 /* COPIAR TODO */
@@ -146,12 +247,13 @@ window.addEventListener("load", () => {
 </head>
 
 <body class="theme-devops">
+{% include 'partials/splash_overlay.html' %}
 <div class="container">
   <div class="topbar">
     <div class="brand">
       <div class="brand-row">
         {% include 'partials/brand_logo.html' %}
-        <h1>GPON Inventory</h1>
+        <h1>ATC GPON Inventory</h1>
       </div>
       <small><strong>Consulta ID</strong> — buscá por <span class="kbd">Access ID</span>, <span class="kbd">CTO</span> o <span class="kbd">RAMA</span></small>
     </div>
@@ -174,6 +276,26 @@ window.addEventListener("load", () => {
       {% endif %}
     </form>
 
+    {% if busqueda_aid and busqueda_aid.tipo == "baja" %}
+    <div class="id-lookup-banner id-lookup-banner--baja" role="status">
+      <p><strong>Access ID dado de baja.</strong>
+      El Access ID <span class="mono">{{ busqueda_aid.AID }}</span> fue dado de baja el <strong>{{ busqueda_aid.fecha_baja_fmt }}</strong>
+      por <strong>{{ busqueda_aid.OPERADOR }}</strong>.</p>
+      {% if busqueda_aid.CTO or busqueda_aid.ONT %}
+      <p class="muted" style="margin:6px 0 0;font-size:0.88rem;">
+        {% if busqueda_aid.CTO %}<span><strong>CTO:</strong> <span class="mono">{{ busqueda_aid.CTO }}</span></span>{% endif %}
+        {% if busqueda_aid.CTO and busqueda_aid.ONT %} · {% endif %}
+        {% if busqueda_aid.ONT %}<span><strong>ONT:</strong> <span class="mono">{{ busqueda_aid.ONT }}</span></span>{% endif %}
+      </p>
+      {% endif %}
+    </div>
+    {% elif busqueda_aid and busqueda_aid.tipo == "no_existe" %}
+    <div class="id-lookup-banner id-lookup-banner--no-existe" role="status">
+      <strong>Access ID no encontrado.</strong>
+      El Access ID <span class="mono">{{ busqueda_aid.AID }}</span> no se encuentra en los sistemas de ATC.
+    </div>
+    {% endif %}
+
     {% if resultado %}
     <div class="breadcrumb">
       <strong>Ruta:</strong>
@@ -186,11 +308,14 @@ window.addEventListener("load", () => {
       </form>
 
       <span>›</span>
-
+      {% if resultado.RAMA %}
       <form method="POST">
         <input type="hidden" name="value" value="{{ resultado.RAMA }}">
         <button class="crumb-btn" type="submit">{{ resultado.RAMA }}</button>
       </form>
+      {% else %}
+      <span class="muted">RAMA: —</span>
+      {% endif %}
     </div>
 
     {% elif ruta.cto %}
@@ -214,6 +339,11 @@ window.addEventListener("load", () => {
       <div class="row">
         <span class="label">CTO consultada</span>
         <span class="mono">{{ ruta.cto }}</span>
+        {% if cto_maps_url %}
+        <a class="dash-link" href="{{ cto_maps_url }}" target="_blank" rel="noopener noreferrer">Ver en Google Maps</a>
+        {% else %}
+        <span class="muted">Sin coordenadas</span>
+        {% endif %}
       </div>
       <a class="dash-link" href="/dashboard/rama?q={{ ruta.cto|urlencode }}">Abrir esta CTO en el dashboard RAMA (árbol)</a>
     </div>
@@ -265,18 +395,39 @@ window.addEventListener("load", () => {
     <div class="content">
       {% if resultado %}
       <div class="section-title">
-        <h2>Detalle</h2>
+        <h2>Detalle{% if resultado.get('fuente_detalle') == 'bajada_inventario' %} <span class="muted" style="font-size:0.75rem;font-weight:500;">(aux.bajada_inventario)</span>{% endif %}</h2>
         <span class="pill"><span class="dot good"></span> TX/RX via Altiplano</span>
+        {% if resultado.get('fuente_detalle') == 'bajada_inventario' %}
+        <span class="muted" style="font-size:0.82rem;">(si el AID está en inventario activo)</span>
+        {% endif %}
       </div>
       <table>
         <tr><th>AID</th><td class="mono">{{ resultado.AID }}</td></tr>
         <tr><th>Operador</th><td>{{ resultado.OPERADOR }}</td></tr>
         <tr><th>Status</th><td>{{ resultado.Status }}</td></tr>
         <tr><th>CTO</th><td class="mono">{{ resultado.CTO }}</td></tr>
-        <tr><th>RAMA</th><td class="mono">{{ resultado.RAMA }}</td></tr>
+        <tr><th>RAMA</th><td class="mono">{{ resultado.RAMA or "—" }}</td></tr>
         <tr><th>ONT</th><td class="mono">{{ resultado.ONT }}</td></tr>
+        <tr>
+          <th>SN</th>
+          <td class="mono">
+            <span id="sn-value">{{ resultado.SN }}</span>
+            <button
+              id="btn-cambiar-sn"
+              class="btn-mini"
+              type="button"
+              data-access-id="{{ resultado.AID }}"
+              data-operador="{{ resultado.OPERADOR }}"
+              data-ont-target="{{ resultado.ONT }}"
+              onclick="cambiarSNDesdeUIBtn(this)"
+            >
+              Cambiar SN
+            </button>
+          </td>
+        </tr>
         <tr><th>TX</th><td id="tx" class="mono">⏳</td></tr>
         <tr><th>RX</th><td id="rx" class="mono">⏳</td></tr>
+        <tr><th>Estado</th><td id="estado-id" class="mono status-pending">Cargando...</td></tr>
       </table>
       {% endif %}
 
@@ -287,8 +438,8 @@ window.addEventListener("load", () => {
       </div>
       <table>
         <tr>
-          <th>AID</th><th>Operador</th><th>Sitio</th><th>RAMA</th><th>ONT</th>
-          <th>Status</th><th>TX</th><th>RX</th>
+          <th>AID</th><th>Operador</th><th>Sitio</th><th>RAMA</th><th>ONT</th><th>SN</th>
+          <th>Status</th><th>TX</th><th>RX</th><th>Estado</th>
         </tr>
         {% for r in tabla_cto %}
         <tr data-operador="{{ r.OPERADOR }}">
@@ -297,9 +448,11 @@ window.addEventListener("load", () => {
           <td>{{ r.PRINCIPAL }}</td>
           <td class="mono">{{ r.RAMA or "—" }}</td>
           <td class="mono">{{ r.ONT }}</td>
+          <td class="mono">{{ r.SN }}</td>
           <td>{{ r.STATUS }}</td>
           <td id="tx-{{ r.AID }}" class="mono">⏳</td>
           <td id="rx-{{ r.AID }}" class="mono">⏳</td>
+          <td id="st-{{ r.AID }}" class="mono status-pending">Cargando...</td>
         </tr>
         {% endfor %}
       </table>
@@ -309,21 +462,23 @@ window.addEventListener("load", () => {
       {% for cto, rows in tabla_cto.items() %}
       <div class="cto-header">CTO <span class="mono">{{ cto }}</span></div>
       <table>
-        <tr><th>AID</th><th>Operador</th><th>ONT</th><th>TX</th><th>RX</th></tr>
+        <tr><th>AID</th><th>Operador</th><th>ONT</th><th>SN</th><th>TX</th><th>RX</th><th>Estado</th></tr>
         {% for r in rows %}
         <tr data-operador="{{ r.OPERADOR }}">
           <td class="mono">{{ r.AID }}</td>
           <td>{{ r.OPERADOR }}</td>
           <td class="mono">{{ r.ONT }}</td>
+          <td class="mono">{{ r.SN }}</td>
           <td id="tx-{{ r.AID }}" class="mono">⏳</td>
           <td id="rx-{{ r.AID }}" class="mono">⏳</td>
+          <td id="st-{{ r.AID }}" class="mono status-pending">Cargando...</td>
         </tr>
         {% endfor %}
       </table>
       {% endfor %}
       {% endif %}
 
-      {% if not resultado and not tabla_cto and not es_rama %}
+      {% if not resultado and not tabla_cto and not es_rama and not busqueda_aid %}
       <div class="muted" style="padding: 4px 2px;">
         Ingresá un valor y tocá <strong>Buscar</strong>. Las potencias TX/RX se cargan automáticamente.
       </div>

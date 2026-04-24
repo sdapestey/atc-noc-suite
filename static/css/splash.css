@@ -1,0 +1,114 @@
+/* Splash índice: pantalla completa + fade in / fade out por opacidad */
+.noc-splash {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  min-height: 100dvh;
+  z-index: 10050;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  overflow: hidden;
+  /* Capa sólida pantalla completa (tema oscuro por defecto) */
+  background: radial-gradient(
+      120% 100% at 50% 0%,
+      rgba(56, 139, 253, 0.12) 0%,
+      transparent 55%
+    ),
+    linear-gradient(165deg, #0a0e14 0%, #121a24 45%, #0c1018 100%);
+  transition: opacity 0.55s ease;
+}
+
+html[data-theme="light"] .noc-splash {
+  background: radial-gradient(
+      120% 100% at 50% 0%,
+      rgba(9, 105, 218, 0.08) 0%,
+      transparent 50%
+    ),
+    linear-gradient(165deg, #f0f4fa 0%, #e8eef7 50%, #f6f8fc 100%);
+}
+
+.noc-splash[hidden] {
+  display: none !important;
+}
+
+.noc-splash.noc-splash--visible {
+  display: flex !important;
+  opacity: 0;
+}
+
+.noc-splash.noc-splash--visible.noc-splash--in {
+  opacity: 1;
+}
+
+.noc-splash.noc-splash--visible.noc-splash--leaving {
+  opacity: 0 !important;
+  pointer-events: none;
+}
+
+.noc-splash-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  cursor: pointer;
+  background: transparent;
+}
+
+.noc-splash-inner {
+  position: relative;
+  z-index: 1;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(20px, 6vw, 56px);
+  width: 100%;
+  max-width: 960px;
+  margin: 0 auto;
+  text-align: center;
+  box-sizing: border-box;
+}
+
+.noc-splash-logo {
+  max-width: min(520px, 88vw);
+  max-height: min(200px, 32vh);
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  margin: 0 auto clamp(20px, 4vh, 40px);
+  display: block;
+  filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.35));
+}
+
+html[data-theme="light"] .noc-splash-logo {
+  filter: drop-shadow(0 6px 18px rgba(0, 0, 0, 0.12));
+}
+
+.noc-splash-title {
+  margin: 0 0 10px;
+  font-size: clamp(1.35rem, 3.5vw, 2rem);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.noc-splash-lead {
+  margin: 0 0 clamp(24px, 4vh, 40px);
+  font-size: clamp(0.95rem, 2.2vw, 1.1rem);
+  max-width: 36em;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+body.noc-splash-open {
+  overflow: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .noc-splash {
+    transition-duration: 0.01ms !important;
+  }
+}

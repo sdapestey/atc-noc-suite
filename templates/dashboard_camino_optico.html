@@ -12,7 +12,7 @@
     <div class="brand">
       <div class="brand-row">
         {% include 'partials/brand_logo.html' %}
-        <h1>GPON Inventory</h1>
+        <h1>ATC GPON Inventory</h1>
       </div>
       <p class="page-lead">
         <strong>Camino óptico</strong> — inventario <code class="inline-code">cm.inventory_fat_occupation</code> +
@@ -60,23 +60,6 @@
     return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
   }
 
-  function gmapsSearchUrl(query) {
-    const q = query == null ? "" : String(query).trim();
-    if (!q) return null;
-    return "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(q);
-  }
-
-  function mapsLinkHref(href, label) {
-    if (!href) return "";
-    return (
-      '<a class="camino-maps-link" href="' +
-      esc(href) +
-      '" target="_blank" rel="noopener noreferrer" title="Abrir en Google Maps">' +
-      esc(label || "Mapa") +
-      "</a>"
-    );
-  }
-
   function stepsFromIsp(isp){
     if (!isp || typeof isp !== "object") return [];
     const o = isp;
@@ -92,9 +75,7 @@
     ].filter(function(x){ return x[1]; });
   }
 
-  function renderIspBlock(isp, title, opts){
-    opts = opts || {};
-    const cableMaps = opts.cableMaps === true;
+  function renderIspBlock(isp, title){
     if (!isp) {
       return '<p class="muted">Sin fila en <code>cm_report_isp</code> para esta rama (nombre exacto de <code>path_atc</code>).</p>';
     }
@@ -103,12 +84,7 @@
     steps.forEach(function(s){
       const stepLabel = s[0];
       const valText = s[1];
-      let extra = "";
-      if (cableMaps && valText && (stepLabel === "Cable troncal" || stepLabel === "Cable alimentador (CATC)")) {
-        const uh = gmapsSearchUrl(valText);
-        extra = uh ? " " + mapsLinkHref(uh, "Ver en Maps") : "";
-      }
-      html += "<li><strong>" + esc(stepLabel) + ":</strong> " + esc(valText) + extra + "</li>";
+      html += "<li><strong>" + esc(stepLabel) + ":</strong> " + esc(valText) + "</li>";
     });
     html += "</ol></div>";
     return html;
@@ -150,7 +126,19 @@
     }
     if (data.tipo === "cto") {
       const res = data.resumen || {};
-      let html = '<div class="panel camino-result"><h2 class="camino-result-title">CTO ' + esc(data.cto) + "</h2>";
+      const mapsUrlCto = data.cto_maps_url || "";
+      let html = '<div class="panel camino-result">';
+      html += '<div class="camino-result-head">';
+      html += '<h2 class="camino-result-title">CTO ' + esc(data.cto) + "</h2>";
+      if (mapsUrlCto) {
+        html +=
+          '<a class="dash-link" href="' +
+          esc(mapsUrlCto) +
+          '" target="_blank" rel="noopener noreferrer">Ver en Google Maps</a>';
+      } else {
+        html += '<span class="muted">Sin coordenadas</span>';
+      }
+      html += "</div>";
       html += '<div class="stats">';
       html += '<div class="stat"><b>' + esc(String(res.ont_count)) + '</b><span>ONT</span></div>';
       html += '<div class="stat"><b>' + esc(String(res.rama_count)) + '</b><span>Ramas distintas</span></div>';
@@ -176,26 +164,23 @@
     if (data.tipo === "access_id") {
       const d = data.detalle || {};
       const isp = d.camino_isp;
-      const ctoQuery = [d.location_description, d.site_description, d.site_fullname]
-        .filter(function (x) { return x && String(x).trim(); })
-        .join(", ");
-      const ramaQuery = [d.path_atc, isp && isp.headend_name]
-        .filter(function (x) { return x && String(x).trim(); })
-        .join(" · ");
-
-      const ctoHref = gmapsSearchUrl(ctoQuery || d.location_description);
-      const ramaHref = gmapsSearchUrl(ramaQuery || d.path_atc);
+      const mapsUrl = data.cto_maps_url || "";
 
       let html = '<div class="panel camino-result"><h2 class="camino-result-title">Access ID ' + esc(d.access_id) + "</h2>";
       html += '<p class="camino-meta-line">';
       html += "<strong>CTO:</strong> <span class=\"camino-meta-val\">" + esc(d.location_description) + "</span> ";
-      html += mapsLinkHref(ctoHref, "Ver en Maps");
+      if (mapsUrl) {
+        html +=
+          '<a class="dash-link" href="' +
+          esc(mapsUrl) +
+          '" target="_blank" rel="noopener noreferrer">Ver en Google Maps</a>';
+      } else {
+        html += '<span class="muted">Sin coordenadas</span>';
+      }
       html += ' <span class="camino-meta-sep" aria-hidden="true">·</span> ';
-      html += "<strong>Rama:</strong> <span class=\"camino-meta-val\">" + esc(d.path_atc) + "</span> ";
-      html += mapsLinkHref(ramaHref, "Ver en Maps");
+      html += "<strong>Rama:</strong> <span class=\"camino-meta-val\">" + esc(d.path_atc) + "</span>";
       html += "</p>";
-      html += '<p class="muted camino-maps-hint">Los enlaces «Ver en Maps» abren una búsqueda en Google Maps con el identificador (no hay coordenadas en inventario).</p>';
-      html += renderIspBlock(isp, "Camino hacia el sitio", { cableMaps: true });
+      html += renderIspBlock(isp, "Camino hacia el sitio");
       html += "<details class=\"det\" open><summary>Detalle inventario FAT</summary>";
       html += '<div class="kv">';
       [

@@ -1,0 +1,26 @@
+{# Splash índice: requiere JS para mostrarse; con JS deshabilitado permanece hidden. #}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/splash.css') }}">
+<div id="noc-splash-overlay"
+     class="noc-splash"
+     hidden
+     tabindex="-1"
+     aria-hidden="true"
+     role="dialog"
+     aria-modal="true"
+     aria-labelledby="noc-splash-title"
+     data-autoclose-ms="2600">
+  <div class="noc-splash-backdrop" aria-hidden="true" title="Cerrar"></div>
+  <div class="noc-splash-inner">
+    <img id="noc-splash-logo"
+         class="noc-splash-logo"
+         src="{{ url_for('static', filename=config.SPLASH_LOGO_STATIC) }}"
+         alt=""
+         width="520"
+         height="200"
+         data-fallback-src="{{ url_for('static', filename='img/american-tower-logo.svg') }}"
+         onerror="if(this.dataset.fallbackSrc){this.onerror=null;this.src=this.dataset.fallbackSrc;}">
+    <h1 id="noc-splash-title" class="noc-splash-title">ATC GPON Inventory</h1>
+    <p class="noc-splash-lead muted">Herramienta de consulta GPON</p>
+  </div>
+</div>
+<script defer src="{{ url_for('static', filename='js/splash.js') }}"></script>

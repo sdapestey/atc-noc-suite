@@ -12,6 +12,9 @@ OPERADORES = {
     4010: "METROTEL",
     962: "SION",
     963: "SION",
+    2800: "ATC",
+    2805: "ATC",
+    2806: "ATC",
 }
 
 SITIO_PRINCIPAL_POR_REGION = {

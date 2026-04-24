@@ -2,11 +2,16 @@
 from datetime import datetime, timezone
 
 from flask import Response, jsonify, redirect, render_template, request, url_for
+from urllib.parse import quote_plus
 
 from db import healthcheck_db
 from services import (
+    cambiar_sn_ont,
+    consultar_access_id_baja_o_ausente,
+    consultar_access_id_detalle_desde_bajada_inventario,
     consultar_access_id_estructura,
     consultar_access_id_potencias,
+    consultar_cto_coordenadas,
     consultar_cto_estructura,
     consultar_cto_potencias,
     consultar_dashboard_rama,
@@ -51,20 +56,42 @@ def register(app):
         tabla_cto = None
         es_rama = False
         ruta = {"aid": None, "cto": None, "rama": None}
+        cto_maps_url = None
+        busqueda_aid = None
 
         if request.method == "POST":
             value = request.form.get("value", "").strip()
 
             if value.isdigit():
-                resultado = consultar_access_id_estructura(value)
+                # Solo dígitos: aux.bajada_inventario → detalle; si no, aux.bajas_de_inventario y
+                # aux.bajas_inventario → banner de baja; si no, no existe en ATC.
+                resultado = consultar_access_id_detalle_desde_bajada_inventario(value)
+                busqueda_aid = None
                 if resultado:
                     ruta["aid"] = resultado["AID"]
                     ruta["cto"] = resultado["CTO"]
-                    ruta["rama"] = resultado["RAMA"]
+                    ruta["rama"] = resultado.get("RAMA")
+                    if resultado.get("CTO") and resultado["CTO"] != "—":
+                        coords = consultar_cto_coordenadas(resultado["CTO"])
+                        if coords:
+                            lat_lon = f"{coords['lat']},{coords['lon']}"
+                            cto_maps_url = (
+                                "https://www.google.com/maps/search/?api=1&query="
+                                f"{quote_plus(lat_lon)}"
+                            )
+                else:
+                    busqueda_aid = consultar_access_id_baja_o_ausente(value)
 
             elif "FATC" in value:
                 tabla_cto = consultar_cto_estructura(value)
                 ruta["cto"] = value
+                coords = consultar_cto_coordenadas(value)
+                if coords:
+                    lat_lon = f"{coords['lat']},{coords['lon']}"
+                    cto_maps_url = (
+                        "https://www.google.com/maps/search/?api=1&query="
+                        f"{quote_plus(lat_lon)}"
+                    )
 
             elif "RATC" in value:
                 tabla_cto = consultar_rama_estructura(value)
@@ -78,6 +105,8 @@ def register(app):
             es_rama=es_rama,
             value=value,
             ruta=ruta,
+            cto_maps_url=cto_maps_url,
+            busqueda_aid=busqueda_aid,
         )
 
     @app.route("/potencias", methods=["POST"])
@@ -96,6 +125,33 @@ def register(app):
             return jsonify(consultar_rama_potencias(valor))
 
         return jsonify([])
+
+    @app.route("/sn/cambiar", methods=["POST"])
+    def cambiar_sn():
+        data = request.get_json(silent=True) or request.form
+        access_id = (data.get("access_id") or "").strip()
+        operador = (data.get("operador") or "").strip()
+        ont_target = (data.get("ont_target") or "").strip()
+        new_sn = (data.get("new_sn") or "").strip()
+
+        if not access_id:
+            return jsonify({"ok": False, "message": "access_id requerido"}), 400
+        if not ont_target:
+            return jsonify({"ok": False, "message": "ont_target requerido"}), 400
+        if not new_sn:
+            return jsonify({"ok": False, "message": "new_sn requerido"}), 400
+
+        if len(new_sn) < 6 or len(new_sn) > 32:
+            return jsonify({"ok": False, "message": "SN inválido (largo fuera de rango)"}), 400
+
+        result = cambiar_sn_ont(
+            access_id=access_id,
+            operador=operador,
+            ont_target=ont_target,
+            new_sn=new_sn,
+        )
+        code = 200 if result.get("ok") else 502
+        return jsonify(result), code
 
     @app.route("/export/csv")
     def export_index_csv():

@@ -1,7 +1,25 @@
 """Dashboard prueba: camino óptico (FAT + cm_report_isp)."""
+from urllib.parse import quote_plus
+
 from db import db_cursor
 
 from .domain import nombre_operador
+from .inventory import consultar_cto_coordenadas
+
+
+def _cto_maps_url_for_fatc_location(cto_fat: str) -> str | None:
+    """URL de Google Maps si hay coordenadas reales (misma regla que índice / access_id)."""
+    cto_fat = (cto_fat or "").strip()
+    if not cto_fat:
+        return None
+    coords = consultar_cto_coordenadas(cto_fat)
+    if not coords:
+        return None
+    lat_lon = f"{coords['lat']},{coords['lon']}"
+    return (
+        "https://www.google.com/maps/search/?api=1&query="
+        f"{quote_plus(lat_lon)}"
+    )
 
 
 def _report_isp_por_rama(cur, path_atc):
@@ -106,9 +124,12 @@ def dashboard_camino_optico_cto(cto):
             d["camino_isp"] = isp_por_rama.get(p)
             onts.append(d)
 
+    cto_maps_url = _cto_maps_url_for_fatc_location(cto)
+
     return {
         "tipo": "cto",
         "cto": cto,
+        "cto_maps_url": cto_maps_url,
         "resumen": {
             "ont_count": len(onts),
             "rama_count": len(path_atcs),
@@ -211,7 +232,10 @@ def dashboard_camino_optico_access_id(access_id):
         path = d.get("path_atc")
         d["camino_isp"] = _report_isp_por_rama(cur, path)
 
+    cto_maps_url = _cto_maps_url_for_fatc_location(d.get("location_description") or "")
+
     return {
         "tipo": "access_id",
         "detalle": d,
+        "cto_maps_url": cto_maps_url,
     }

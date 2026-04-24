@@ -10,6 +10,7 @@
 const state = {};
 const ltInventarioCargado = {};
 const ltCargando = {};
+const ltInventarioData = {};
 let _toastTimerOlt = null;
 
 function toastOlt(msg) {
@@ -42,29 +43,92 @@ function copyTextToClipboardOlt(text) {
   }
 }
 
-function copiarDashboardOlt() {
+function _rowsPonesSeleccionados() {
+  const selected = Array.from(document.querySelectorAll(".pon-select:checked"));
+  if (selected.length === 0) {
+    return { error: "Seleccioná al menos un PON", lines: [], count: 0 };
+  }
+
   const lines = [];
-  lines.push([
-    "Sitio_principal", "Sitio_codigo", "OLT", "LT", "RAMAs", "CTO", "ONT", "Rojas", "Amarillas", "Verdes", "Peor_RX",
-  ].join("\t"));
+  lines.push(["PON", "RAMA", "CTO", "ACCESS_ID", "OPERADOR", "ONT"].join("\t"));
   let n = 0;
-  document.querySelectorAll("tr.ltrow").forEach((tr) => {
-    const pb = tr.closest(".principal-block");
-    const sec = tr.closest(".olt-section");
-    if (!pb || pb.style.display === "none" || !sec || sec.classList.contains("search-hide")) return;
-    if (getComputedStyle(tr).display === "none") return;
-    const principal = (tr.getAttribute("data-principal") || pb.getAttribute("data-principal") || "").trim();
-    const sitio = (tr.getAttribute("data-sitio") || "").trim();
-    const olt = (tr.getAttribute("data-olt") || "").trim();
-    const cells = [...tr.querySelectorAll("td")].slice(1).map((td) => td.innerText.trim());
-    lines.push([principal, sitio, olt, ...cells].join("\t"));
-    n++;
+
+  selected.forEach((cb) => {
+    const uid = cb.getAttribute("data-uid") || "";
+    const pon = cb.getAttribute("data-pon-label") || "";
+    const data = ltInventarioData[uid] || {};
+    const ponBlock = (data.PONES || {})[pon];
+    if (!ponBlock) return;
+    const ramas = ponBlock.RAMAS || {};
+    Object.keys(ramas).forEach((rama) => {
+      const ctos = (ramas[rama] || {}).CTOS || {};
+      Object.keys(ctos).forEach((cto) => {
+        (ctos[cto] || []).forEach((o) => {
+          lines.push([pon, rama, cto, o.AID || "", o.OPERADOR || "", o.ONT || ""].join("\t"));
+          n++;
+        });
+      });
+    });
   });
+
   if (n === 0) {
-    toastOlt("No hay filas LT visibles (expandí sitio/OLT o ajustá el filtro)");
+    return { error: "No hay filas para exportar con esa selección", lines: [], count: 0 };
+  }
+  return { error: null, lines: lines, count: n };
+}
+
+function copiarPonesSeleccionados() {
+  const res = _rowsPonesSeleccionados();
+  if (res.error) {
+    toastOlt(res.error);
     return;
   }
-  copyTextToClipboardOlt(lines.join("\n"));
+  copyTextToClipboardOlt(res.lines.join("\n"));
+}
+
+function descargarCsv(filename, lines, delimiter) {
+  const sep = delimiter || ",";
+  const csv = lines
+    .map((line) =>
+      String(line)
+        .split("\t")
+        .map((v) => `"${String(v).replace(/"/g, '""')}"`)
+        .join(sep)
+    )
+    .join("\r\n");
+  const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename || "pones_seleccionados.csv";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function exportarPonesSeleccionadosCsv() {
+  const res = _rowsPonesSeleccionados();
+  if (res.error) {
+    toastOlt(res.error);
+    return;
+  }
+  descargarCsv("pones_seleccionados.csv", res.lines, ",");
+  toastOlt("CSV exportado");
+}
+
+function exportarPonesSeleccionados() {
+  // Compatibilidad con handler previo en UI.
+  copiarPonesSeleccionados();
+}
+
+function exportarPonesSeleccionadosPortapapeles() {
+  const res = _rowsPonesSeleccionados();
+  if (res.error) {
+    toastOlt(res.error);
+    return;
+  }
+  copyTextToClipboardOlt(res.lines.join("\n"));
 }
 
 /* ===============================
@@ -153,7 +217,7 @@ function _addSemFromRx(row, rx) {
 function _recomputePeor(wrap, row) {
   let min = null;
   wrap.querySelectorAll("tr[data-aid]").forEach(tr => {
-    const rxCell = tr.children[3];
+    const rxCell = tr.children[4];
     if (!rxCell) return;
     const t = rxCell.textContent.trim();
     if (t === "-" || t === "") return;
@@ -209,13 +273,14 @@ function buildRamaBlockHtml(uid, rama, block, parentRamaId, depth) {
                 </div>
 
                 <table class="hidden olt-tree-table olt-tree-depth-${tblDepth}" data-parent="${ctoId}">
-                <tr><th>AID</th><th>Operador</th><th>TX</th><th>RX</th><th></th></tr>`;
+                <tr><th>AID</th><th>Operador</th><th>ONT</th><th>TX</th><th>RX</th><th></th></tr>`;
 
     (ctos[cto] || []).forEach((o) => {
       html += `
                     <tr data-aid="${_esc(o.AID)}" data-rama="${encodeURIComponent(rama)}" data-cto="${encodeURIComponent(cto)}">
                       <td>${_esc(o.AID)}</td>
                       <td>${_esc(o.OPERADOR)}</td>
+                      <td>${_esc(o.ONT || "—")}</td>
                       <td>-</td>
                       <td>-</td>
                       <td><button type="button" class="btn-mini btn-aid pot-aid" data-pot-aid="${encodeURIComponent(o.AID)}">ID</button></td>
@@ -233,6 +298,38 @@ function buildRamaBlockHtml(uid, rama, block, parentRamaId, depth) {
   return html;
 }
 
+/** Árbol PON → RAMA → (FATC) → CTO → ONT */
+function buildPonBlockHtml(uid, pon, block) {
+  const enc = encodeURIComponent(pon).replace(/%/g, "_");
+  const ponId = uid + "_P_" + enc;
+  const r = (block && block.RESUMEN) || {};
+  const ramasN = Number(r.RAMAS || 0);
+  const ctoN = Number(r.CTO_COUNT || 0);
+  const ontN = Number(r.ONT_COUNT || 0);
+  let html = `
+            <div class="node olt-tree-row olt-tree-depth-1"
+                 data-node-id="${ponId}"
+                 data-olt-tree-kind="PON"
+                 onclick="toggleNode('${ponId}')">
+                <input type="checkbox"
+                       class="pon-select"
+                       data-uid="${uid}"
+                       data-pon-id="${ponId}"
+                       data-pon-label="${_esc(pon)}"
+                       title="Seleccionar PON para exportación"
+                       onclick="event.stopPropagation()">
+                <span class="olt-tree-kind">PON</span>
+                <span class="arrow" id="arrow-${ponId}">▶</span> <span class="olt-tree-label">${_esc(pon)}</span>
+                <span class="muted">RAMAs ${ramasN} · CTO ${ctoN} · ONT ${ontN}</span>
+            </div>`;
+
+  const ramas = block && block.RAMAS ? block.RAMAS : {};
+  for (const rama of sortNaturalKeys(Object.keys(ramas))) {
+    html += buildRamaBlockHtml(uid, rama, ramas[rama], ponId, 2);
+  }
+  return html;
+}
+
 function showLtLoading(uid) {
   const row = document.getElementById("lt-row-" + uid);
   const detailRow = document.getElementById("detail-" + uid);
@@ -243,7 +340,7 @@ function showLtLoading(uid) {
   if (arrow) arrow.textContent = "▼";
   detailRow.classList.remove("hidden");
   detailRow.innerHTML =
-    '<td colspan="9"><div class="lt-detail-loading" role="status" aria-live="polite">' +
+    '<td colspan="10"><div class="lt-detail-loading" role="status" aria-live="polite">' +
     '<span class="lt-detail-spinner" aria-hidden="true"></span>' +
     "<span>Cargando inventario de red…</span></div></td>";
 }
@@ -296,7 +393,7 @@ function toggleLTCargar(lt, uid) {
       if (dr) {
         dr.classList.remove("hidden");
         dr.innerHTML =
-          '<td colspan="9"><p class="lt-detail-error">No se pudo cargar el inventario. Reintentá o revisá la consola de red.</p></td>';
+          '<td colspan="10"><p class="lt-detail-error">No se pudo cargar el inventario. Reintentá o revisá la consola de red.</p></td>';
       }
       toastOlt("Error al cargar inventario LT");
     })
@@ -318,15 +415,26 @@ function cargarInventarioLT(lt, uid, row) {
       return r.json();
     })
     .then((data) => {
-      let html =
-        '<p class="hint">Inventario cargado. Expandí cada <strong>RAMA</strong> (RATC) para ver FATC → CTO → ONT. <span class="muted">Las mismas ramas FATC se listan bajo cada RATC (sin vínculo padre/hijo en BD).</span> <strong>Consultar</strong> / <strong>ID</strong> para potencias en Altiplano.</p>';
+      ltInventarioData[uid] = data || {};
+      const resumenLt = data.RESUMEN_LT || {};
+      const ponCount = Number(resumenLt.PON_COUNT || 0);
+      const ramasCount = Number(resumenLt.RAMAS || 0);
+      const ctoCount = Number(resumenLt.CTO_COUNT || 0);
+      const ontCount = Number(resumenLt.ONT_COUNT || 0);
+      const ponCell = row.querySelector(".poncount");
+      if (ponCell) ponCell.textContent = String(ponCount);
 
-      const ramas = sortNaturalKeys(Object.keys(data.RAMAS || {}));
-      for (const rama of ramas) {
-        html += buildRamaBlockHtml(uid, rama, data.RAMAS[rama], null, 1);
+      let html =
+        '<p class="hint">Inventario cargado. Expandí cada <strong>PON</strong> para ver RAMA (RATC) → FATC → CTO → ONT. <span class="muted">Las mismas ramas FATC se listan bajo cada RATC (sin vínculo padre/hijo en BD).</span> <strong>Consultar</strong> / <strong>ID</strong> para potencias en Altiplano.</p>';
+      html += `<p class="hint"><strong>Impacto LT:</strong> PON ${ponCount} · RAMAs ${ramasCount} · CTO ${ctoCount} · ONT ${ontCount}</p>`;
+      html += `<p class="hint"><label><input type="checkbox" class="pon-select-all" data-uid="${uid}"> Seleccionar todos los PON de este LT</label></p>`;
+
+      const pones = sortNaturalKeys(Object.keys(data.PONES || {}));
+      for (const pon of pones) {
+        html += buildPonBlockHtml(uid, pon, data.PONES[pon]);
       }
 
-      detailRow.innerHTML = `<td colspan="9">${html}</td>`;
+      detailRow.innerHTML = `<td colspan="10">${html}</td>`;
       detailRow.classList.remove("hidden");
 
       const wrap = detailRow.querySelector("td");
@@ -415,9 +523,9 @@ function potenciaRama(rama, wrap, row, btnEl) {
           const tr = findTrByAid(wrap, aid);
           if (!tr) return;
           if (decodeURIComponent(tr.getAttribute("data-rama") || "") !== rama) return;
-          if (tr.children[2] && tr.children[3]) {
-            tr.children[2].textContent = cell.TX ?? "-";
-            tr.children[3].textContent = cell.RX ?? "-";
+          if (tr.children[3] && tr.children[4]) {
+            tr.children[3].textContent = cell.TX ?? "-";
+            tr.children[4].textContent = cell.RX ?? "-";
           }
         });
       });
@@ -443,9 +551,9 @@ function potenciaCto(cto, wrap, row, btnEl) {
       arr.forEach((rec) => {
         const tr = findTrByAid(wrap, rec.AID);
         if (!tr || decodeURIComponent(tr.getAttribute("data-cto") || "") !== cto) return;
-        if (tr.children[2] && tr.children[3]) {
-          tr.children[2].textContent = rec.TX ?? "-";
-          tr.children[3].textContent = rec.RX ?? "-";
+        if (tr.children[3] && tr.children[4]) {
+          tr.children[3].textContent = rec.TX ?? "-";
+          tr.children[4].textContent = rec.RX ?? "-";
           _addSemFromRx(row, rec.RX);
         }
       });
@@ -469,9 +577,9 @@ function potenciaAid(aid, wrap, row, btnEl) {
     .then((data) => {
       if (!data || data.AID == null) return;
       const tr = findTrByAid(wrap, data.AID);
-      if (!tr || tr.children[2] == null) return;
-      tr.children[2].textContent = data.TX ?? "-";
-      tr.children[3].textContent = data.RX ?? "-";
+      if (!tr || tr.children[3] == null) return;
+      tr.children[3].textContent = data.TX ?? "-";
+      tr.children[4].textContent = data.RX ?? "-";
       _addSemFromRx(row, data.RX);
       _recomputePeor(wrap, row);
     })
@@ -555,6 +663,17 @@ window.addEventListener("load", () => {
     toggleLTCargar(lt, uid);
   });
 
+  document.body.addEventListener("change", (e) => {
+    const all = e.target.closest("input.pon-select-all");
+    if (!all) return;
+    const uid = all.getAttribute("data-uid") || "";
+    const detail = document.getElementById("detail-" + uid);
+    if (!detail) return;
+    detail.querySelectorAll("input.pon-select").forEach((cb) => {
+      cb.checked = !!all.checked;
+    });
+  });
+
   if (window.initNocPage) {
     initNocPage({
       page: "olt",
@@ -580,7 +699,7 @@ window.addEventListener("load", () => {
     <div class="brand">
       <div class="brand-row">
         {% include 'partials/brand_logo.html' %}
-        <h1>GPON Inventory</h1>
+        <h1>ATC GPON Inventory</h1>
       </div>
       <p class="page-lead"><strong>OLT / LT</strong> — <strong>Sitio principal</strong> → sitio (código) → OLT → LT → RAMA → CTO → AID. Expandí un <strong>LT</strong> para inventario; potencias con <strong>Consultar</strong> en RAMA/CTO o <strong>ID</strong>.</p>
     </div>
@@ -592,10 +711,10 @@ window.addEventListener("load", () => {
   <div class="controls-olt">
     <input type="search" id="bus-olt" placeholder="Buscar sitio, OLT, LT, código (ej. MR01, Moreno, BA_OLTA)…" autocomplete="off" aria-label="Filtrar árbol OLT">
     <div class="toolbar-actions" role="toolbar" aria-label="Exportar y copiar">
-      <button type="button" class="btn" onclick="copiarDashboardOlt()" title="TSV para Excel">Copiar vista</button>
-      <a class="btn btn-ghost" href="/dashboard/olt/export.csv">Exportar CSV</a>
+      <button type="button" class="btn" onclick="copiarPonesSeleccionados()" title="Copiar PON seleccionados (TSV)">Copiar PON seleccionados</button>
+      <button type="button" class="btn" onclick="exportarPonesSeleccionadosCsv()" title="Descargar PON seleccionados (CSV)">Exportar PON seleccionados CSV</button>
     </div>
-    <p class="controls-hint olt-controls-hint"><strong class="hint-kicker">NOC</strong> Copiar usa filas LT visibles. CSV = inventario completo (todas las LT).</p>
+    <p class="controls-hint olt-controls-hint"><strong class="hint-kicker">NOC</strong> Marcá PON (o “Seleccionar todos los PON de este LT”) y usá copiar / exportar CSV (descarga local, UTF‑8).</p>
   </div>
 
 {% for bloque in olts %}
@@ -625,7 +744,7 @@ window.addEventListener("load", () => {
 
     <table class="hidden indent2" data-parent="{{ oid }}">
     <tr>
-    <th></th><th>LT</th><th>RAMAs</th><th>CTO</th><th>ONT</th>
+    <th></th><th>LT</th><th>RAMAs</th><th>PON</th><th>CTO</th><th>ONT</th>
     <th>🔴</th><th>🟡</th><th>🟢</th><th>Peor RX</th>
     </tr>
 
@@ -646,6 +765,7 @@ window.addEventListener("load", () => {
     </td>
     <td>{{ l.LT }}</td>
     <td>{{ l.RAMAS }}</td>
+    <td class="poncount">{{ l.PON_COUNT if l.PON_COUNT is defined else "-" }}</td>
     <td>{{ l.CTO_COUNT }}</td>
     <td>{{ l.ONT_COUNT }}</td>
     <td class="rojas">0</td>
@@ -654,7 +774,7 @@ window.addEventListener("load", () => {
     <td class="peor">-</td>
     </tr>
 
-    <tr id="detail-{{ uid }}" class="hidden" data-parent="{{ uid }}"><td colspan="9"></td></tr>
+    <tr id="detail-{{ uid }}" class="hidden" data-parent="{{ uid }}"><td colspan="10"></td></tr>
     {% endfor %}
     </table>
   </div>

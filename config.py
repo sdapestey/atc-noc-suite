@@ -48,6 +48,58 @@ def get_altiplano_credentials() -> tuple[str, str]:
     return user, password
 
 
+def get_altiplano_operator_credentials(operator: str) -> tuple[str, str]:
+    """
+    Credenciales por operador para acciones NBI (como cambio de SN).
+    Fallback: credenciales globales ALTIPLANO_USER / ALTIPLANO_PASSWORD.
+    """
+    op = (operator or "").strip().upper()
+    op_key = {
+        "TASA": "TASA",
+        "DIRECTV": "DTV",
+        "METROTEL": "METRO",
+        "IPLAN": "IPLAN",
+        "ATC": "ATC",
+        "SION": "SION",
+    }.get(op)
+    if not op_key:
+        return get_altiplano_credentials()
+    user = os.environ.get(f"ALTIPLANO_{op_key}_USER", "").strip()
+    password = os.environ.get(f"ALTIPLANO_{op_key}_PASSWORD", "").strip()
+    if user and password:
+        return user, password
+    return get_altiplano_credentials()
+
+
+def get_altiplano_nbi_target(operator: str) -> tuple[str, str, str]:
+    """
+    Endpoint NBI por operador (host, port, base_url).
+    """
+    op = (operator or "").strip().upper()
+    defaults = {
+        "TASA": ("10.200.4.101", "32443", "tasa-altiplano-ac"),
+        "DIRECTV": ("10.200.7.107", "32443", "dtv-altiplano-ac"),
+        "METROTEL": ("10.200.5.102", "32443", "metro-altiplano-ac"),
+        "IPLAN": ("10.200.5.103", "32444", "iplan-altiplano-ac"),
+        "ATC": ("10.200.5.105", "32446", "atc-altiplano-ac"),
+        "SION": ("10.200.5.104", "32445", "sion-altiplano-ac"),
+    }
+    host, port, base = defaults.get(op, ("", "", ""))
+    env_prefix = {
+        "TASA": "ALTIPLANO_TASA",
+        "DIRECTV": "ALTIPLANO_DTV",
+        "METROTEL": "ALTIPLANO_METRO",
+        "IPLAN": "ALTIPLANO_IPLAN",
+        "ATC": "ALTIPLANO_ATC",
+        "SION": "ALTIPLANO_SION",
+    }.get(op, "")
+    if env_prefix:
+        host = os.environ.get(f"{env_prefix}_HOST", host).strip()
+        port = os.environ.get(f"{env_prefix}_PORT", port).strip()
+        base = os.environ.get(f"{env_prefix}_BASE_URL", base).strip()
+    return host, port, base
+
+
 def _int_env_positive_or_zero(name: str, default: int) -> int:
     raw = os.environ.get(name, "").strip()
     if not raw:
@@ -97,3 +149,7 @@ class Config:
     PORT = int(os.environ.get("FLASK_PORT", "9002"))
     DEBUG = os.environ.get("FLASK_DEBUG", "1").lower() in ("1", "true", "yes")
     DB_POOL_MAX = int(os.environ.get("DB_POOL_MAX", "20"))
+    # Ruta bajo `static/` para el logo del splash (índice). Ej.: img/SPLASH_LOGO.png
+    SPLASH_LOGO_STATIC = (
+        os.environ.get("SPLASH_LOGO_PATH", "img/SPLASH_LOGO.png").strip() or "img/SPLASH_LOGO.png"
+    )

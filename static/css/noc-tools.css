@@ -6,10 +6,17 @@
   align-items: center;
   gap: 8px 12px;
   justify-content: flex-end;
+  flex-shrink: 0;
 }
 
 .noc-meta {
   font-size: 11px;
   color: var(--fg-muted, rgba(255, 255, 255, 0.55));
   white-space: nowrap;
+}
+
+.theme-toggle-btn {
+  min-width: 108px;
+  padding: 6px 10px;
+  font-size: 12px;
 }

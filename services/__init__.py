@@ -1,4 +1,5 @@
 """Capa de servicios (inventario, dashboards, exportaciones)."""
+from altiplano import cambiar_sn_ont
 from .camino_optico import (
     dashboard_camino_optico_access_id,
     dashboard_camino_optico_cto,
@@ -12,7 +13,10 @@ from .exports import (
     export_index_query_csv,
 )
 from .inventory import (
+    consultar_access_id_baja_o_ausente,
+    consultar_access_id_detalle_desde_bajada_inventario,
     consultar_access_id_estructura,
+    consultar_cto_coordenadas,
     consultar_access_id_potencias,
     consultar_cto_estructura,
     consultar_cto_potencias,
@@ -21,8 +25,11 @@ from .inventory import (
 )
 
 __all__ = [
+    "consultar_access_id_baja_o_ausente",
+    "consultar_access_id_detalle_desde_bajada_inventario",
     "consultar_access_id_estructura",
     "consultar_access_id_potencias",
+    "consultar_cto_coordenadas",
     "consultar_cto_estructura",
     "consultar_cto_potencias",
     "consultar_rama_estructura",
@@ -37,4 +44,5 @@ __all__ = [
     "dashboard_camino_optico_cto",
     "dashboard_camino_optico_rama",
     "dashboard_camino_optico_access_id",
+    "cambiar_sn_ont",
 ]

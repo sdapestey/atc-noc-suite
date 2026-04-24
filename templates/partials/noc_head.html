@@ -1,8 +1,22 @@
+<link rel="icon" href="{{ url_for('static', filename='img/american-tower-logo.svg') }}" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/devops-dashboard.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/noc-tools.css') }}">
+<script>
+(function () {
+  try {
+    var storedTheme = localStorage.getItem("theme");
+    var theme = (storedTheme === "dark" || storedTheme === "light")
+      ? storedTheme
+      : (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    document.documentElement.setAttribute("data-theme", theme);
+  } catch (e) {
+    document.documentElement.setAttribute("data-theme", "dark");
+  }
+})();
+</script>
 <script>
 (function () {
   try {
@@ -12,4 +26,5 @@
   } catch (e) {}
 })();
 </script>
+<script defer src="{{ url_for('static', filename='js/theme-toggle.js') }}"></script>
 <script defer src="{{ url_for('static', filename='js/dashboard-tab-nav.js') }}"></script>
