@@ -29,7 +29,7 @@ Producción (ejemplo):
 
 ```bash
 pip install gunicorn
-gunicorn -w 4 -b 0.0.0.0:9002 wsgi:app
+gunicorn -w 4 -b 0.0.0.0:9000 wsgi:app
 ```
 
 ## Tests
