@@ -5,7 +5,6 @@
     <a class="global-tab{% if nav_tab == 'olt' %} active{% endif %}" href="{{ url_for('dash_olt') }}">OLT / LT</a>
     <a class="global-tab{% if nav_tab == 'camino' %} active{% endif %}" href="{{ url_for('dash_camino_optico') }}">Camino Optico</a>
     <a class="global-tab{% if nav_tab == 'historico' %} active{% endif %}" href="{{ url_for('dash_potencias_historico') }}">Historico Potencias</a>
-    <a class="global-tab{% if nav_tab == 'historico' %} active{% endif %}" href="{{ url_for('dash_potencias_historico_jerarquia') }}">Historico Jerarquia (PoC)</a>
     <a class="global-tab{% if nav_tab == 'altiplano' %} active{% endif %}" href="{{ url_for('dash_altiplano') }}">Altiplano</a>
   </nav>
   <p class="dashboard-tab-nav-loading-caption" aria-hidden="true">Cargando</p>
