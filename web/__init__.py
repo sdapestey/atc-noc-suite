@@ -45,6 +45,8 @@ def create_app() -> Flask:
             tab = "camino"
         elif p.startswith("/dashboard/altiplano"):
             tab = "altiplano"
+        elif p.startswith("/dashboard/potencias-historico"):
+            tab = "historico"
         else:
             tab = "index"
         return {"nav_tab": tab}

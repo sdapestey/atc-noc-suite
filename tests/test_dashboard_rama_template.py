@@ -39,4 +39,5 @@ def test_dashboard_rama_includes_cto_selection_and_no_expand_all(client, monkeyp
     assert 'class="cto-select"' in html
     assert "cto-select-all-in-rama" in html
     assert "Seleccionar todas las CTO de esta RAMA" in html
+    assert "Ver historico" in html
     assert "_rowsCtosSeleccionados" in html or "copiarCtosSeleccionadas" in html

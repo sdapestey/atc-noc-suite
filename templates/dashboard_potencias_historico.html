@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Historico Potencias · ATC GPON Inventory</title>
+{% include 'partials/noc_head.html' %}
+<script src="{{ url_for('static', filename='js/noc-tools.js') }}"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+</head>
+<body class="theme-devops page-dashboard page-historico-potencias">
+<div class="container">
+  <div class="topbar">
+    <div class="brand">
+      <div class="brand-row">
+        {% include 'partials/brand_logo.html' %}
+        <h1>ATC GPON Inventory</h1>
+      </div>
+      <small><strong>Historico Potencias</strong> — tendencia Rx por rama RATC (Ultimos 30, 15 o 7 dias)</small>
+    </div>
+    {% include 'partials/noc_topbar.html' %}
+  </div>
+
+  {% include 'partials/nav_dashboard.html' %}
+
+  <div class="card">
+    <form class="search" onsubmit="event.preventDefault(); fetchData();">
+      <div class="field" role="search">
+        <span class="search-icon" aria-hidden="true">⌕</span>
+        <input id="ratc-input" placeholder="Ej: MR01-RATC-0-000200" autocomplete="off">
+      </div>
+      <div class="historico-range" id="range-picker" aria-label="Rango de dias">
+        <button class="btn btn-ghost is-active" type="button" data-days="30">30d</button>
+        <button class="btn btn-ghost" type="button" data-days="15">15d</button>
+        <button class="btn btn-ghost" type="button" data-days="7">7d</button>
+      </div>
+      <button class="btn btn-primary" type="submit" id="btn-search">Buscar</button>
+      <button class="btn btn-ghost" type="button" onclick="resetDashboard()">Reset</button>
+      <button class="btn btn-ghost" type="button" id="btn-export" disabled>Exportar CSV</button>
+    </form>
+
+    <div class="metrics-grid" id="stats-grid">
+      <div class="metric-card metric-card--pon">
+        <div class="label">Puerto PON</div>
+        <div class="value mono" id="kpi-pon" title="">-</div>
+      </div>
+      <div class="metric-card">
+        <div class="label">Total ONTs</div>
+        <div class="value" id="kpi-onts">0</div>
+      </div>
+      <div class="metric-card">
+        <div class="label">Mediana PON</div>
+        <div class="value" id="kpi-median">- dBm</div>
+      </div>
+      <div class="metric-card metric-card--estado">
+        <div class="label">Estado</div>
+        <div class="value status-neutral" id="kpi-status">-</div>
+        <div class="hint" id="kpi-status-hint">sin muestras en 30d</div>
+      </div>
+    </div>
+
+    <div class="table-wrap historico-chart-shell">
+      <div class="historico-chart-toolbar">
+        <button class="btn btn-ghost" type="button" id="btn-show-all" disabled>Marcar todas</button>
+        <button class="btn btn-ghost" type="button" id="btn-hide-all" disabled>Desmarcar todas</button>
+        <button class="btn btn-ghost" type="button" id="btn-toggle-legend">Ocultar leyenda</button>
+        <button class="btn btn-ghost" type="button" id="btn-reset-zoom" disabled>Reset Zoom</button>
+      </div>
+      <div class="historico-chart-stage" id="chart-stage" style="display:none;">
+        <canvas id="power-chart"></canvas>
+      </div>
+      <div class="muted empty-state-note" id="no-data" style="display:block;">
+        Ingresa una rama RATC para visualizar el historico de potencia Rx.
+      </div>
+      <div class="historico-legend-wrap" id="legend-wrap" style="display:none;">
+        <div class="historico-legend" id="legend-container"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+let powerChart = null;
+let selectedDays = 30;
+let lastRATC = "";
+let legendVisible = true;
+const chartCanvas = document.getElementById("power-chart");
+const chartStage = document.getElementById("chart-stage");
+const noDataEl = document.getElementById("no-data");
+const colors = ["#3b82f6", "#8b5cf6", "#10b981", "#f59e0b", "#ef4444", "#06b6d4", "#84cc16", "#f97316", "#a855f7", "#22c55e"];
+
+function _themePalette() {
+  const isLight = document.documentElement.getAttribute("data-theme") === "light";
+  if (isLight) {
+    return {
+      grid: "rgba(31, 35, 40, 0.14)",
+      ticks: "rgba(31, 35, 40, 0.76)",
+      axisTitle: "rgba(31, 35, 40, 0.84)"
+    };
+  }
+  return {
+    // Más contraste en dark para que la grilla no se pierda.
+    grid: "rgba(230, 237, 243, 0.24)",
+    ticks: "rgba(230, 237, 243, 0.90)",
+    axisTitle: "rgba(230, 237, 243, 0.92)"
+  };
+}
+
+function setKPIs(data) {
+  const ponEl = document.getElementById("kpi-pon");
+  const ponVal = data.pon || "-";
+  ponEl.innerText = ponVal;
+  ponEl.title = ponVal && ponVal !== "-" ? ponVal : "";
+  document.getElementById("kpi-onts").innerText = String(data.total_onts || 0);
+  document.getElementById("kpi-median").innerText = String(data.median || "-") + " dBm";
+  const days = Number(data.days || selectedDays || 30);
+  const statusEl = document.getElementById("kpi-status");
+  const hintEl = document.getElementById("kpi-status-hint");
+  statusEl.innerText = data.status || "-";
+  statusEl.classList.remove("status-ok", "status-warn", "status-neutral");
+  if ((data.status || "").toLowerCase() === "activo") {
+    statusEl.classList.add("status-ok");
+    hintEl.innerText = "con datos en " + String(days) + "d";
+  } else if ((data.status || "").toLowerCase().includes("sin")) {
+    statusEl.classList.add("status-warn");
+    hintEl.innerText = "sin muestras en " + String(days) + "d";
+  } else {
+    statusEl.classList.add("status-neutral");
+    hintEl.innerText = "estado no disponible";
+  }
+}
+
+function buildLegend(items) {
+  const legendWrap = document.getElementById("legend-wrap");
+  const toggleLegendBtn = document.getElementById("btn-toggle-legend");
+  const btnShowAll = document.getElementById("btn-show-all");
+  const btnHideAll = document.getElementById("btn-hide-all");
+  const legendContainer = document.getElementById("legend-container");
+  legendContainer.innerHTML = "";
+  if (!items || !items.length) {
+    legendWrap.style.display = "none";
+    toggleLegendBtn.disabled = true;
+    btnShowAll.disabled = true;
+    btnHideAll.disabled = true;
+    return;
+  }
+  items.forEach(function (item) {
+    const row = document.createElement("div");
+    row.className = "historico-legend-item";
+    if ((item.label || "").toLowerCase().includes("umbral")) {
+      row.setAttribute("data-threshold", "1");
+    }
+    const chk = document.createElement("input");
+    chk.type = "checkbox";
+    chk.className = "historico-legend-check";
+    chk.setAttribute("data-dataset-index", String(item.index));
+    chk.checked = !powerChart.isDatasetVisible(item.index) ? false : true;
+    chk.addEventListener("change", function () {
+      powerChart.setDatasetVisibility(item.index, chk.checked);
+      powerChart.update();
+    });
+    const dot = document.createElement("span");
+    dot.className = "historico-legend-dot";
+    dot.style.borderColor = item.color;
+    const text = document.createElement("span");
+    text.className = "historico-legend-text";
+    text.innerText = item.label;
+    row.appendChild(chk);
+    row.appendChild(dot);
+    row.appendChild(text);
+    legendContainer.appendChild(row);
+  });
+  legendWrap.style.display = legendVisible ? "block" : "none";
+  toggleLegendBtn.disabled = false;
+  toggleLegendBtn.innerText = legendVisible ? "Ocultar leyenda" : "Mostrar leyenda";
+  btnShowAll.disabled = false;
+  btnHideAll.disabled = false;
+}
+
+function _isOntDatasetLabel(label) {
+  return String(label || "").trim().toUpperCase().startsWith("ONT ");
+}
+
+function _syncLegendChecks() {
+  document.querySelectorAll(".historico-legend-check[data-dataset-index]").forEach(function (el) {
+    const idx = Number(el.getAttribute("data-dataset-index"));
+    if (!Number.isFinite(idx) || !powerChart) return;
+    el.checked = !!powerChart.isDatasetVisible(idx);
+  });
+}
+
+function applyThemeToChart() {
+  if (!powerChart || !powerChart.options || !powerChart.options.scales) return;
+  const palette = _themePalette();
+  if (powerChart.options.scales.x) {
+    if (powerChart.options.scales.x.grid) {
+      powerChart.options.scales.x.grid.color = palette.grid;
+    }
+    if (powerChart.options.scales.x.ticks) {
+      powerChart.options.scales.x.ticks.color = palette.ticks;
+    }
+  }
+  if (powerChart.options.scales.y) {
+    if (powerChart.options.scales.y.grid) {
+      powerChart.options.scales.y.grid.color = palette.grid;
+    }
+    if (powerChart.options.scales.y.ticks) {
+      powerChart.options.scales.y.ticks.color = palette.ticks;
+    }
+    if (powerChart.options.scales.y.title) {
+      powerChart.options.scales.y.title.color = palette.axisTitle;
+    }
+  }
+  // Repaint rápido sin animación para evitar "fade" ilegible al cambiar tema.
+  powerChart.update("none");
+}
+
+function updateDeepLink() {
+  const ratc = String(document.getElementById("ratc-input").value || "").trim();
+  const params = new URLSearchParams(window.location.search);
+  if (ratc) params.set("ratc", ratc);
+  else params.delete("ratc");
+  params.set("days", String(selectedDays));
+  const next = window.location.pathname + "?" + params.toString();
+  window.history.replaceState(null, "", next);
+}
+
+function resetDashboard() {
+  document.getElementById("ratc-input").value = "";
+  lastRATC = "";
+  setKPIs({pon: "-", total_onts: 0, median: "-", status: "Sin datos"});
+  noDataEl.innerText = "Ingresa una rama RATC para visualizar el historico de potencia Rx.";
+  noDataEl.style.display = "block";
+  chartStage.style.display = "none";
+  document.getElementById("btn-export").disabled = true;
+  document.getElementById("btn-reset-zoom").disabled = true;
+  document.getElementById("btn-toggle-legend").disabled = true;
+  document.getElementById("btn-show-all").disabled = true;
+  document.getElementById("btn-hide-all").disabled = true;
+  buildLegend([]);
+  updateDeepLink();
+  if (powerChart) {
+    powerChart.destroy();
+    powerChart = null;
+  }
+}
+
+function renderChart(data) {
+  if (powerChart) powerChart.destroy();
+  const palette = _themePalette();
+  const datasets = (data.datasets || []).map((d, idx) => ({
+    ...d,
+    borderColor: colors[idx % colors.length],
+    borderWidth: 2,
+    pointRadius: 1,
+    pointHoverRadius: 4
+  }));
+  const threshold28 = {
+    label: "Umbral -28 dBm",
+    data: (data.labels || []).map(() => -28),
+    borderColor: "rgba(245, 158, 11, 0.85)",
+    borderWidth: 1.5,
+    borderDash: [6, 4],
+    pointRadius: 0,
+    fill: false
+  };
+  const threshold30 = {
+    label: "Umbral -30 dBm",
+    data: (data.labels || []).map(() => -30),
+    borderColor: "rgba(239, 68, 68, 0.85)",
+    borderWidth: 1.5,
+    borderDash: [4, 4],
+    pointRadius: 0,
+    fill: false
+  };
+  const plotDatasets = datasets.concat([threshold28, threshold30]);
+
+  powerChart = new Chart(chartCanvas.getContext("2d"), {
+    type: "line",
+    data: { labels: data.labels || [], datasets: plotDatasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      resizeDelay: 150,
+      interaction: { mode: "index", intersect: false },
+      plugins: {
+        legend: { display: false },
+        zoom: {
+          zoom: {
+            drag: { enabled: true },
+            mode: "x"
+          }
+        }
+      },
+      scales: {
+        x: {
+          grid: {
+            color: palette.grid
+          },
+          ticks: {
+            autoSkip: true,
+            maxTicksLimit: selectedDays === 30 ? 9 : 12,
+            maxRotation: 45,
+            minRotation: 0,
+            color: palette.ticks,
+          }
+        },
+        y: {
+          grid: {
+            color: palette.grid
+          },
+          ticks: {
+            color: palette.ticks
+          },
+          title: {
+            display: true,
+            text: "Potencia Rx (dBm)",
+            color: palette.axisTitle
+          }
+        }
+      }
+    }
+  });
+  buildLegend(plotDatasets.map((d, idx) => ({label: d.label, color: d.borderColor, index: idx})));
+  document.getElementById("btn-reset-zoom").disabled = false;
+}
+
+async function fetchData() {
+  const ratc = String(document.getElementById("ratc-input").value || "").trim();
+  if (!ratc) return;
+
+  const btn = document.getElementById("btn-search");
+  btn.disabled = true;
+  btn.innerText = "Consultando...";
+  noDataEl.style.display = "none";
+  document.getElementById("btn-export").disabled = true;
+
+  try {
+    const response = await fetch(
+      "/api/potencias-historico/" + encodeURIComponent(ratc) + "?days=" + String(selectedDays)
+    );
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || "No se pudo consultar historico");
+
+    lastRATC = ratc;
+    setKPIs(payload);
+    renderChart(payload);
+    chartStage.style.display = "block";
+    document.getElementById("btn-export").disabled = false;
+    updateDeepLink();
+  } catch (err) {
+    chartStage.style.display = "none";
+    noDataEl.style.display = "block";
+    setKPIs({pon: "-", total_onts: 0, median: "-", status: "Sin datos"});
+    buildLegend([]);
+    const msg = String(err.message || "");
+    if (msg.toLowerCase().includes("no encontrada")) {
+      noDataEl.innerText = "RATC no encontrada en inventario.";
+    } else if (msg.toLowerCase().includes("sin muestras")) {
+      noDataEl.innerText = msg;
+    } else {
+      noDataEl.innerText = "Error interno de consulta.";
+    }
+    updateDeepLink();
+  } finally {
+    btn.disabled = false;
+    btn.innerText = "Buscar";
+  }
+}
+
+document.getElementById("ratc-input").addEventListener("keypress", function (e) {
+  if (e.key === "Enter") fetchData();
+});
+
+document.querySelectorAll("#range-picker [data-days]").forEach(function (btn) {
+  btn.addEventListener("click", function () {
+    selectedDays = Number(btn.getAttribute("data-days")) || 30;
+    document.querySelectorAll("#range-picker [data-days]").forEach(function (el) {
+      el.classList.toggle("is-active", el === btn);
+    });
+    updateDeepLink();
+    if (lastRATC) fetchData();
+  });
+});
+
+document.getElementById("btn-reset-zoom").addEventListener("click", function () {
+  if (powerChart) powerChart.resetZoom();
+});
+
+document.getElementById("btn-export").addEventListener("click", function () {
+  if (!lastRATC) return;
+  const url = "/dashboard/potencias-historico/export.csv?ratc="
+    + encodeURIComponent(lastRATC)
+    + "&days=" + encodeURIComponent(String(selectedDays));
+  window.location.href = url;
+});
+
+document.getElementById("btn-toggle-legend").addEventListener("click", function () {
+  legendVisible = !legendVisible;
+  const legendWrap = document.getElementById("legend-wrap");
+  legendWrap.style.display = legendVisible ? "block" : "none";
+  this.innerText = legendVisible ? "Ocultar leyenda" : "Mostrar leyenda";
+});
+
+document.getElementById("btn-show-all").addEventListener("click", function () {
+  if (!powerChart) return;
+  powerChart.data.datasets.forEach(function (ds, idx) {
+    if (_isOntDatasetLabel(ds.label)) powerChart.setDatasetVisibility(idx, true);
+  });
+  powerChart.update();
+  _syncLegendChecks();
+});
+
+document.getElementById("btn-hide-all").addEventListener("click", function () {
+  if (!powerChart) return;
+  powerChart.data.datasets.forEach(function (ds, idx) {
+    if (_isOntDatasetLabel(ds.label)) powerChart.setDatasetVisibility(idx, false);
+  });
+  powerChart.update();
+  _syncLegendChecks();
+});
+
+function initFromQueryString() {
+  const params = new URLSearchParams(window.location.search);
+  const ratc = (params.get("ratc") || "").trim();
+  const days = Number(params.get("days") || 30);
+  if ([7, 15, 30].includes(days)) {
+    selectedDays = days;
+    document.querySelectorAll("#range-picker [data-days]").forEach(function (el) {
+      el.classList.toggle("is-active", Number(el.getAttribute("data-days")) === days);
+    });
+  }
+  if (ratc) {
+    document.getElementById("ratc-input").value = ratc;
+    lastRATC = ratc;
+    fetchData();
+  } else {
+    updateDeepLink();
+  }
+}
+
+if (window.initNocPage) {
+  initNocPage({
+    page: "historico-potencias",
+    searchSelector: "#ratc-input",
+    onClear: resetDashboard,
+  });
+}
+
+const _themeObserver = new MutationObserver(function (mutations) {
+  for (const m of mutations) {
+    if (m.type === "attributes" && m.attributeName === "data-theme") {
+      applyThemeToChart();
+      break;
+    }
+  }
+});
+_themeObserver.observe(document.documentElement, { attributes: true });
+
+initFromQueryString();
+</script>
+</body>
+</html>

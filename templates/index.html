@@ -323,6 +323,7 @@ window.addEventListener("load", () => {
         <input type="hidden" name="value" value="{{ resultado.RAMA }}">
         <button class="crumb-btn" type="submit">{{ resultado.RAMA }}</button>
       </form>
+      <a class="dash-link" href="/dashboard/potencias-historico?ratc={{ resultado.RAMA|urlencode }}&days=30">Ver historico</a>
       {% else %}
       <span class="muted">RAMA: —</span>
       {% endif %}
@@ -342,6 +343,7 @@ window.addEventListener("load", () => {
           <input type="hidden" name="value" value="{{ tabla_cto[0].RAMA }}">
           <button class="crumb-btn mono" type="submit" title="Ver todas las ONU bajo esta RAMA">{{ tabla_cto[0].RAMA }}</button>
         </form>
+        <a class="dash-link" href="/dashboard/potencias-historico?ratc={{ tabla_cto[0].RAMA|urlencode }}&days=30">Ver historico</a>
         {% else %}
         <span class="muted">— sin path ATC en inventario</span>
         {% endif %}
@@ -372,6 +374,7 @@ window.addEventListener("load", () => {
         <input type="hidden" name="value" value="{{ ruta.rama }}">
         <button class="crumb-btn" type="submit">{{ ruta.rama }}</button>
       </form>
+      <a class="dash-link" href="/dashboard/potencias-historico?ratc={{ ruta.rama|urlencode }}&days=30">Ver historico</a>
     </div>
     {% endif %}
 

@@ -445,7 +445,14 @@ window.addEventListener("load", () => {
     <span class="badge red semaforo-dot" title="RX &lt; -27 dBm" data-semaforo="rojo">{{ r.ROJAS }}</span>
     <span class="badge yellow semaforo-dot" title="-27 a -25 dBm" data-semaforo="amarillo">{{ r.AMARILLAS }}</span>
     <span class="badge green semaforo-dot" title="RX &gt; -25 dBm" data-semaforo="verde">{{ r.VERDES }}</span>
-    <button class="btn" type="button" onclick="event.stopPropagation(); consultarRama('{{ r.RAMA }}', this)">Consultar</button>
+    <span class="rama-row-actions" onclick="event.stopPropagation()">
+      <button class="btn" type="button" onclick="consultarRama('{{ r.RAMA }}', this)">Consultar</button>
+      <a
+        class="btn btn-ghost"
+        href="/dashboard/potencias-historico?ratc={{ r.RAMA|urlencode }}&days=30"
+        title="Abrir histórico de potencia para esta rama"
+      >Ver historico</a>
+    </span>
   </div>
 
   <div class="hidden indent2">
