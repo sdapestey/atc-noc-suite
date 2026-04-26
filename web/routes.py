@@ -4,13 +4,17 @@ Este módulo concentra la capa web: parsea requests, valida entradas,
 invoca servicios y devuelve templates o JSON según corresponda.
 """
 from datetime import datetime, timezone
+import re
 
 from flask import Response, jsonify, redirect, render_template, request, url_for
 from urllib.parse import quote_plus
 
 from db import healthcheck_db
 from services import (
+    ALLOWED_HIERARCHY_LEVELS,
+    ALLOWED_HISTORICO_DAYS,
     cambiar_sn_ont,
+    consultar_historico_hierarchy_tree,
     consultar_access_id_desde_alias,
     consultar_access_id_baja_o_ausente,
     consultar_access_id_detalle_desde_bajada_inventario,
@@ -31,7 +35,11 @@ from services import (
     estructura_dashboard_lt,
     export_dashboard_olts_csv,
     export_dashboard_ramas_csv,
+    export_csv_potencias_historico_hierarquia,
+    export_csv_potencias_historico_rama,
     export_index_query_csv,
+    consultar_potencias_historico_hierarquia,
+    consultar_potencias_historico_rama,
 )
 
 
@@ -99,6 +107,10 @@ def register(app):
             return redirect(url_for("dash_camino_optico"))
         if tab == "altiplano":
             return redirect(url_for("dash_altiplano"))
+        if tab in ("historico", "potencias-historico"):
+            return redirect(url_for("dash_potencias_historico"))
+        if tab in ("historico-jerarquia", "potencias-historico-jerarquia"):
+            return redirect(url_for("dash_potencias_historico_jerarquia"))
         return redirect(url_for("index"))
 
     @app.route("/", methods=["GET", "POST"])
@@ -284,6 +296,105 @@ def register(app):
     @app.route("/dashboard/altiplano")
     def dash_altiplano():
         return render_template("dashboard_altiplano.html")
+
+    @app.route("/dashboard/potencias-historico")
+    def dash_potencias_historico():
+        return render_template("dashboard_potencias_historico.html")
+
+    @app.route("/dashboard/potencias-historico-jerarquia")
+    def dash_potencias_historico_jerarquia():
+        return render_template("dashboard_potencias_historico_jerarquia.html")
+
+    @app.route("/api/potencias-historico/hierarquia")
+    def api_potencias_historico_hierarquia_tree():
+        try:
+            payload = consultar_historico_hierarchy_tree()
+        except Exception:
+            return jsonify({"error": "Error interno consultando jerarquía de histórico"}), 500
+        return jsonify(payload)
+
+    @app.route("/api/potencias-historico/hierarquia/consulta")
+    def api_potencias_historico_hierarquia_consulta():
+        level = (request.args.get("level") or "").strip().lower()
+        value = (request.args.get("value") or "").strip()
+        days = request.args.get("days", default=30, type=int)
+        if level not in ALLOWED_HIERARCHY_LEVELS:
+            return jsonify({"error": "Parámetro level inválido. Use: sitio, olt, lt, pon, rama"}), 400
+        if not value:
+            return jsonify({"error": "Parámetro value requerido"}), 400
+        try:
+            payload = consultar_potencias_historico_hierarquia(level, value, days=days)
+        except Exception:
+            return jsonify({"error": "Error interno consultando historico jerárquico"}), 500
+        if not payload.get("ok"):
+            return jsonify({"error": payload.get("error", "Error de consulta")}), int(
+                payload.get("status_code", 500)
+            )
+        return jsonify(payload)
+
+    @app.route("/api/potencias-historico/<ratc>")
+    def api_potencias_historico(ratc):
+        days = request.args.get("days", default=30, type=int)
+        try:
+            payload = consultar_potencias_historico_rama(ratc, days=days)
+        except Exception:
+            return jsonify({"error": "Error interno consultando historico de potencias"}), 500
+        if not payload.get("ok"):
+            return jsonify({"error": payload.get("error", "Error de consulta")}), int(
+                payload.get("status_code", 500)
+            )
+        return jsonify(payload)
+
+    @app.route("/dashboard/potencias-historico/export.csv")
+    def export_potencias_historico_csv():
+        ratc = (request.args.get("ratc") or "").strip()
+        days = request.args.get("days", default=30, type=int)
+        if days not in ALLOWED_HISTORICO_DAYS:
+            return jsonify({"error": "Parámetro days inválido. Valores permitidos: 7, 15, 30"}), 400
+        try:
+            payload = export_csv_potencias_historico_rama(ratc, days=days)
+        except Exception:
+            return jsonify({"error": "Error interno exportando historico de potencias"}), 500
+        if not payload.get("ok"):
+            return jsonify({"error": payload.get("error", "Error de consulta")}), int(
+                payload.get("status_code", 500)
+            )
+        ratc_safe = re.sub(r"[^A-Za-z0-9._-]+", "_", ratc or "rama").strip("_") or "rama"
+        ts_tag = datetime.now().strftime("%Y%m%d_%H%M")
+        filename = f"potencias_historico_{ratc_safe}_{days}d_{ts_tag}.csv"
+        return Response(
+            "\ufeff" + payload["csv"],
+            mimetype="text/csv; charset=utf-8",
+            headers={"Content-Disposition": f"attachment; filename={filename}"},
+        )
+
+    @app.route("/dashboard/potencias-historico/hierarquia/export.csv")
+    def export_potencias_historico_hierarquia_csv():
+        level = (request.args.get("level") or "").strip().lower()
+        value = (request.args.get("value") or "").strip()
+        days = request.args.get("days", default=30, type=int)
+        if level not in ALLOWED_HIERARCHY_LEVELS:
+            return jsonify({"error": "Parámetro level inválido. Use: sitio, olt, lt, pon, rama"}), 400
+        if not value:
+            return jsonify({"error": "Parámetro value requerido"}), 400
+        if days not in ALLOWED_HISTORICO_DAYS:
+            return jsonify({"error": "Parámetro days inválido. Valores permitidos: 7, 15, 30"}), 400
+        try:
+            payload = export_csv_potencias_historico_hierarquia(level, value, days=days)
+        except Exception:
+            return jsonify({"error": "Error interno exportando historico jerárquico"}), 500
+        if not payload.get("ok"):
+            return jsonify({"error": payload.get("error", "Error de consulta")}), int(
+                payload.get("status_code", 500)
+            )
+        scope_safe = re.sub(r"[^A-Za-z0-9._-]+", "_", value or level).strip("_") or level
+        ts_tag = datetime.now().strftime("%Y%m%d_%H%M")
+        filename = f"potencias_historico_{level}_{scope_safe}_{days}d_{ts_tag}.csv"
+        return Response(
+            "\ufeff" + payload["csv"],
+            mimetype="text/csv; charset=utf-8",
+            headers={"Content-Disposition": f"attachment; filename={filename}"},
+        )
 
     @app.route("/dashboard/altiplano/ont-connection", methods=["POST"])
     def dash_altiplano_ont_connection():
