@@ -42,6 +42,7 @@
         <input type="text" id="q" placeholder="Ej: TG01-FATC-8-110066  ·  TG01-RATC-0-000808  ·  1052404324" autocomplete="off">
       </div>
       <button type="button" class="btn btn-primary" id="btn">Buscar</button>
+      <button type="button" class="btn btn-ghost" onclick="limpiarBusquedaCamino()">Limpiar</button>
     </div>
     </div>
   </div>
@@ -209,6 +210,12 @@
     return r ? r.value : "cto";
   }
 
+  function limpiarBusquedaCamino(){
+    q.value = "";
+    q.focus();
+  }
+  window.limpiarBusquedaCamino = limpiarBusquedaCamino;
+
   function buscar(){
     const valor = q.value.trim();
     if (!valor) {
@@ -246,7 +253,15 @@
 </script>
 <script>
 window.addEventListener("load", function () {
-  if (window.initNocPage) initNocPage({ page: "camino" });
+  if (window.initNocPage) {
+    initNocPage({
+      page: "camino",
+      searchSelector: "#q",
+      onClear: function () {
+        if (window.limpiarBusquedaCamino) window.limpiarBusquedaCamino();
+      },
+    });
+  }
 });
 </script>
 </body>

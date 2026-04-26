@@ -10,6 +10,10 @@
 let _toastTimer = null;
 let _jumpTimer = null;
 let _lastJumpKey = "";
+let _restoringRamaState = false;
+const _ramaStateStore = window.createNocPageStateStore
+  ? window.createNocPageStateStore("ramaDashboardStateV1", { debounceMs: 120 })
+  : null;
 
 function toast(msg) {
   const el = document.getElementById("toast");
@@ -114,8 +118,170 @@ function exportarCtosSeleccionadasCsv() {
   toast("CSV exportado");
 }
 
+function limpiarBusquedaRama() {
+  const el = document.getElementById("q");
+  if (!el) return;
+  el.value = "";
+  if (typeof aplicarFiltro === "function") aplicarFiltro();
+  el.focus();
+}
+
+function colapsarTodoYLimpiarRama() {
+  expandAll(false);
+  limpiarBusquedaRama();
+}
+
 function setExpanded(el, expanded) {
   el.setAttribute("aria-expanded", expanded ? "true" : "false");
+}
+
+function _saveStateSoon() {
+  if (_restoringRamaState) return;
+  if (!_ramaStateStore) return;
+  _ramaStateStore.saveSoon(_buildRamaDashboardStatePayload);
+}
+
+function _expandedSiteNames() {
+  return Array.from(document.querySelectorAll(".site-head[data-toggle-node][aria-expanded='true']"))
+    .map((el) => el.closest(".principal-block")?.getAttribute("data-principal-name") || "")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function _expandedRamas() {
+  return Array.from(document.querySelectorAll(".rama-row[data-toggle-node][aria-expanded='true']"))
+    .map((el) => el.closest("[data-rama-card]")?.getAttribute("data-rama") || "")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function _expandedCtoKeys() {
+  return Array.from(document.querySelectorAll("[data-cto-node][aria-expanded='true']"))
+    .map((el) => {
+      const cto = (el.getAttribute("data-cto") || "").trim();
+      const rama = (el.closest("[data-rama-card]")?.getAttribute("data-rama") || "").trim();
+      if (!cto || !rama) return "";
+      return rama + "||" + cto;
+    })
+    .filter(Boolean);
+}
+
+function _buildRamaDashboardStatePayload() {
+  const input = document.getElementById("q");
+  return {
+    q: String(input?.value || "").trim(),
+    expandedSite: Array.from(new Set(_expandedSiteNames())),
+    expandedRama: Array.from(new Set(_expandedRamas())),
+    expandedCto: Array.from(new Set(_expandedCtoKeys())),
+    scrollY: Math.max(0, Math.floor(window.scrollY || 0)),
+    ts: Date.now(),
+  };
+}
+
+function _persistRamaDashboardState() {
+  if (_restoringRamaState || !_ramaStateStore) return;
+  _ramaStateStore.save(_buildRamaDashboardStatePayload);
+}
+
+function _readRamaDashboardState() {
+  if (!_ramaStateStore) return null;
+  return _ramaStateStore.read((parsed) => {
+    if (!parsed || typeof parsed !== "object") return null;
+    return {
+      q: typeof parsed.q === "string" ? parsed.q : "",
+      expandedSite: Array.isArray(parsed.expandedSite) ? parsed.expandedSite.filter((x) => typeof x === "string") : [],
+      expandedRama: Array.isArray(parsed.expandedRama) ? parsed.expandedRama.filter((x) => typeof x === "string") : [],
+      expandedCto: Array.isArray(parsed.expandedCto) ? parsed.expandedCto.filter((x) => typeof x === "string") : [],
+      scrollY: Number.isFinite(parsed.scrollY) ? Number(parsed.scrollY) : 0,
+    };
+  });
+}
+
+function _expandSiteByName(siteName) {
+  const target = String(siteName || "").trim();
+  if (!target) return;
+  document.querySelectorAll(".principal-block").forEach((pb) => {
+    const name = (pb.getAttribute("data-principal-name") || "").trim();
+    if (name !== target) return;
+    const head = pb.querySelector(":scope > .site-head[data-toggle-node]");
+    const body = head?.nextElementSibling;
+    if (head && body) {
+      body.classList.remove("hidden");
+      setExpanded(head, true);
+    }
+  });
+}
+
+function _expandRamaByValue(ramaVal) {
+  const target = String(ramaVal || "").trim();
+  if (!target) return;
+  document.querySelectorAll("[data-rama-card]").forEach((card) => {
+    const rama = (card.getAttribute("data-rama") || "").trim();
+    if (rama !== target) return;
+    const pb = card.closest(".principal-block");
+    const siteHead = pb?.querySelector(":scope > .site-head[data-toggle-node]");
+    const siteBody = siteHead?.nextElementSibling;
+    if (siteHead && siteBody) {
+      siteBody.classList.remove("hidden");
+      setExpanded(siteHead, true);
+    }
+    const row = card.querySelector(".rama-row[data-toggle-node]");
+    const body = row?.nextElementSibling;
+    if (row && body) {
+      body.classList.remove("hidden");
+      setExpanded(row, true);
+    }
+  });
+}
+
+function _expandCtoByKey(key) {
+  const raw = String(key || "");
+  const sep = raw.indexOf("||");
+  if (sep < 0) return;
+  const rama = raw.slice(0, sep).trim();
+  const cto = raw.slice(sep + 2).trim();
+  if (!rama || !cto) return;
+  document.querySelectorAll("[data-rama-card]").forEach((card) => {
+    const ramaVal = (card.getAttribute("data-rama") || "").trim();
+    if (ramaVal !== rama) return;
+    const row = card.querySelector(".rama-row[data-toggle-node]");
+    const body = row?.nextElementSibling;
+    if (row && body) {
+      body.classList.remove("hidden");
+      setExpanded(row, true);
+    }
+    card.querySelectorAll("[data-cto-node]").forEach((ctoNode) => {
+      const ctoVal = (ctoNode.getAttribute("data-cto") || "").trim();
+      if (ctoVal !== cto) return;
+      const ctoBody = ctoNode.nextElementSibling;
+      if (ctoBody) {
+        ctoBody.classList.remove("hidden");
+        setExpanded(ctoNode, true);
+      }
+    });
+  });
+}
+
+function restoreRamaDashboardState(preQ) {
+  const state = _readRamaDashboardState();
+  const input = document.getElementById("q");
+  if (input) {
+    if (preQ) input.value = preQ;
+    else if (state?.q) input.value = state.q;
+  }
+
+  _restoringRamaState = true;
+  try {
+    aplicarFiltro();
+    if (!state) return;
+    state.expandedSite.forEach(_expandSiteByName);
+    state.expandedRama.forEach(_expandRamaByValue);
+    state.expandedCto.forEach(_expandCtoByKey);
+  } finally {
+    _restoringRamaState = false;
+  }
+
+  if (state && _ramaStateStore) _ramaStateStore.restoreScroll(state.scrollY);
 }
 
 function toggle(el) {
@@ -124,6 +290,7 @@ function toggle(el) {
   const willExpand = next.classList.contains("hidden");
   next.classList.toggle("hidden");
   setExpanded(el, willExpand);
+  _saveStateSoon();
 }
 
 function expandAll(open) {
@@ -212,6 +379,7 @@ function aplicarFiltro() {
     if (counter) counter.textContent = `${rows.length} RAMAs`;
     _lastJumpKey = "";
     document.querySelectorAll(".rama-row.is-target").forEach((el) => el.classList.remove("is-target"));
+    _saveStateSoon();
     return;
   }
 
@@ -248,6 +416,7 @@ function aplicarFiltro() {
   if (q && visible === 1 && firstMatch) {
     scheduleJump(q, firstMatch);
   }
+  _saveStateSoon();
 }
 
 function scheduleJump(key, card) {
@@ -337,6 +506,7 @@ function consultarRama(rama, btn) {
     });
     btn.innerText = "OK";
     toast(`Potencias actualizadas: ${rama}`);
+    _saveStateSoon();
   })
   .finally(()=>btn.disabled=false);
 }
@@ -344,10 +514,7 @@ function consultarRama(rama, btn) {
 window.addEventListener("load", () => {
   const input = document.getElementById("q");
   const pre = new URLSearchParams(window.location.search).get("q");
-  if (input && pre) {
-    input.value = pre;
-  }
-  aplicarFiltro();
+  restoreRamaDashboardState(pre);
   if (input) {
     input.addEventListener("input", () => {
       _lastJumpKey = "";
@@ -362,6 +529,14 @@ window.addEventListener("load", () => {
       if (q && first) jumpToCard(q, first);
     });
   }
+
+  document.querySelectorAll("a[href^='/dashboard/potencias-historico']").forEach((a) => {
+    a.addEventListener("click", () => _persistRamaDashboardState());
+  });
+
+  window.addEventListener("pagehide", () => _persistRamaDashboardState());
+  window.addEventListener("beforeunload", () => _persistRamaDashboardState());
+  window.addEventListener("scroll", _saveStateSoon, { passive: true });
 
   if (window.initNocPage) {
     initNocPage({
@@ -420,7 +595,7 @@ window.addEventListener("load", () => {
       <div class="toolbar-actions" role="toolbar" aria-label="Exportar y vista">
         <button class="btn" type="button" onclick="copiarCtosSeleccionadas()" title="TSV solo CTO marcadas">Copiar CTO seleccionadas</button>
         <button class="btn" type="button" onclick="exportarCtosSeleccionadasCsv()" title="CSV cliente, UTF-8">Exportar CTO seleccionadas CSV</button>
-        <button class="btn btn-ghost" type="button" onclick="expandAll(false)">Colapsar todo</button>
+        <button class="btn btn-ghost" type="button" onclick="colapsarTodoYLimpiarRama()">Colapsar todo</button>
       </div>
     </div>
     <div class="controls-hint">

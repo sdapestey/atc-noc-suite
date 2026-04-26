@@ -12,6 +12,10 @@ const ltInventarioCargado = {};
 const ltCargando = {};
 const ltInventarioData = {};
 let _toastTimerOlt = null;
+let _restoringOltState = false;
+const _oltStateStore = window.createNocPageStateStore
+  ? window.createNocPageStateStore("oltDashboardStateV1", { debounceMs: 120 })
+  : null;
 
 function toastOlt(msg) {
   const el = document.getElementById("toast-olt");
@@ -131,6 +135,15 @@ function exportarPonesSeleccionadosPortapapeles() {
   copyTextToClipboardOlt(res.lines.join("\n"));
 }
 
+function colapsarTodoOlt() {
+  _restoringOltState = true;
+  Object.keys(state).forEach((id) => {
+    if (state[id]) closeNode(id, true);
+  });
+  _restoringOltState = false;
+  _saveOltStateSoon();
+}
+
 /* ===============================
    CIERRE RECURSIVO
    =============================== */
@@ -140,7 +153,110 @@ function childrenByParent(parentId) {
   );
 }
 
-function closeNode(id) {
+function _saveOltStateSoon() {
+  if (_restoringOltState) return;
+  if (!_oltStateStore) return;
+  _oltStateStore.saveSoon(buildOltDashboardStatePayload);
+}
+
+function _expandedNodeIdsOlt() {
+  return Object.keys(state).filter((id) => !!state[id]);
+}
+
+function buildOltDashboardStatePayload() {
+  const input = document.getElementById("bus-olt");
+  return {
+    q: String(input?.value || "").trim(),
+    expandedNodeIds: _expandedNodeIdsOlt(),
+    scrollY: Math.max(0, Math.floor(window.scrollY || 0)),
+    ts: Date.now(),
+  };
+}
+
+function persistOltDashboardState() {
+  if (_restoringOltState || !_oltStateStore) return;
+  _oltStateStore.save(buildOltDashboardStatePayload);
+}
+
+function readOltDashboardState() {
+  if (!_oltStateStore) return null;
+  return _oltStateStore.read((parsed) => {
+    if (!parsed || typeof parsed !== "object") return null;
+    return {
+      q: typeof parsed.q === "string" ? parsed.q : "",
+      expandedNodeIds: Array.isArray(parsed.expandedNodeIds)
+        ? parsed.expandedNodeIds.filter((x) => typeof x === "string")
+        : [],
+      scrollY: Number.isFinite(parsed.scrollY) ? Number(parsed.scrollY) : 0,
+    };
+  });
+}
+
+function _getLtMetaFromUid(uid) {
+  const td = document.querySelector("td.lt-row-toggle[data-uid='" + uid + "']");
+  if (!td) return null;
+  const row = td.closest("tr");
+  if (!row) return null;
+  const raw = (td.dataset.lt || "").trim();
+  let lt = raw || null;
+  if (!lt) {
+    const j = td.dataset.ltJson;
+    if (j != null && j !== "") {
+      try {
+        lt = JSON.parse(j);
+      } catch (_err) {
+        lt = null;
+      }
+    }
+  }
+  if (!lt) return null;
+  return { lt, row };
+}
+
+async function _openNodeForRestore(nodeId) {
+  if (!nodeId || state[nodeId]) return;
+
+  const ltMeta = _getLtMetaFromUid(nodeId);
+  if (ltMeta) {
+    const { lt, row } = ltMeta;
+    if (!ltInventarioCargado[nodeId] && !ltCargando[nodeId]) {
+      ltCargando[nodeId] = true;
+      try {
+        await cargarInventarioLT(lt, nodeId, row);
+        ltInventarioCargado[nodeId] = true;
+      } catch (_err) {
+      } finally {
+        ltCargando[nodeId] = false;
+        hideLtLoading(nodeId);
+      }
+    }
+  }
+  ensureNodeOpen(nodeId);
+}
+
+async function restoreOltDashboardState() {
+  const input = document.getElementById("bus-olt");
+  const stateSaved = readOltDashboardState();
+  if (!stateSaved) return;
+
+  if (input && stateSaved.q) {
+    input.value = stateSaved.q;
+  }
+
+  _restoringOltState = true;
+  try {
+    aplicarBusquedaOlt();
+    for (const nodeId of stateSaved.expandedNodeIds) {
+      await _openNodeForRestore(nodeId);
+    }
+  } finally {
+    _restoringOltState = false;
+  }
+
+  if (_oltStateStore) _oltStateStore.restoreScroll(stateSaved.scrollY);
+}
+
+function closeNode(id, skipSave) {
     state[id] = false;
     const arrow = document.getElementById('arrow-' + id);
     if (arrow) arrow.textContent = '▶';
@@ -148,8 +264,9 @@ function closeNode(id) {
     childrenByParent(id).forEach(el => {
         el.classList.add('hidden');
         const child = el.getAttribute('data-node-id');
-        if (child) closeNode(child);
+        if (child) closeNode(child, true);
     });
+    if (!skipSave) _saveOltStateSoon();
 }
 
 /* ===============================
@@ -168,6 +285,7 @@ function toggleNode(id) {
     childrenByParent(id).forEach(el => {
         el.classList.remove('hidden');
     });
+    _saveOltStateSoon();
 }
 
 /** Abre un nodo sin alternar (para filtro / resultados). */
@@ -179,6 +297,7 @@ function ensureNodeOpen(id) {
   childrenByParent(id).forEach((el) => {
     el.classList.remove("hidden");
   });
+  _saveOltStateSoon();
 }
 
 /* ===============================
@@ -394,6 +513,7 @@ function toggleLTCargar(lt, uid) {
       ltInventarioCargado[uid] = true;
       if (peCell) peCell.textContent = prevPe;
       toggleNode(uid);
+      _saveOltStateSoon();
     })
     .catch(() => {
       if (peCell) peCell.textContent = prevPe;
@@ -447,6 +567,7 @@ function cargarInventarioLT(lt, uid, row) {
 
       const wrap = detailRow.querySelector("td");
       bindPotenciaButtons(wrap, row);
+      _saveOltStateSoon();
       return wrap;
     });
 }
@@ -630,6 +751,7 @@ function aplicarBusquedaOlt() {
       });
     }
   });
+  _saveOltStateSoon();
 }
 
 window.addEventListener("load", () => {
@@ -696,6 +818,12 @@ window.addEventListener("load", () => {
       },
     });
   }
+
+  window.addEventListener("pagehide", () => persistOltDashboardState());
+  window.addEventListener("beforeunload", () => persistOltDashboardState());
+  window.addEventListener("scroll", _saveOltStateSoon, { passive: true });
+
+  restoreOltDashboardState();
 });
 </script>
 </head>
@@ -721,6 +849,7 @@ window.addEventListener("load", () => {
     <div class="toolbar-actions" role="toolbar" aria-label="Exportar y copiar">
       <button type="button" class="btn" onclick="copiarPonesSeleccionados()" title="Copiar PON seleccionados (TSV)">Copiar PON seleccionados</button>
       <button type="button" class="btn" onclick="exportarPonesSeleccionadosCsv()" title="Descargar PON seleccionados (CSV)">Exportar PON seleccionados CSV</button>
+      <button type="button" class="btn btn-ghost" onclick="colapsarTodoOlt()">Colapsar todo</button>
     </div>
     <p class="controls-hint olt-controls-hint"><strong class="hint-kicker">NOC</strong> Marcá PON (o “Seleccionar todos los PON de este LT”) y usá copiar / exportar CSV (descarga local, UTF‑8).</p>
   </div>
