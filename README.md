@@ -73,7 +73,7 @@ python -m pytest tests/
 
 Pantallas:
 
-- `/` (consulta principal por AID/CTO/RAMA/alias)
+- `/` (consulta principal por AID/CTO/RAMA)
 - `/dashboard/rama`
 - `/dashboard/olt`
 - `/dashboard/camino-optico`
