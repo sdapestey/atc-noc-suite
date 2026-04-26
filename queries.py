@@ -146,4 +146,68 @@ QUERIES = {
         WHERE f.path_atc = %s AND f.status = 'IN SERVICE'
         ORDER BY f.location_description, f.access_id
     """,
+    # ===============================
+    # Histórico de potencias por rama (RATC)
+    # ===============================
+    "historico_resolver_pon_desde_rama": """
+        WITH r AS (
+            SELECT physical_path
+            FROM cm.inventory_fat_occupation
+            WHERE path_atc = %s
+            ORDER BY access_id
+            LIMIT 1
+        )
+        SELECT btrim(b.object_name)
+        FROM aux.bajada_inventario b
+        JOIN r ON b.fibra_f01_f02_f03 = r.physical_path
+        WHERE b.object_name IS NOT NULL
+          AND btrim(b.object_name) <> ''
+        ORDER BY b.reserved_date DESC NULLS LAST, b.provided_date DESC NULLS LAST
+        LIMIT 1
+    """,
+    "historico_potencias_por_pon": """
+        SELECT
+            "ont-pwr_rx_updated_on" AS ts,
+            objectname,
+            ("ont-pwr_rx" / 10.0)::float8 AS rx
+        FROM altiplano.potencias
+        WHERE objectname LIKE %s
+          AND "ont-pwr_rx_updated_on" >= NOW() - make_interval(days => %s)
+        ORDER BY "ont-pwr_rx_updated_on" ASC
+    """,
+    "historico_hierarchy_mapping": """
+        WITH base AS (
+            SELECT DISTINCT
+                btrim(f.path_atc) AS rama,
+                btrim(f.physical_path) AS physical_path
+            FROM cm.inventory_fat_occupation f
+            WHERE f.status = 'IN SERVICE'
+              AND f.path_atc IS NOT NULL
+              AND btrim(f.path_atc) <> ''
+              AND f.physical_path IS NOT NULL
+              AND btrim(f.physical_path) <> ''
+        ),
+        ultima_bajada AS (
+            SELECT
+                btrim(b.fibra_f01_f02_f03) AS physical_path,
+                btrim(b.object_name) AS object_name,
+                ROW_NUMBER() OVER (
+                    PARTITION BY btrim(b.fibra_f01_f02_f03)
+                    ORDER BY b.reserved_date DESC NULLS LAST, b.provided_date DESC NULLS LAST
+                ) AS rn
+            FROM aux.bajada_inventario b
+            WHERE b.object_name IS NOT NULL
+              AND btrim(b.object_name) <> ''
+              AND b.fibra_f01_f02_f03 IS NOT NULL
+              AND btrim(b.fibra_f01_f02_f03) <> ''
+        )
+        SELECT
+            base.rama,
+            ub.object_name
+        FROM base
+        JOIN ultima_bajada ub
+          ON ub.physical_path = base.physical_path
+         AND ub.rn = 1
+        ORDER BY base.rama
+    """,
 }

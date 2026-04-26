@@ -12,6 +12,15 @@ from .exports import (
     export_dashboard_ramas_csv,
     export_index_query_csv,
 )
+from .historico_potencias import (
+    ALLOWED_HISTORICO_DAYS,
+    ALLOWED_HIERARCHY_LEVELS,
+    consultar_historico_hierarchy_tree,
+    consultar_potencias_historico_hierarquia,
+    consultar_potencias_historico_rama,
+    export_csv_potencias_historico_hierarquia,
+    export_csv_potencias_historico_rama,
+)
 from .inventory import (
     consultar_access_id_desde_alias,
     consultar_access_id_baja_o_ausente,
@@ -43,6 +52,13 @@ __all__ = [
     "export_dashboard_ramas_csv",
     "export_dashboard_olts_csv",
     "export_index_query_csv",
+    "consultar_potencias_historico_rama",
+    "consultar_potencias_historico_hierarquia",
+    "consultar_historico_hierarchy_tree",
+    "export_csv_potencias_historico_rama",
+    "export_csv_potencias_historico_hierarquia",
+    "ALLOWED_HISTORICO_DAYS",
+    "ALLOWED_HIERARCHY_LEVELS",
     "dashboard_camino_optico_cto",
     "dashboard_camino_optico_rama",
     "dashboard_camino_optico_access_id",
