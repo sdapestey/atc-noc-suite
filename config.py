@@ -127,8 +127,8 @@ def _int_env_at_least(name: str, default: int, min_value: int) -> int:
 
 def get_db_pool_bounds() -> tuple[int, int]:
     """Límites saneados para el pool de conexiones PostgreSQL."""
-    pool_min = _int_env_at_least("DB_POOL_MIN", 1, 1)
-    pool_max = _int_env_at_least("DB_POOL_MAX", 20, 1)
+    pool_min = _int_env_at_least("DB_POOL_MIN", 2, 1)
+    pool_max = _int_env_at_least("DB_POOL_MAX", 10, 1)
     if pool_max < pool_min:
         pool_max = pool_min
     return pool_min, pool_max

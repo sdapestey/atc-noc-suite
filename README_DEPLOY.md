@@ -14,7 +14,7 @@ Guía breve para desplegar y operar la app sin tocar código.
 
 - `SECRET_KEY`
 - `FLASK_HOST` (default: `0.0.0.0`)
-- `FLASK_PORT` (default: `9002`)
+- `FLASK_PORT` (default: `9000`)
 - `FLASK_DEBUG` (`0` en producción)
 
 ### Base de datos
@@ -30,6 +30,15 @@ o bien:
 - `DB_PASSWORD`
 - `DB_HOST`
 - `DB_PORT`
+
+Parámetros de pool/timeouts recomendados (hasta ~10 concurrentes):
+
+- `DB_POOL_MIN=2`
+- `DB_POOL_MAX=10`
+- `DB_CONNECT_TIMEOUT_SECS=5`
+- `DB_STATEMENT_TIMEOUT_MS=30000`
+- `DB_IDLE_IN_TXN_TIMEOUT_MS=15000`
+- `DB_APP_NAME=gpon-inventory`
 
 ### Altiplano (según operador/entorno)
 
@@ -72,7 +81,7 @@ python app.py
 ### Producción (Gunicorn + wsgi)
 
 ```bash
-gunicorn -w 4 -b 0.0.0.0:9002 wsgi:app
+gunicorn -w 4 -b 0.0.0.0:9000 wsgi:app
 ```
 
 Notas:
@@ -99,6 +108,9 @@ Esperado:
 - [ ] Búsqueda por `FATC` / `RATC` funciona
 - [ ] Búsqueda por alias (`SRVC_LOC_*`, `RES_MT_*`, `RES_IP_*`) funciona
 - [ ] Potencias TX/RX cargan en vistas principales
+- [ ] Dashboard `/dashboard/potencias-historico` responde y grafica una rama RATC válida
+- [ ] Selector de rango `7d/15d/30d` funciona en histórico
+- [ ] Export CSV del histórico descarga datos según `RATC + rango`
 - [ ] Altiplano INP crea `ont-connection` correctamente
 - [ ] Export CSV funciona en índice y dashboards
 
@@ -120,3 +132,8 @@ Esperado:
 - **Resultados vacíos inesperados**
   - Confirmar formato de input (AID/FATC/RATC/alias)
   - Validar que haya datos en estado `IN SERVICE` en tablas fuente
+
+- **Historico de potencias sin datos**
+  - Verificar que la rama RATC exista en `cm.inventory_fat_occupation.path_atc`
+  - Verificar mapeo a `aux.bajada_inventario.fibra_f01_f02_f03` y `object_name`
+  - Verificar muestras recientes en `altiplano.potencias` (ultimos 30 dias)

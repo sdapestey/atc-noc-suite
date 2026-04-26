@@ -2,7 +2,18 @@
 
 Panel Flask para consultas de inventario GPON (Postgres + Altiplano). Código del proyecto en el directorio `gpon-inventory`.
 
-Variables útiles: `FLASK_HOST`, `FLASK_PORT`, `FLASK_DEBUG`, `SECRET_KEY`, `DB_POOL_MAX`.
+Variables útiles: `FLASK_HOST`, `FLASK_PORT`, `FLASK_DEBUG`, `SECRET_KEY`, `DB_POOL_MIN`, `DB_POOL_MAX`.
+
+## Hardening DB (recomendado)
+
+Para un uso de hasta ~10 operadores concurrentes, usar como baseline:
+
+- `DB_POOL_MIN=2`
+- `DB_POOL_MAX=10`
+- `DB_CONNECT_TIMEOUT_SECS=5`
+- `DB_STATEMENT_TIMEOUT_MS=30000`
+- `DB_IDLE_IN_TXN_TIMEOUT_MS=15000`
+- `DB_APP_NAME=gpon-inventory`
 
 ### Caché de dashboards (Postgres)
 
@@ -47,3 +58,12 @@ python -m pytest tests/
 - `db.py` — pool de conexiones PostgreSQL
 - `queries.py` — SQL reutilizable
 - `altiplano.py` — cliente API potencias
+
+## Nuevo dashboard: Historico de Potencias
+
+- URL UI: `/dashboard/potencias-historico`
+- API JSON: `/api/potencias-historico/<RATC>`
+- Export CSV: `/dashboard/potencias-historico/export.csv?ratc=<RATC>&days=<7|15|30>`
+- Objetivo: visualizar tendencia de potencia Rx por ONT (ultimos 30 dias) para una rama `RATC`.
+- Flujo: resolver `RATC` -> `OLT-B-P` y consultar `altiplano.potencias` para construir series temporales.
+- Rango configurable en UI/API: `7d`, `15d`, `30d` (default `30d`).
