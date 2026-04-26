@@ -115,6 +115,25 @@ def _int_env_positive_or_zero(name: str, default: int) -> int:
         return default
 
 
+def _int_env_at_least(name: str, default: int, min_value: int) -> int:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return max(min_value, default)
+    try:
+        return max(min_value, int(raw))
+    except ValueError:
+        return max(min_value, default)
+
+
+def get_db_pool_bounds() -> tuple[int, int]:
+    """Límites saneados para el pool de conexiones PostgreSQL."""
+    pool_min = _int_env_at_least("DB_POOL_MIN", 1, 1)
+    pool_max = _int_env_at_least("DB_POOL_MAX", 20, 1)
+    if pool_max < pool_min:
+        pool_max = pool_min
+    return pool_min, pool_max
+
+
 def get_dashboard_tree_cache_seconds_default() -> int:
     """TTL por defecto para árboles RAMA y OLT (Postgres). Default 120 s."""
     return _int_env_positive_or_zero("DASHBOARD_TREE_CACHE_SECONDS", 120)
@@ -154,7 +173,11 @@ class Config:
     HOST = os.environ.get("FLASK_HOST", "0.0.0.0")
     PORT = int(os.environ.get("FLASK_PORT", "9002"))
     DEBUG = os.environ.get("FLASK_DEBUG", "1").lower() in ("1", "true", "yes")
-    DB_POOL_MAX = int(os.environ.get("DB_POOL_MAX", "20"))
+    DB_POOL_MIN, DB_POOL_MAX = get_db_pool_bounds()
+    DB_CONNECT_TIMEOUT_SECS = _int_env_at_least("DB_CONNECT_TIMEOUT_SECS", 5, 1)
+    DB_STATEMENT_TIMEOUT_MS = _int_env_positive_or_zero("DB_STATEMENT_TIMEOUT_MS", 30000)
+    DB_IDLE_IN_TXN_TIMEOUT_MS = _int_env_positive_or_zero("DB_IDLE_IN_TXN_TIMEOUT_MS", 15000)
+    DB_APP_NAME = (os.environ.get("DB_APP_NAME", "gpon-inventory").strip() or "gpon-inventory")
     # Ruta bajo `static/` para el logo del splash (índice). Ej.: img/SPLASH_LOGO.png
     SPLASH_LOGO_STATIC = (
         os.environ.get("SPLASH_LOGO_PATH", "img/SPLASH_LOGO.png").strip() or "img/SPLASH_LOGO.png"
