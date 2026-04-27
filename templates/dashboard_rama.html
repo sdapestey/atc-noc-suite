@@ -247,6 +247,32 @@ function _expandRamaByValue(ramaVal) {
   });
 }
 
+async function _expandRamaByValueEnsuringInventory(ramaVal) {
+  const target = String(ramaVal || "").trim();
+  if (!target) return;
+  const card = Array.from(document.querySelectorAll("[data-rama-card]")).find(
+    (el) => String(el.getAttribute("data-rama") || "").trim() === target
+  );
+  if (!card) return;
+  const pb = card.closest(".principal-block");
+  const siteHead = pb?.querySelector(":scope > .site-head[data-toggle-node]");
+  const siteBody = siteHead?.nextElementSibling;
+  if (siteHead && siteBody) {
+    siteBody.classList.remove("hidden");
+    setExpanded(siteHead, true);
+  }
+  const row = card.querySelector(".rama-row[data-toggle-node]");
+  const body = row?.nextElementSibling;
+  if (row && body) {
+    const container = card.querySelector("[data-rama-detail]");
+    if (container) {
+      await cargarInventarioRama(target, card, container);
+    }
+    body.classList.remove("hidden");
+    setExpanded(row, true);
+  }
+}
+
 function _expandCtoByKey(key) {
   const raw = String(key || "");
   const sep = raw.indexOf("||");
@@ -275,7 +301,7 @@ function _expandCtoByKey(key) {
   });
 }
 
-function restoreRamaDashboardState(preQ) {
+async function restoreRamaDashboardState(preQ) {
   const state = _readRamaDashboardState();
   const input = document.getElementById("q");
   if (input) {
@@ -288,8 +314,12 @@ function restoreRamaDashboardState(preQ) {
     aplicarFiltro();
     if (!state) return;
     state.expandedSite.forEach(_expandSiteByName);
-    state.expandedRama.forEach(_expandRamaByValue);
+    for (const rama of state.expandedRama) {
+      await _expandRamaByValueEnsuringInventory(rama);
+    }
     state.expandedCto.forEach(_expandCtoByKey);
+    // Reaplica filtro con data-ctos ya cargado para restaurar búsquedas por CTO.
+    aplicarFiltro();
   } finally {
     _restoringRamaState = false;
   }

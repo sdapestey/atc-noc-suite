@@ -2,8 +2,9 @@
 import csv
 import io
 
+from db import db_cursor
 from .dashboard_olt import dashboard_olts
-from .dashboard_rama import dashboard_ramas, inventario_dashboard_rama
+from .domain import SITIO_PRINCIPAL_DEFAULT, SITIO_PRINCIPAL_POR_REGION, nombre_operador, region_desde_rama
 from .inventory import (
     consultar_access_id_baja_o_ausente,
     consultar_access_id_detalle_desde_bajada_inventario,
@@ -21,23 +22,40 @@ def export_dashboard_ramas_csv() -> str:
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow(["PRINCIPAL", "RAMA", "CTO", "AID", "OPERADOR", "ONT", "TX", "RX"])
-    for bloque in dashboard_ramas():
-        principal = bloque["PRINCIPAL"]
-        for r in bloque["RAMAS"]:
-            rama = r["RAMA"]
-            inventario = inventario_dashboard_rama(rama)
-            for cto, onts in inventario.items():
-                for o in onts:
-                    w.writerow([
-                        principal,
-                        rama,
-                        cto,
-                        o["AID"],
-                        o["OPERADOR"],
-                        o.get("ONT") or "",
-                        o.get("TX") if o.get("TX") is not None else "",
-                        o.get("RX") if o.get("RX") is not None else "",
-                    ])
+    with db_cursor() as cur:
+        cur.execute(
+            """
+            SELECT
+                f.path_atc AS rama,
+                f.location_description AS cto,
+                f.access_id,
+                o.invocator_system,
+                REPLACE(COALESCE(s.object_name, ''), ':1-1', '') AS object_name_ui
+            FROM cm.inventory_fat_occupation f
+            JOIN cm.inventory_olt_occupation o
+              ON o.access_id = f.access_id
+            LEFT JOIN altiplano.serial s
+              ON s.access_id = f.access_id
+            WHERE f.status = 'IN SERVICE'
+              AND f.path_atc IS NOT NULL
+            ORDER BY f.path_atc, f.location_description, f.access_id
+            """
+        )
+        rows = cur.fetchall()
+
+    for rama, cto, aid, op_id, object_name_ui in rows:
+        reg = region_desde_rama(rama)
+        principal = SITIO_PRINCIPAL_POR_REGION.get(reg, SITIO_PRINCIPAL_DEFAULT)
+        w.writerow([
+            principal,
+            rama,
+            cto,
+            str(aid),
+            nombre_operador(op_id),
+            (object_name_ui or "").strip() or "—",
+            "",
+            "",
+        ])
     return buf.getvalue()
 
 

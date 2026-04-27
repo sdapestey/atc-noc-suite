@@ -466,13 +466,14 @@ html.dashboard-tab-nav-loading .dashboard-tab-nav-loading-caption {
   margin-top: 10px;
   padding-top: 8px;
   border-top: 1px solid var(--border-muted);
-  overflow-x: auto;
+  overflow-x: hidden;
 }
 
 .page-historico-potencias .historico-legend {
-  display: inline-flex;
-  gap: 12px;
-  min-width: max-content;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  width: 100%;
 }
 
 .page-historico-potencias .historico-legend-item {
@@ -481,7 +482,9 @@ html.dashboard-tab-nav-loading .dashboard-tab-nav-loading-caption {
   gap: 6px;
   color: var(--fg-muted);
   font-size: 12px;
-  white-space: nowrap;
+  white-space: normal;
+  line-height: 1.2;
+  padding: 2px 0;
 }
 
 .page-historico-potencias .historico-legend-dot {

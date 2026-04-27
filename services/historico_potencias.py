@@ -11,7 +11,7 @@ from queries import QUERIES
 
 
 _OBJ_RE = re.compile(r"^(.*?):1-1-(\d+)-(\d+)-")
-ALLOWED_HISTORICO_DAYS = (7, 15, 30)
+ALLOWED_HISTORICO_DAYS = (1, 7, 15, 30)
 
 
 def _resolver_pon_desde_rama(ratc: str) -> str | None:
@@ -46,7 +46,7 @@ def consultar_potencias_historico_rama(ratc: str, days: int = 30) -> dict:
         return {
             "ok": False,
             "status_code": 400,
-            "error": "Parámetro days inválido. Valores permitidos: 7, 15, 30",
+            "error": "Parámetro days inválido. Valores permitidos: 1 (24h), 7, 15, 30",
         }
 
     pon = _resolver_pon_desde_rama(rama)

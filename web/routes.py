@@ -340,7 +340,7 @@ def register(app):
         ratc = (request.args.get("ratc") or "").strip()
         days = request.args.get("days", default=30, type=int)
         if days not in ALLOWED_HISTORICO_DAYS:
-            return jsonify({"error": "Parámetro days inválido. Valores permitidos: 7, 15, 30"}), 400
+            return jsonify({"error": "Parámetro days inválido. Valores permitidos: 1 (24h), 7, 15, 30"}), 400
         try:
             payload = export_csv_potencias_historico_rama(ratc, days=days)
         except Exception:
@@ -351,7 +351,8 @@ def register(app):
             )
         ratc_safe = re.sub(r"[^A-Za-z0-9._-]+", "_", ratc or "rama").strip("_") or "rama"
         ts_tag = datetime.now().strftime("%Y%m%d_%H%M")
-        filename = f"potencias_historico_{ratc_safe}_{days}d_{ts_tag}.csv"
+        range_tag = "24h" if days == 1 else f"{days}d"
+        filename = f"potencias_historico_{ratc_safe}_{range_tag}_{ts_tag}.csv"
         return Response(
             "\ufeff" + payload["csv"],
             mimetype="text/csv; charset=utf-8",

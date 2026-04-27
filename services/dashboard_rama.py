@@ -6,7 +6,7 @@ from db import db_cursor
 
 from altiplano import obtener_potencias_por_cto
 
-from .dashboard_cache import get_cached_rama, get_cached_rama_potencias
+from .dashboard_cache import get_cached_rama, get_cached_rama_inventario, get_cached_rama_potencias
 
 from .domain import (
     SITIO_PRINCIPAL_DEFAULT,
@@ -88,37 +88,41 @@ def inventario_dashboard_rama(rama):
     if rama is None or not str(rama).strip():
         return {}
     rama_norm = str(rama).strip()
-    with db_cursor() as cur:
-        cur.execute(
-            """
-            SELECT
-                f.location_description AS cto,
-                f.access_id,
-                o.invocator_system,
-                REPLACE(COALESCE(s.object_name, ''), ':1-1', '') AS object_name_ui
-            FROM cm.inventory_fat_occupation f
-            JOIN cm.inventory_olt_occupation o
-              ON o.access_id = f.access_id
-            LEFT JOIN altiplano.serial s
-              ON s.access_id = f.access_id
-            WHERE f.path_atc = %s
-              AND f.status = 'IN SERVICE'
-            ORDER BY f.location_description, f.access_id
-            """,
-            (rama_norm,),
-        )
-        rows = cur.fetchall()
 
-    out = defaultdict(list)
-    for cto, aid, op_id, object_name_ui in rows:
-        out[cto].append({
-            "AID": str(aid),
-            "OPERADOR": nombre_operador(op_id),
-            "ONT": (object_name_ui or "").strip() or "—",
-            "TX": None,
-            "RX": None,
-        })
-    return dict(out)
+    def _compute():
+        with db_cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                    f.location_description AS cto,
+                    f.access_id,
+                    o.invocator_system,
+                    REPLACE(COALESCE(s.object_name, ''), ':1-1', '') AS object_name_ui
+                FROM cm.inventory_fat_occupation f
+                JOIN cm.inventory_olt_occupation o
+                  ON o.access_id = f.access_id
+                LEFT JOIN altiplano.serial s
+                  ON s.access_id = f.access_id
+                WHERE f.path_atc = %s
+                  AND f.status = 'IN SERVICE'
+                ORDER BY f.location_description, f.access_id
+                """,
+                (rama_norm,),
+            )
+            rows = cur.fetchall()
+
+        out = defaultdict(list)
+        for cto, aid, op_id, object_name_ui in rows:
+            out[cto].append({
+                "AID": str(aid),
+                "OPERADOR": nombre_operador(op_id),
+                "ONT": (object_name_ui or "").strip() or "—",
+                "TX": None,
+                "RX": None,
+            })
+        return dict(out)
+
+    return get_cached_rama_inventario(get_dashboard_rama_cache_seconds(), rama_norm, _compute)
 
 
 def consultar_dashboard_rama(rama):

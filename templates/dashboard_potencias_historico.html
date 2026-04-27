@@ -16,7 +16,7 @@
         {% include 'partials/brand_logo.html' %}
         <h1>ATC GPON Inventory</h1>
       </div>
-      <small><strong>Historico Potencias</strong> — tendencia Rx por rama RATC (Ultimos 30, 15 o 7 dias)</small>
+      <small><strong>Historico Potencias</strong> — tendencia Rx por rama RATC (ultimos 24h, 7, 15 o 30 dias)</small>
     </div>
     {% include 'partials/noc_topbar.html' %}
   </div>
@@ -33,6 +33,7 @@
         <button class="btn btn-ghost is-active" type="button" data-days="30">30d</button>
         <button class="btn btn-ghost" type="button" data-days="15">15d</button>
         <button class="btn btn-ghost" type="button" data-days="7">7d</button>
+        <button class="btn btn-ghost" type="button" data-days="1">24h</button>
       </div>
       <button class="btn btn-primary" type="submit" id="btn-search">Buscar</button>
       <button class="btn btn-ghost" type="button" onclick="resetDashboard()">Limpiar</button>
@@ -114,16 +115,17 @@ function setKPIs(data) {
   document.getElementById("kpi-onts").innerText = String(data.total_onts || 0);
   document.getElementById("kpi-median").innerText = String(data.median || "-") + " dBm";
   const days = Number(data.days || selectedDays || 30);
+  const rangeLabel = days === 1 ? "24h" : (String(days) + "d");
   const statusEl = document.getElementById("kpi-status");
   const hintEl = document.getElementById("kpi-status-hint");
   statusEl.innerText = data.status || "-";
   statusEl.classList.remove("status-ok", "status-warn", "status-neutral");
   if ((data.status || "").toLowerCase() === "activo") {
     statusEl.classList.add("status-ok");
-    hintEl.innerText = "con datos en " + String(days) + "d";
+    hintEl.innerText = "con datos en " + rangeLabel;
   } else if ((data.status || "").toLowerCase().includes("sin")) {
     statusEl.classList.add("status-warn");
-    hintEl.innerText = "sin muestras en " + String(days) + "d";
+    hintEl.innerText = "sin muestras en " + rangeLabel;
   } else {
     statusEl.classList.add("status-neutral");
     hintEl.innerText = "estado no disponible";
@@ -424,7 +426,7 @@ function initFromQueryString() {
   const params = new URLSearchParams(window.location.search);
   const ratc = (params.get("ratc") || "").trim();
   const days = Number(params.get("days") || 30);
-  if ([7, 15, 30].includes(days)) {
+  if ([1, 7, 15, 30].includes(days)) {
     selectedDays = days;
     document.querySelectorAll("#range-picker [data-days]").forEach(function (el) {
       el.classList.toggle("is-active", Number(el.getAttribute("data-days")) === days);

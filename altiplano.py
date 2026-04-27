@@ -18,6 +18,13 @@ logger = logging.getLogger(__name__)
 
 # Cache simple de tokens por auth_url
 _token_cache = {}
+_ALTIPLANO_POWER_TARGETS_BY_OPERATOR_ID = {
+    1001: ("tasa", "https://10.200.4.101:32443/tasa-altiplano-ac/rest/auth/login"),
+    3001: ("dtv", "https://10.200.7.107:32443/dtv-altiplano-ac/rest/auth/login"),
+    4000: ("metro", "https://10.200.5.102:32443/metro-altiplano-ac/rest/auth/login"),
+    4010: ("metro", "https://10.200.5.102:32443/metro-altiplano-ac/rest/auth/login"),
+    3950: ("iplan", "https://10.200.5.103:32444/iplan-altiplano-ac/rest/auth/login"),
+}
 
 
 def _extract_altiplano_error_message(response: requests.Response) -> str:
@@ -349,14 +356,10 @@ def obtener_potencias_por_cto(NE, onts_cto):
 
     tasks = []
     for access_id, object_name_raw, operator_id in onts_cto:
-        if operator_id == 1001:
-            vno = "tasa"
-            auth_url = "https://10.200.4.101:32443/tasa-altiplano-ac/rest/auth/login"
-        elif operator_id == 3001:
-            vno = "dtv"
-            auth_url = "https://10.200.7.107:32443/dtv-altiplano-ac/rest/auth/login"
-        else:
+        target = _ALTIPLANO_POWER_TARGETS_BY_OPERATOR_ID.get(operator_id)
+        if target is None:
             continue
+        vno, auth_url = target
         tasks.append((str(access_id), object_name_raw, vno, auth_url))
 
     if not tasks:
