@@ -53,7 +53,7 @@ Hardening DB recomendado (hasta ~10 concurrentes):
 
 Variables útiles de caché dashboards:
 
-- `DASHBOARD_TREE_CACHE_SECONDS` (default `120`)
+- `DASHBOARD_TREE_CACHE_SECONDS` (default `1800`)
 - `DASHBOARD_RAMA_CACHE_SECONDS` (override RAMA)
 - `DASHBOARD_OLT_CACHE_SECONDS` (override OLT)
 

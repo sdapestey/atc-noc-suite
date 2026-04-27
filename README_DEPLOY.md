@@ -60,7 +60,7 @@ Parámetros de pool/timeouts recomendados (hasta ~10 concurrentes):
 
 ### Caché dashboards (opcional)
 
-- `DASHBOARD_TREE_CACHE_SECONDS` (default: `120`)
+- `DASHBOARD_TREE_CACHE_SECONDS` (default: `1800`)
 - `DASHBOARD_RAMA_CACHE_SECONDS` (override específico)
 - `DASHBOARD_OLT_CACHE_SECONDS` (override específico)
 

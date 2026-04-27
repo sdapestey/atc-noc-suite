@@ -18,3 +18,8 @@ def test_get_db_pool_bounds_defaults_for_10_concurrent_profile(monkeypatch):
     monkeypatch.delenv("DB_POOL_MAX", raising=False)
     assert config_module.get_db_pool_bounds() == (2, 10)
 
+
+def test_dashboard_tree_cache_seconds_default_is_1800(monkeypatch):
+    monkeypatch.delenv("DASHBOARD_TREE_CACHE_SECONDS", raising=False)
+    assert config_module.get_dashboard_tree_cache_seconds_default() == 1800
+

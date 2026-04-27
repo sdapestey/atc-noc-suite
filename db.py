@@ -47,55 +47,63 @@ def close_pool() -> None:
 
 @contextmanager
 def db_cursor():
-    """Cursor con search_path; devuelve la conexión al pool al salir."""
-    pool = init_pool()
-    conn = None
-    released = False
-    cur = None
-    try:
-        for _ in range(2):
-            conn = pool.getconn()
-            if not getattr(conn, "closed", 1):
-                break
-            logger.warning("Conexión cerrada detectada en pool; se descarta y reintenta")
-            pool.putconn(conn, close=True)
-            conn = None
-        if conn is None:
-            raise OperationalError("No hay conexiones utilizables en el pool")
+    """Cursor con search_path; devuelve la conexión al pool al salir.
 
-        conn.autocommit = False
-        cur = conn.cursor()
-        cur.execute("SET search_path TO aux, public;")
-        if Config.DB_STATEMENT_TIMEOUT_MS > 0:
-            cur.execute(f"SET LOCAL statement_timeout = {int(Config.DB_STATEMENT_TIMEOUT_MS)};")
-        if Config.DB_IDLE_IN_TXN_TIMEOUT_MS > 0:
-            cur.execute(
-                f"SET LOCAL idle_in_transaction_session_timeout = {int(Config.DB_IDLE_IN_TXN_TIMEOUT_MS)};"
-            )
-        yield cur
-        conn.commit()
-    except (OperationalError, InterfaceError):
-        if conn is not None:
-            try:
-                conn.rollback()
-            except Exception:
-                pass
-            try:
+    Reintenta una vez ante fallos operativos de DB (conexión stale/rota).
+    """
+    pool = init_pool()
+    for attempt in range(2):
+        conn = None
+        released = False
+        cur = None
+        try:
+            for _ in range(2):
+                conn = pool.getconn()
+                if not getattr(conn, "closed", 1):
+                    break
+                logger.warning("Conexión cerrada detectada en pool; se descarta y reintenta")
                 pool.putconn(conn, close=True)
-                released = True
-            except Exception:
-                logger.exception("No se pudo descartar conexión DB rota")
-        logger.exception("Fallo de operación DB en db_cursor")
-        raise
-    except Exception:
-        if conn is not None:
-            conn.rollback()
-        raise
-    finally:
-        if cur is not None:
-            cur.close()
-        if conn is not None and not released:
-            pool.putconn(conn)
+                conn = None
+            if conn is None:
+                raise OperationalError("No hay conexiones utilizables en el pool")
+
+            conn.autocommit = False
+            cur = conn.cursor()
+            cur.execute("SET search_path TO aux, public;")
+            if Config.DB_STATEMENT_TIMEOUT_MS > 0:
+                cur.execute(f"SET LOCAL statement_timeout = {int(Config.DB_STATEMENT_TIMEOUT_MS)};")
+            if Config.DB_IDLE_IN_TXN_TIMEOUT_MS > 0:
+                cur.execute(
+                    f"SET LOCAL idle_in_transaction_session_timeout = {int(Config.DB_IDLE_IN_TXN_TIMEOUT_MS)};"
+                )
+            yield cur
+            conn.commit()
+            return
+        except (OperationalError, InterfaceError):
+            if conn is not None:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                try:
+                    pool.putconn(conn, close=True)
+                    released = True
+                except Exception:
+                    logger.exception("No se pudo descartar conexión DB rota")
+            if attempt == 0:
+                logger.warning("Fallo de operación DB en db_cursor; reintentando una vez")
+                continue
+            logger.exception("Fallo de operación DB en db_cursor")
+            raise
+        except Exception:
+            if conn is not None:
+                conn.rollback()
+            raise
+        finally:
+            if cur is not None:
+                cur.close()
+            if conn is not None and not released:
+                pool.putconn(conn)
 
 
 def healthcheck_db() -> bool:

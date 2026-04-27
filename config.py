@@ -135,8 +135,8 @@ def get_db_pool_bounds() -> tuple[int, int]:
 
 
 def get_dashboard_tree_cache_seconds_default() -> int:
-    """TTL por defecto para árboles RAMA y OLT (Postgres). Default 120 s."""
-    return _int_env_positive_or_zero("DASHBOARD_TREE_CACHE_SECONDS", 120)
+    """TTL por defecto para árboles RAMA y OLT (Postgres). Default 1800 s."""
+    return _int_env_positive_or_zero("DASHBOARD_TREE_CACHE_SECONDS", 1800)
 
 
 def get_dashboard_rama_cache_seconds() -> int:
