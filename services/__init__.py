@@ -6,7 +6,7 @@ from .camino_optico import (
     dashboard_camino_optico_rama,
 )
 from .dashboard_olt import dashboard_olts, estructura_dashboard_lt
-from .dashboard_rama import consultar_dashboard_rama, dashboard_ramas
+from .dashboard_rama import consultar_dashboard_rama, dashboard_ramas, inventario_dashboard_rama
 from .exports import (
     export_dashboard_olts_csv,
     export_dashboard_ramas_csv,
@@ -44,6 +44,7 @@ __all__ = [
     "dashboard_ramas",
     "dashboard_olts",
     "consultar_dashboard_rama",
+    "inventario_dashboard_rama",
     "estructura_dashboard_lt",
     "export_dashboard_ramas_csv",
     "export_dashboard_olts_csv",

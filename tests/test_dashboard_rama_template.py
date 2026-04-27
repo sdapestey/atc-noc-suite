@@ -5,15 +5,10 @@ def _minimal_ramas():
     return [
         {
             "PRINCIPAL": "SitioTest",
-            "SEARCH_TEXT": "sitiottest r1 c1",
+            "SEARCH_TEXT": "sitiottest r1",
             "RAMAS": [
                 {
                     "RAMA": "R1-RATC",
-                    "CTOS": {
-                        "C1-FATC": [
-                            {"AID": "100", "OPERADOR": "TASA", "ONT": "ONT-1", "TX": None, "RX": None},
-                        ],
-                    },
                     "CTO_COUNT": 1,
                     "ONT_COUNT": 1,
                     "ROJAS": 0,
@@ -36,8 +31,8 @@ def test_dashboard_rama_includes_cto_selection_and_no_expand_all(client, monkeyp
     assert "Colapsar todo" in html
     assert "Copiar CTO seleccionadas" in html
     assert "Exportar CTO seleccionadas CSV" in html
-    assert 'class="cto-select"' in html
-    assert "cto-select-all-in-rama" in html
-    assert "Seleccionar todas las CTO de esta RAMA" in html
+    assert "Expandí la RAMA para cargar CTO/ONT." in html
+    assert 'data-rama-detail' in html
+    assert "/dashboard/rama/inventario" in html
     assert "Ver historico" in html
     assert "_rowsCtosSeleccionados" in html or "copiarCtosSeleccionadas" in html

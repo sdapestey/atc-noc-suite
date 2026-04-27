@@ -35,53 +35,30 @@ def _compute_dashboard_ramas():
             """
             SELECT
                 f.path_atc AS rama,
-                f.location_description AS cto,
-                f.access_id,
-                o.invocator_system,
-                REPLACE(COALESCE(s.object_name, ''), ':1-1', '') AS object_name_ui
+                COUNT(*)::int AS ont_count,
+                COUNT(DISTINCT f.location_description)::int AS cto_count
             FROM cm.inventory_fat_occupation f
-            JOIN cm.inventory_olt_occupation o
-              ON o.access_id = f.access_id
-            LEFT JOIN altiplano.serial s
-              ON s.access_id = f.access_id
             WHERE f.status = 'IN SERVICE'
-            ORDER BY f.path_atc, f.location_description, f.access_id
+              AND f.path_atc IS NOT NULL
+            GROUP BY f.path_atc
+            ORDER BY f.path_atc
             """
         )
         rows = cur.fetchall()
 
-    ramas = defaultdict(lambda: {
-        "RAMA": None,
-        "CTOS": defaultdict(list),
-        "CTO_COUNT": 0,
-        "ONT_COUNT": 0,
-        "ROJAS": 0,
-        "AMARILLAS": 0,
-        "VERDES": 0,
-    })
-
-    for rama, cto, aid, op_id, object_name_ui in rows:
-        if rama is None:
-            continue
-
-        r = ramas[rama]
-        r["RAMA"] = rama
-        ont_label = (object_name_ui or "").strip() or "—"
-        r["CTOS"][cto].append({
-            "AID": str(aid),
-            "OPERADOR": nombre_operador(op_id),
-            "ONT": ont_label,
-            "TX": None,
-            "RX": None,
+    ramas = []
+    for rama, ont_count, cto_count in rows:
+        ramas.append({
+            "RAMA": rama,
+            "CTO_COUNT": int(cto_count or 0),
+            "ONT_COUNT": int(ont_count or 0),
+            "ROJAS": 0,
+            "AMARILLAS": 0,
+            "VERDES": 0,
         })
-        r["ONT_COUNT"] += 1
 
-    for r in ramas.values():
-        r["CTO_COUNT"] = len(r["CTOS"])
-
-    lista = list(ramas.values())
     by_principal = defaultdict(list)
-    for r in lista:
+    for r in ramas:
         reg = region_desde_rama(r["RAMA"])
         principal = SITIO_PRINCIPAL_POR_REGION.get(reg, SITIO_PRINCIPAL_DEFAULT)
         by_principal[principal].append(r)
@@ -93,7 +70,6 @@ def _compute_dashboard_ramas():
         words = [principal]
         for item in group:
             words.append(item["RAMA"])
-            words.extend(item["CTOS"].keys())
         hierarchy.append({
             "PRINCIPAL": principal,
             "SEARCH_TEXT": " ".join(map(str, words)).lower(),
@@ -105,6 +81,44 @@ def _compute_dashboard_ramas():
 def dashboard_ramas():
     """Árbol principal → rama → CTO (Postgres). Resultados cacheados por TTL."""
     return get_cached_rama(get_dashboard_rama_cache_seconds(), _compute_dashboard_ramas)
+
+
+def inventario_dashboard_rama(rama):
+    """Inventario estructural de una rama: CTO -> ONT (sin potencias)."""
+    if rama is None or not str(rama).strip():
+        return {}
+    rama_norm = str(rama).strip()
+    with db_cursor() as cur:
+        cur.execute(
+            """
+            SELECT
+                f.location_description AS cto,
+                f.access_id,
+                o.invocator_system,
+                REPLACE(COALESCE(s.object_name, ''), ':1-1', '') AS object_name_ui
+            FROM cm.inventory_fat_occupation f
+            JOIN cm.inventory_olt_occupation o
+              ON o.access_id = f.access_id
+            LEFT JOIN altiplano.serial s
+              ON s.access_id = f.access_id
+            WHERE f.path_atc = %s
+              AND f.status = 'IN SERVICE'
+            ORDER BY f.location_description, f.access_id
+            """,
+            (rama_norm,),
+        )
+        rows = cur.fetchall()
+
+    out = defaultdict(list)
+    for cto, aid, op_id, object_name_ui in rows:
+        out[cto].append({
+            "AID": str(aid),
+            "OPERADOR": nombre_operador(op_id),
+            "ONT": (object_name_ui or "").strip() or "—",
+            "TX": None,
+            "RX": None,
+        })
+    return dict(out)
 
 
 def consultar_dashboard_rama(rama):

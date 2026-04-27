@@ -13,6 +13,8 @@ let _lastJumpKey = "";
 let _restoringRamaState = false;
 const _ramaPotenciasCache = {};
 const _ramaPotenciasCacheMs = 45000;
+const _ramaInventarioCargado = {};
+const _ramaInventarioCargando = {};
 const _ramaStateStore = window.createNocPageStateStore
   ? window.createNocPageStateStore("ramaDashboardStateV1", { debounceMs: 120 })
   : null;
@@ -135,6 +137,15 @@ function colapsarTodoYLimpiarRama() {
 
 function setExpanded(el, expanded) {
   el.setAttribute("aria-expanded", expanded ? "true" : "false");
+}
+
+function _escHtml(s) {
+  return String(s || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 function _saveStateSoon() {
@@ -289,7 +300,21 @@ function restoreRamaDashboardState(preQ) {
 function toggle(el) {
   const next = el.nextElementSibling;
   if (!next) return;
+  const card = el.closest("[data-rama-card]");
+  const rama = (card?.getAttribute("data-rama") || "").trim();
+  const isRamaRow = el.classList.contains("rama-row");
   const willExpand = next.classList.contains("hidden");
+  if (willExpand && isRamaRow && card) {
+    const container = card.querySelector("[data-rama-detail]");
+    if (container) {
+      cargarInventarioRama(rama, card, container).finally(() => {
+        next.classList.toggle("hidden");
+        setExpanded(el, true);
+        _saveStateSoon();
+      });
+      return;
+    }
+  }
   next.classList.toggle("hidden");
   setExpanded(el, willExpand);
   _saveStateSoon();
@@ -476,6 +501,88 @@ function _aplicarResaltadoFila(tr, rxText) {
   if (cls) tr.classList.add(cls);
 }
 
+function renderInventarioRama(rama, inv, container) {
+  const ctos = Object.keys(inv || {}).sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: "base" }));
+  let html = `
+    <p class="hint rama-hint-no-margin">
+      <label class="rama-cto-select-all-label">
+        <input type="checkbox" class="cto-select-all-in-rama" title="Marcar todas las CTO de esta RAMA" aria-label="Seleccionar todas las CTO de esta RAMA">
+        Seleccionar todas las CTO de esta RAMA
+      </label>
+    </p>
+  `;
+
+  ctos.forEach((cto) => {
+    const onts = inv[cto] || [];
+    html += `
+      <div class="node indent2 cto-head-row" data-toggle-node data-cto-node data-cto="${_escHtml(cto)}" aria-expanded="false" onclick="toggle(this)">
+        <input type="checkbox" class="cto-select" title="Seleccionar CTO para exportación" aria-label="Seleccionar CTO" onclick="event.stopPropagation()">
+        <span><span class="arrow">▶</span> CTO <span class="mono">${_escHtml(cto)}</span></span>
+      </div>
+      <div class="hidden indent3">
+        <div class="table-wrap">
+          <table>
+            <tr><th>AID</th><th>Operador</th><th>ONT</th><th>TX (dBm)</th><th>RX (dBm)</th></tr>
+    `;
+    onts.forEach((o) => {
+      html += `
+            <tr data-rama="${_escHtml(rama)}" data-cto="${_escHtml(cto)}" data-aid="${_escHtml(o.AID)}">
+              <td class="mono">${_escHtml(o.AID)}</td>
+              <td>${_escHtml(o.OPERADOR)}</td>
+              <td class="mono">${_escHtml(o.ONT || "—")}</td>
+              <td>-</td>
+              <td>-</td>
+            </tr>
+      `;
+    });
+    html += `
+          </table>
+        </div>
+      </div>
+    `;
+  });
+
+  container.innerHTML = html;
+  container.querySelectorAll(".cto-select-all-in-rama").forEach((master) => {
+    master.addEventListener("change", () => {
+      const card = master.closest("[data-rama-card]");
+      if (!card) return;
+      const on = master.checked;
+      card.querySelectorAll(".cto-select").forEach((cb) => {
+        cb.checked = on;
+      });
+    });
+  });
+}
+
+function cargarInventarioRama(rama, card, container) {
+  const ramaKey = String(rama || "").trim().toUpperCase();
+  if (!ramaKey) return Promise.resolve();
+  if (_ramaInventarioCargado[ramaKey]) return Promise.resolve();
+  if (_ramaInventarioCargando[ramaKey]) return _ramaInventarioCargando[ramaKey];
+
+  container.innerHTML = '<p class="hint">Cargando inventario de red…</p>';
+  const req = fetch("/dashboard/rama/inventario", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: "rama=" + encodeURIComponent(rama),
+  })
+    .then((r) => r.json())
+    .then((inv) => {
+      renderInventarioRama(rama, inv || {}, container);
+      _ramaInventarioCargado[ramaKey] = true;
+      card.setAttribute("data-ctos", Object.keys(inv || {}).join(" "));
+    })
+    .catch(() => {
+      container.innerHTML = '<p class="hint">No se pudo cargar inventario. Reintentá.</p>';
+    })
+    .finally(() => {
+      delete _ramaInventarioCargando[ramaKey];
+    });
+  _ramaInventarioCargando[ramaKey] = req;
+  return req;
+}
+
 function _aplicarDataRama(rama, data, row) {
   const res = data.__dashboard_resumen__;
   if (res && row) {
@@ -574,16 +681,6 @@ window.addEventListener("load", () => {
     });
   }
 
-  document.querySelectorAll(".cto-select-all-in-rama").forEach((master) => {
-    master.addEventListener("change", () => {
-      const card = master.closest("[data-rama-card]");
-      if (!card) return;
-      const on = master.checked;
-      card.querySelectorAll(".cto-select").forEach((cb) => {
-        cb.checked = on;
-      });
-    });
-  });
 });
 </script>
 </head>
@@ -632,7 +729,7 @@ window.addEventListener("load", () => {
 
   <div class="hidden indent1">
 {% for r in bloque.RAMAS %}
-<div class="card indent1" data-rama-card data-rama="{{ r.RAMA }}" data-ctos="{{ r.CTOS.keys()|list|join(' ') }}">
+<div class="card indent1" data-rama-card data-rama="{{ r.RAMA }}" data-ctos="">
 
   <div class="rama-row node" data-toggle-node aria-expanded="false" onclick="toggle(this)">
     <span><span class="arrow">▶</span> <span class="mono">{{ r.RAMA }}</span></span>
@@ -652,41 +749,9 @@ window.addEventListener("load", () => {
   </div>
 
   <div class="hidden indent2">
-    <p class="hint rama-hint-no-margin">
-      <label class="rama-cto-select-all-label">
-        <input type="checkbox" class="cto-select-all-in-rama" title="Marcar todas las CTO de esta RAMA" aria-label="Seleccionar todas las CTO de esta RAMA">
-        Seleccionar todas las CTO de esta RAMA
-      </label>
-    </p>
-  {% for cto, onts in r.CTOS.items() %}
-    <div class="node indent2 cto-head-row" data-toggle-node data-cto-node data-cto="{{ cto|e }}" aria-expanded="false" onclick="toggle(this)">
-      <input type="checkbox" class="cto-select" title="Seleccionar CTO para exportación" aria-label="Seleccionar CTO" onclick="event.stopPropagation()">
-      <span><span class="arrow">▶</span> CTO <span class="mono">{{ cto }}</span></span>
+    <div data-rama-detail>
+      <p class="hint">Expandí la RAMA para cargar CTO/ONT.</p>
     </div>
-
-    <div class="hidden indent3">
-      <div class="table-wrap">
-      <table>
-        <tr>
-          <th>AID</th>
-          <th>Operador</th>
-          <th>ONT</th>
-          <th>TX (dBm)</th>
-          <th>RX (dBm)</th>
-        </tr>
-        {% for o in onts %}
-        <tr data-rama="{{ r.RAMA }}" data-cto="{{ cto }}" data-aid="{{ o.AID }}">
-          <td class="mono">{{ o.AID }}</td>
-          <td>{{ o.OPERADOR }}</td>
-          <td class="mono">{{ o.ONT }}</td>
-          <td>-</td>
-          <td>-</td>
-        </tr>
-        {% endfor %}
-      </table>
-      </div>
-    </div>
-  {% endfor %}
   </div>
 
 </div>

@@ -3,7 +3,7 @@ import csv
 import io
 
 from .dashboard_olt import dashboard_olts
-from .dashboard_rama import dashboard_ramas
+from .dashboard_rama import dashboard_ramas, inventario_dashboard_rama
 from .inventory import (
     consultar_access_id_baja_o_ausente,
     consultar_access_id_detalle_desde_bajada_inventario,
@@ -25,7 +25,8 @@ def export_dashboard_ramas_csv() -> str:
         principal = bloque["PRINCIPAL"]
         for r in bloque["RAMAS"]:
             rama = r["RAMA"]
-            for cto, onts in r["CTOS"].items():
+            inventario = inventario_dashboard_rama(rama)
+            for cto, onts in inventario.items():
                 for o in onts:
                     w.writerow([
                         principal,

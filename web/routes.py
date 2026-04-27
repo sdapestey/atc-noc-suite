@@ -23,6 +23,7 @@ from services import (
     consultar_cto_estructura,
     consultar_cto_potencias,
     consultar_dashboard_rama,
+    inventario_dashboard_rama,
     consultar_rama_estructura,
     consultar_rama_potencias,
     dashboard_camino_optico_access_id,
@@ -264,6 +265,14 @@ def register(app):
         if not rama:
             return jsonify({"error": "Parámetro rama requerido"}), 400
         data = consultar_dashboard_rama(rama)
+        return jsonify(data)
+
+    @app.route("/dashboard/rama/inventario", methods=["POST"])
+    def dash_rama_inventario():
+        rama = (request.form.get("rama") or "").strip()
+        if not rama:
+            return jsonify({"error": "Parámetro rama requerido"}), 400
+        data = inventario_dashboard_rama(rama)
         return jsonify(data)
 
     @app.route("/dashboard/rama/export.csv")
