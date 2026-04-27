@@ -167,6 +167,25 @@ def get_dashboard_olt_cache_seconds() -> int:
     return get_dashboard_tree_cache_seconds_default()
 
 
+def get_dashboard_rama_power_cache_seconds() -> int:
+    """
+    TTL de resultados de `/dashboard/rama/consultar` (potencias por rama).
+    Default bajo para reducir latencia percibida sin dejar datos viejos mucho tiempo.
+    """
+    raw = os.environ.get("DASHBOARD_RAMA_POWER_CACHE_SECONDS", "").strip()
+    if raw:
+        try:
+            return max(0, int(raw))
+        except ValueError:
+            pass
+    return _int_env_positive_or_zero("DASHBOARD_POWER_CACHE_SECONDS", 45)
+
+
+def get_altiplano_power_workers() -> int:
+    """Cantidad máxima de workers para consultar potencias en paralelo."""
+    return _int_env_at_least("ALTIPLANO_POWER_WORKERS", 8, 1)
+
+
 class Config:
     """Configuración base de Flask y parámetros globales del proyecto."""
     SECRET_KEY = os.environ.get("SECRET_KEY", "dev-only-change-in-production")

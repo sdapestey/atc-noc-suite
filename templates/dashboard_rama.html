@@ -11,6 +11,8 @@ let _toastTimer = null;
 let _jumpTimer = null;
 let _lastJumpKey = "";
 let _restoringRamaState = false;
+const _ramaPotenciasCache = {};
+const _ramaPotenciasCacheMs = 45000;
 const _ramaStateStore = window.createNocPageStateStore
   ? window.createNocPageStateStore("ramaDashboardStateV1", { debounceMs: 120 })
   : null;
@@ -474,7 +476,38 @@ function _aplicarResaltadoFila(tr, rxText) {
   if (cls) tr.classList.add(cls);
 }
 
+function _aplicarDataRama(rama, data, row) {
+  const res = data.__dashboard_resumen__;
+  if (res && row) {
+    const elR = row.querySelector('[data-semaforo="rojo"]');
+    const elA = row.querySelector('[data-semaforo="amarillo"]');
+    const elV = row.querySelector('[data-semaforo="verde"]');
+    if (elR) elR.textContent = res.ROJAS;
+    if (elA) elA.textContent = res.AMARILLAS;
+    if (elV) elV.textContent = res.VERDES;
+  }
+  document.querySelectorAll(`[data-rama='${rama}']`).forEach(tr=>{
+    const cto = tr.dataset.cto;
+    const aid = tr.dataset.aid;
+    if (data[cto] && data[cto][aid]) {
+      tr.children[3].innerText = _formatPowerDbm(data[cto][aid].TX);
+      tr.children[4].innerText = _formatPowerDbm(data[cto][aid].RX);
+      _aplicarResaltadoFila(tr, tr.children[4].innerText);
+    }
+  });
+}
+
 function consultarRama(rama, btn) {
+  const cacheKey = String(rama || "").trim().toUpperCase();
+  const cached = _ramaPotenciasCache[cacheKey];
+  if (cached && (Date.now() - cached.ts) < _ramaPotenciasCacheMs) {
+    const rowCached = btn.closest(".rama-row");
+    _aplicarDataRama(rama, cached.data, rowCached);
+    btn.innerText = "OK";
+    toast(`Potencias (cache): ${rama}`);
+    return;
+  }
+
   btn.disabled = true;
   btn.innerText = "⏳";
   const row = btn.closest(".rama-row");
@@ -486,27 +519,15 @@ function consultarRama(rama, btn) {
   })
   .then(r=>r.json())
   .then(data=>{
-    const res = data.__dashboard_resumen__;
-    if (res && row) {
-      const elR = row.querySelector('[data-semaforo="rojo"]');
-      const elA = row.querySelector('[data-semaforo="amarillo"]');
-      const elV = row.querySelector('[data-semaforo="verde"]');
-      if (elR) elR.textContent = res.ROJAS;
-      if (elA) elA.textContent = res.AMARILLAS;
-      if (elV) elV.textContent = res.VERDES;
-    }
-    document.querySelectorAll(`[data-rama='${rama}']`).forEach(tr=>{
-      const cto = tr.dataset.cto;
-      const aid = tr.dataset.aid;
-      if (data[cto] && data[cto][aid]) {
-        tr.children[3].innerText = _formatPowerDbm(data[cto][aid].TX);
-        tr.children[4].innerText = _formatPowerDbm(data[cto][aid].RX);
-        _aplicarResaltadoFila(tr, tr.children[4].innerText);
-      }
-    });
+    _ramaPotenciasCache[cacheKey] = { ts: Date.now(), data };
+    _aplicarDataRama(rama, data, row);
     btn.innerText = "OK";
     toast(`Potencias actualizadas: ${rama}`);
     _saveStateSoon();
+  })
+  .catch(()=>{
+    btn.innerText = "Consultar";
+    toast(`Error consultando potencias: ${rama}`);
   })
   .finally(()=>btn.disabled=false);
 }

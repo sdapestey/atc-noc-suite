@@ -1,12 +1,12 @@
 """Dashboard por rama (árbol Postgres + potencias Altiplano)."""
 from collections import defaultdict
 
-from config import get_dashboard_rama_cache_seconds
+from config import get_dashboard_rama_cache_seconds, get_dashboard_rama_power_cache_seconds
 from db import db_cursor
 
 from altiplano import obtener_potencias_por_cto
 
-from .dashboard_cache import get_cached_rama
+from .dashboard_cache import get_cached_rama, get_cached_rama_potencias
 
 from .domain import (
     SITIO_PRINCIPAL_DEFAULT,
@@ -122,61 +122,67 @@ def consultar_dashboard_rama(rama):
             "__dashboard_resumen__": {"ROJAS": 0, "AMARILLAS": 0, "VERDES": 0},
         }
 
-    with db_cursor() as cur:
-        cur.execute(
-            """
-            SELECT
-                f.location_description AS cto,
-                f.access_id,
-                s.object_name,
-                o.invocator_system
-            FROM cm.inventory_fat_occupation f
-            JOIN altiplano.serial s ON s.access_id = f.access_id
-            JOIN cm.inventory_olt_occupation o ON o.access_id = f.access_id
-            WHERE f.path_atc = %s
-              AND f.status = 'IN SERVICE'
-            """,
-            (rama,),
-        )
-        rows = cur.fetchall()
+    rama_norm = str(rama).strip()
 
-    por_cto = defaultdict(list)
-    for cto, aid, obj_raw, inv in rows:
-        if not obj_raw:
-            continue
-        por_cto[cto].append({
-            "AID": str(aid),
-            "OBJ": obj_raw,
-            "INV": inv,
-        })
+    def _compute():
+        with db_cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                    f.location_description AS cto,
+                    f.access_id,
+                    s.object_name,
+                    o.invocator_system
+                FROM cm.inventory_fat_occupation f
+                JOIN altiplano.serial s ON s.access_id = f.access_id
+                JOIN cm.inventory_olt_occupation o ON o.access_id = f.access_id
+                WHERE f.path_atc = %s
+                  AND f.status = 'IN SERVICE'
+                """,
+                (rama_norm,),
+            )
+            rows = cur.fetchall()
 
-    resultado = {}
-    rojas = 0
-    amarillas = 0
-    verdes = 0
+        por_cto = defaultdict(list)
+        for cto, aid, obj_raw, inv in rows:
+            if not obj_raw:
+                continue
+            por_cto[cto].append({
+                "AID": str(aid),
+                "OBJ": obj_raw,
+                "INV": inv,
+            })
 
-    for cto, onts in por_cto.items():
-        ne = calcular_ne(onts[0]["OBJ"])
-        potencias = obtener_potencias_por_cto(
-            ne,
-            [(o["AID"], o["OBJ"], o["INV"]) for o in onts],
-        )
+        resultado = {}
+        rojas = 0
+        amarillas = 0
+        verdes = 0
 
-        resultado[cto] = {}
-        for o in onts:
-            tx, rx = potencias.get(o["AID"], (None, None))
-            resultado[cto][o["AID"]] = {"TX": tx, "RX": rx}
-            estado = clasificar_rx_dbm(rx)
-            if estado == "rojo":
-                rojas += 1
-            elif estado == "amarillo":
-                amarillas += 1
-            elif estado == "verde":
-                verdes += 1
+        for cto, onts in por_cto.items():
+            ne = calcular_ne(onts[0]["OBJ"])
+            potencias = obtener_potencias_por_cto(
+                ne,
+                [(o["AID"], o["OBJ"], o["INV"]) for o in onts],
+            )
 
-    resultado["__dashboard_resumen__"] = {
-        "ROJAS": rojas,
-        "AMARILLAS": amarillas,
-        "VERDES": verdes,
-    }
-    return resultado
+            resultado[cto] = {}
+            for o in onts:
+                tx, rx = potencias.get(o["AID"], (None, None))
+                resultado[cto][o["AID"]] = {"TX": tx, "RX": rx}
+                estado = clasificar_rx_dbm(rx)
+                if estado == "rojo":
+                    rojas += 1
+                elif estado == "amarillo":
+                    amarillas += 1
+                elif estado == "verde":
+                    verdes += 1
+
+        resultado["__dashboard_resumen__"] = {
+            "ROJAS": rojas,
+            "AMARILLAS": amarillas,
+            "VERDES": verdes,
+        }
+        return resultado
+
+    ttl = get_dashboard_rama_power_cache_seconds()
+    return get_cached_rama_potencias(ttl, rama_norm, _compute)

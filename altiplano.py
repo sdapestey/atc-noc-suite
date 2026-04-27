@@ -1,10 +1,12 @@
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests
 import urllib3
 from urllib.parse import quote
 
 from config import (
+    get_altiplano_power_workers,
     get_altiplano_credentials,
     get_altiplano_nbi_target,
     get_altiplano_operator_credentials,
@@ -345,9 +347,8 @@ def obtener_potencias_por_cto(NE, onts_cto):
     if not NE or not onts_cto:
         return resultados
 
+    tasks = []
     for access_id, object_name_raw, operator_id in onts_cto:
-
-        # Selección de dominio según operador
         if operator_id == 1001:
             vno = "tasa"
             auth_url = "https://10.200.4.101:32443/tasa-altiplano-ac/rest/auth/login"
@@ -356,23 +357,24 @@ def obtener_potencias_por_cto(NE, onts_cto):
             auth_url = "https://10.200.7.107:32443/dtv-altiplano-ac/rest/auth/login"
         else:
             continue
+        tasks.append((str(access_id), object_name_raw, vno, auth_url))
 
+    if not tasks:
+        return resultados
+
+    def _fetch_one(access_id, object_name_raw, vno, auth_url):
         token = _obtener_token(auth_url)
         if not token:
-            continue
+            return access_id, None
 
         base_host = auth_url.split("/")[2]
-
         headers = {
             "Authorization": f"Bearer {token}",
             "Accept": "application/yang-data+json",
-            "Content-Type": "application/yang-data+json"
+            "Content-Type": "application/yang-data+json",
         }
-
-        # Normalización + URL encoding (CRÍTICO)
         object_name_altiplano = normalizar_object_name(object_name_raw)
         onu_encoded = quote(object_name_altiplano, safe="")
-
         power_url = (
             f"https://{base_host}/{vno}-altiplano-ac/rest/restconf/data/"
             f"anv:device-manager/anv-device-holders:device={NE}/"
@@ -383,28 +385,35 @@ def obtener_potencias_por_cto(NE, onts_cto):
             f"?altiplano-target=INP"
         )
 
-        r = requests.get(power_url, headers=headers, verify=False, timeout=60)
+        try:
+            r = requests.get(power_url, headers=headers, verify=False, timeout=60)
+        except requests.RequestException:
+            return access_id, None
         if r.status_code != 200:
-            continue
+            return access_id, None
 
         try:
             diagnostics = r.json()["bbf-hardware-transceivers-mounted:diagnostics"]
-
             tx = round(
-                diagnostics["nokia-hardware-transceivers-dbm-mounted:tx-power-dbm"] * 0.1,
-                2
+                diagnostics["nokia-hardware-transceivers-dbm-mounted:tx-power-dbm"] * 0.1, 2
             )
             rx = round(
-                diagnostics["nokia-hardware-transceivers-dbm-mounted:rx-power-dbm"] * 0.1,
-                2
+                diagnostics["nokia-hardware-transceivers-dbm-mounted:rx-power-dbm"] * 0.1, 2
             )
-
-            resultados[str(access_id)] = (tx, rx)
-
+            return access_id, (tx, rx)
         except Exception as ex:
-            logger.debug(
-                "Altiplano: sin diagnostics para access_id=%s: %s", access_id, ex
-            )
-            continue
+            logger.debug("Altiplano: sin diagnostics para access_id=%s: %s", access_id, ex)
+            return access_id, None
+
+    max_workers = min(len(tasks), get_altiplano_power_workers())
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = [
+            executor.submit(_fetch_one, access_id, object_name_raw, vno, auth_url)
+            for access_id, object_name_raw, vno, auth_url in tasks
+        ]
+        for fut in as_completed(futures):
+            aid, power = fut.result()
+            if power is not None:
+                resultados[aid] = power
 
     return resultados
