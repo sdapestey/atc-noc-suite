@@ -953,6 +953,18 @@ textarea:focus-visible {
   color: #79c0ff;
 }
 
+.cto-head-row .btn-mini.pot-cto {
+  border-color: var(--border-default);
+  background: var(--canvas-inset);
+  color: var(--fg-default);
+}
+
+.cto-head-row .btn-mini.pot-cto:hover {
+  background: var(--btn-hover-bg);
+  border-color: var(--fg-subtle);
+  color: var(--fg-default);
+}
+
 .btn-mini.btn-aid {
   background: var(--canvas-inset);
   border-color: var(--border-default);
@@ -1400,6 +1412,11 @@ tr:hover td {
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+.cto-head-row .rama-row-actions {
+  margin-left: auto;
+  justify-content: flex-end;
 }
 
 /* Fila de CTO en el árbol RAMA: más aire entre ítems (evita bloque “compacto”) */

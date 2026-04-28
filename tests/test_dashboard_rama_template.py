@@ -33,8 +33,7 @@ def test_dashboard_rama_includes_cto_selection_and_no_expand_all(client, monkeyp
     assert "Exportar CTO seleccionadas CSV" in html
     assert "Expandí la RAMA para cargar CTO/ONT." in html
     assert 'data-rama-detail' in html
-    assert "/dashboard/rama/inventario" in html
     assert "Ver historico" in html
     assert "noc-tools.js" in html
-    assert "_rowsCtosSeleccionados" in html or "copiarCtosSeleccionadas" in html
-    assert "_setRamaCardTxRxCellsLoading" in html
+    assert "dashboard-rama.js" in html
+    assert "consultarRama(" in html

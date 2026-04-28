@@ -178,6 +178,15 @@ def _log_and_internal_error(message: str):
     return jsonify({"error": message, "request_id": getattr(g, "request_id", "-")}), 500
 
 
+def _csv_download_response(csv_text: str, filename: str) -> Response:
+    """Respuesta HTTP para descargar CSV UTF-8 con BOM."""
+    return Response(
+        "\ufeff" + (csv_text or ""),
+        mimetype="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
 def register(app):
     """Registra todas las rutas HTTP en la app Flask.
 
@@ -323,11 +332,7 @@ def register(app):
     def export_index_csv():
         value = request.args.get("value", "").strip()
         data = export_index_query_csv(value)
-        return Response(
-            "\ufeff" + data,
-            mimetype="text/csv; charset=utf-8",
-            headers={"Content-Disposition": "attachment; filename=consulta.csv"},
-        )
+        return _csv_download_response(data, "consulta.csv")
 
     @app.route("/dashboard/rama")
     def dash_rama():
@@ -353,11 +358,7 @@ def register(app):
     @app.route("/dashboard/rama/export.csv")
     def export_rama_csv():
         data = export_dashboard_ramas_csv()
-        return Response(
-            "\ufeff" + data,
-            mimetype="text/csv; charset=utf-8",
-            headers={"Content-Disposition": "attachment; filename=dashboard_ramas.csv"},
-        )
+        return _csv_download_response(data, "dashboard_ramas.csv")
 
     @app.route("/dashboard/olt")
     def dash_olt():
@@ -372,11 +373,7 @@ def register(app):
     @app.route("/dashboard/olt/export.csv")
     def export_olt_csv():
         data = export_dashboard_olts_csv()
-        return Response(
-            "\ufeff" + data,
-            mimetype="text/csv; charset=utf-8",
-            headers={"Content-Disposition": "attachment; filename=dashboard_olts.csv"},
-        )
+        return _csv_download_response(data, "dashboard_olts.csv")
 
     @app.route("/dashboard/cto/consultar", methods=["POST"])
     def dash_cto_consultar():
@@ -440,11 +437,7 @@ def register(app):
         ts_tag = datetime.now().strftime("%Y%m%d_%H%M")
         range_tag = "24h" if days == 1 else f"{days}d"
         filename = f"potencias_historico_{ratc_safe}_{range_tag}_{ts_tag}.csv"
-        return Response(
-            "\ufeff" + payload["csv"],
-            mimetype="text/csv; charset=utf-8",
-            headers={"Content-Disposition": f"attachment; filename={filename}"},
-        )
+        return _csv_download_response(payload["csv"], filename)
 
 
     @app.route("/dashboard/altiplano/ont-connection", methods=["POST"])
