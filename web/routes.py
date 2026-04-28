@@ -29,6 +29,8 @@ from services import (
     dashboard_camino_optico_access_id,
     dashboard_camino_optico_cto,
     dashboard_camino_optico_rama,
+    dashboard_calidad_inventario_hallazgos,
+    dashboard_calidad_inventario_resumen,
     dashboard_olts,
     dashboard_ramas,
     crear_ont_connection_intent,
@@ -36,6 +38,7 @@ from services import (
     export_dashboard_olts_csv,
     export_dashboard_ramas_csv,
     export_csv_potencias_historico_rama,
+    export_dashboard_calidad_inventario_csv,
     export_index_query_csv,
     consultar_potencias_altiplano_ahora_rama,
     consultar_potencias_historico_rama,
@@ -243,6 +246,8 @@ def register(app):
             return redirect(url_for("dash_altiplano"))
         if tab in ("historico", "potencias-historico"):
             return redirect(url_for("dash_potencias_historico"))
+        if tab in ("calidad", "calidad-inventario"):
+            return redirect(url_for("dash_calidad_inventario"))
         return redirect(url_for("index"))
 
     @app.route("/", methods=["GET", "POST"])
@@ -393,6 +398,50 @@ def register(app):
     @app.route("/dashboard/potencias-historico")
     def dash_potencias_historico():
         return render_template("dashboard_potencias_historico.html")
+
+    @app.route("/dashboard/calidad-inventario")
+    def dash_calidad_inventario():
+        return render_template("dashboard_calidad_inventario.html")
+
+    @app.route("/dashboard/calidad-inventario/resumen.json")
+    def dash_calidad_inventario_resumen_json():
+        try:
+            payload = dashboard_calidad_inventario_resumen()
+        except Exception:
+            return _log_and_internal_error("Error interno consultando resumen de calidad")
+        return jsonify(payload)
+
+    @app.route("/dashboard/calidad-inventario/hallazgos.json")
+    def dash_calidad_inventario_hallazgos_json():
+        regla = (request.args.get("regla") or "").strip()
+        operador = (request.args.get("operador") or "").strip()
+        q = (request.args.get("q") or "").strip()
+        limit = request.args.get("limit", default=500, type=int)
+        try:
+            payload = dashboard_calidad_inventario_hallazgos(
+                regla=regla,
+                operador=operador,
+                q=q,
+                limit=limit,
+            )
+        except Exception:
+            return _log_and_internal_error("Error interno consultando hallazgos de calidad")
+        return jsonify(payload)
+
+    @app.route("/dashboard/calidad-inventario/export.csv")
+    def dash_calidad_inventario_export_csv():
+        regla = (request.args.get("regla") or "").strip()
+        operador = (request.args.get("operador") or "").strip()
+        q = (request.args.get("q") or "").strip()
+        try:
+            csv_text = export_dashboard_calidad_inventario_csv(
+                regla=regla,
+                operador=operador,
+                q=q,
+            )
+        except Exception:
+            return _log_and_internal_error("Error interno exportando hallazgos de calidad")
+        return _csv_download_response(csv_text, "dashboard_calidad_inventario.csv")
 
     @app.route("/api/potencias-historico/<ratc>")
     def api_potencias_historico(ratc):

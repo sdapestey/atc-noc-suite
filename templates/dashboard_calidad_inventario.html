@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Calidad Inventario · ATC GPON Inventory</title>
+{% include 'partials/noc_head.html' %}
+<script src="{{ url_for('static', filename='js/noc-tools.js') }}"></script>
+<script src="{{ url_for('static', filename='js/dashboard-calidad-inventario.js') }}"></script>
+</head>
+<body class="theme-devops">
+<div class="container">
+  <div class="topbar">
+    <div class="brand">
+      <div class="brand-row">
+        {% include 'partials/brand_logo.html' %}
+        <h1>ATC GPON Inventory</h1>
+      </div>
+      <small><strong>Calidad Inventario</strong> — integridad y completitud de datos por Access ID</small>
+    </div>
+    <div class="topbar-meta">
+      <span id="qualityCount" class="count">—</span>
+      {% include 'partials/noc_topbar.html' %}
+    </div>
+  </div>
+
+  {% include 'partials/nav_dashboard.html' %}
+
+  <div class="panel">
+    <div class="controls">
+      <div class="field">
+        <label for="f-regla" class="hint">Regla</label>
+        <select id="f-regla" class="chip" aria-label="Filtrar por regla"></select>
+      </div>
+      <div class="field">
+        <label for="f-operador" class="hint">Operador (invocator_system)</label>
+        <input id="f-operador" placeholder="Ej: 1001" autocomplete="off" />
+      </div>
+      <div class="field" role="search">
+        <span class="search-icon" aria-hidden="true">⌕</span>
+        <input id="f-q" placeholder="Buscar por access_id, rama o CTO…" autocomplete="off" />
+      </div>
+      <div class="toolbar-actions" role="toolbar" aria-label="Acciones de calidad">
+        <button id="btn-refresh" class="btn" type="button">Actualizar</button>
+        <a id="btn-export" class="btn btn-ghost" href="/dashboard/calidad-inventario/export.csv">Exportar CSV</a>
+      </div>
+    </div>
+
+    <div class="table-wrap">
+      <table id="kpi-table">
+        <thead>
+          <tr><th>KPI</th><th>Valor</th></tr>
+        </thead>
+        <tbody id="kpi-body">
+          <tr><td colspan="2">Cargando resumen…</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="table-wrap">
+      <table id="findings-table">
+        <thead>
+          <tr>
+            <th>Regla</th>
+            <th>Access ID</th>
+            <th>Rama</th>
+            <th>CTO</th>
+            <th>Operador</th>
+            <th>Severidad</th>
+          </tr>
+        </thead>
+        <tbody id="findings-body">
+          <tr><td colspan="6">Cargando hallazgos…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

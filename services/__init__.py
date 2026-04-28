@@ -5,6 +5,11 @@ from .camino_optico import (
     dashboard_camino_optico_cto,
     dashboard_camino_optico_rama,
 )
+from .dashboard_calidad_inventario import (
+    dashboard_calidad_inventario_hallazgos,
+    dashboard_calidad_inventario_resumen,
+    export_dashboard_calidad_inventario_csv,
+)
 from .dashboard_olt import dashboard_olts, estructura_dashboard_lt
 from .dashboard_rama import consultar_dashboard_rama, dashboard_ramas, inventario_dashboard_rama
 from .exports import (
@@ -43,12 +48,15 @@ __all__ = [
     "consultar_rama_estructura",
     "consultar_rama_potencias",
     "dashboard_ramas",
+    "dashboard_calidad_inventario_resumen",
+    "dashboard_calidad_inventario_hallazgos",
     "dashboard_olts",
     "consultar_dashboard_rama",
     "inventario_dashboard_rama",
     "estructura_dashboard_lt",
     "export_dashboard_ramas_csv",
     "export_dashboard_olts_csv",
+    "export_dashboard_calidad_inventario_csv",
     "export_index_query_csv",
     "consultar_potencias_historico_rama",
     "consultar_potencias_altiplano_ahora_rama",

@@ -181,6 +181,20 @@ def get_dashboard_rama_power_cache_seconds() -> int:
     return _int_env_positive_or_zero("DASHBOARD_POWER_CACHE_SECONDS", 45)
 
 
+def get_dashboard_calidad_cache_seconds() -> int:
+    """
+    TTL del resumen del dashboard de calidad de inventario.
+    Si ``DASHBOARD_CALIDAD_CACHE_SECONDS`` está definido, tiene prioridad.
+    """
+    raw = os.environ.get("DASHBOARD_CALIDAD_CACHE_SECONDS", "").strip()
+    if raw:
+        try:
+            return max(0, int(raw))
+        except ValueError:
+            pass
+    return get_dashboard_tree_cache_seconds_default()
+
+
 def get_altiplano_power_workers() -> int:
     """Cantidad máxima de workers para consultar potencias en paralelo."""
     return _int_env_at_least("ALTIPLANO_POWER_WORKERS", 8, 1)

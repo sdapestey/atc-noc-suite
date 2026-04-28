@@ -9,10 +9,12 @@ _lock_rama = threading.Lock()
 _lock_olt = threading.Lock()
 _lock_rama_potencias = threading.Lock()
 _lock_rama_inventario = threading.Lock()
+_lock_calidad_resumen = threading.Lock()
 _rama = {"payload": None, "expires_at": 0.0}
 _olt = {"payload": None, "expires_at": 0.0}
 _rama_potencias = {}
 _rama_inventario = {}
+_calidad_resumen = {"payload": None, "expires_at": 0.0}
 
 
 def get_cached_rama(ttl_seconds: int, factory: Callable[[], T]) -> T:
@@ -87,6 +89,20 @@ def get_cached_rama_inventario(ttl_seconds: int, rama_key: str, factory: Callabl
         return data
 
 
+def get_cached_calidad_resumen(ttl_seconds: int, factory: Callable[[], T]) -> T:
+    """Devuelve KPIs cacheados del dashboard de calidad o los recalcula."""
+    if ttl_seconds <= 0:
+        return factory()
+    with _lock_calidad_resumen:
+        now = time.monotonic()
+        if _calidad_resumen["payload"] is not None and now < _calidad_resumen["expires_at"]:
+            return _calidad_resumen["payload"]
+        data = factory()
+        _calidad_resumen["payload"] = data
+        _calidad_resumen["expires_at"] = now + ttl_seconds
+        return data
+
+
 def reset_dashboard_tree_caches() -> None:
     """Solo tests: vacía entradas (no hay invalidación manual en producción)."""
     with _lock_rama:
@@ -99,3 +115,6 @@ def reset_dashboard_tree_caches() -> None:
         _rama_potencias.clear()
     with _lock_rama_inventario:
         _rama_inventario.clear()
+    with _lock_calidad_resumen:
+        _calidad_resumen["payload"] = None
+        _calidad_resumen["expires_at"] = 0.0

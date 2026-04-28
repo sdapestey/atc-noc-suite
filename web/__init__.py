@@ -59,6 +59,8 @@ def create_app() -> Flask:
             tab = "altiplano"
         elif p.startswith("/dashboard/potencias-historico"):
             tab = "historico"
+        elif p.startswith("/dashboard/calidad-inventario"):
+            tab = "calidad"
         else:
             tab = "index"
         labels = {
@@ -67,6 +69,7 @@ def create_app() -> Flask:
             "olt": "OLT / LT",
             "camino": "Camino Optico",
             "historico": "Historico Potencias",
+            "calidad": "Calidad Inventario",
             "altiplano": "Altiplano",
         }
         return {"nav_tab": tab, "nav_tab_label": labels.get(tab, "Consulta")}
