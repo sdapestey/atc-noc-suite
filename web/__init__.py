@@ -30,6 +30,18 @@ def create_app() -> Flask:
             "SECRET_KEY sigue siendo el valor por defecto; definí SECRET_KEY en el entorno en producción."
         )
 
+    @app.after_request
+    def add_security_headers(resp):
+        """Cabeceras defensivas base para reducir superficie de ataque en navegador."""
+        resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+        resp.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+        resp.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        resp.headers.setdefault(
+            "Permissions-Policy",
+            "accelerometer=(), camera=(), geolocation=(), gyroscope=(), microphone=(), payment=(), usb=()",
+        )
+        return resp
+
     @app.context_processor
     def noc_page_time():
         return {"page_generated_at": datetime.now().strftime("%d/%m/%Y %H:%M")}
@@ -49,7 +61,15 @@ def create_app() -> Flask:
             tab = "historico"
         else:
             tab = "index"
-        return {"nav_tab": tab}
+        labels = {
+            "index": "Consulta",
+            "rama": "RAMA / CTO",
+            "olt": "OLT / LT",
+            "camino": "Camino Optico",
+            "historico": "Historico Potencias",
+            "altiplano": "Altiplano",
+        }
+        return {"nav_tab": tab, "nav_tab_label": labels.get(tab, "Consulta")}
 
     from . import routes
 

@@ -4,7 +4,13 @@ import io
 
 from db import db_cursor
 from .dashboard_olt import dashboard_olts
-from .domain import SITIO_PRINCIPAL_DEFAULT, SITIO_PRINCIPAL_POR_REGION, nombre_operador, region_desde_rama
+from .domain import (
+    SITIO_PRINCIPAL_DEFAULT,
+    SITIO_PRINCIPAL_POR_REGION,
+    nombre_operador,
+    region_desde_rama,
+    split_index_query_tokens,
+)
 from .inventory import (
     consultar_access_id_baja_o_ausente,
     consultar_access_id_detalle_desde_bajada_inventario,
@@ -92,19 +98,8 @@ def export_dashboard_olts_csv() -> str:
     return buf.getvalue()
 
 
-def export_index_query_csv(value: str) -> str:
-    """Exporta a CSV una búsqueda del índice (`/`).
-
-    Args:
-        value: Valor buscado por el usuario (AID, FATC o RATC).
-
-    Returns:
-        String CSV con el resultado normalizado.
-
-    Notes:
-        Si no hay datos, devuelve una fila con `error` para facilitar lectura
-        operativa en planillas.
-    """
+def _export_index_query_csv_one(value: str) -> str:
+    """CSV para un único token de búsqueda del índice (AID, CTO FATC o RAMA RATC)."""
     buf = io.StringIO()
     w = csv.writer(buf)
     value = (value or "").strip()
@@ -176,3 +171,30 @@ def export_index_query_csv(value: str) -> str:
     else:
         w.writerow(["error", "usar ID numérico, FATC o RATC"])
     return buf.getvalue()
+
+
+def export_index_query_csv(value: str) -> str:
+    """Exporta a CSV una búsqueda del índice (`/`).
+
+    Acepta varios valores separados por coma o salto de línea; cada uno se exporta
+    en bloques consecutivos con una fila marcadora ``# consulta``.
+    """
+    tokens = split_index_query_tokens(value)
+    if not tokens:
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(["error", "valor vacío"])
+        return buf.getvalue()
+    if len(tokens) == 1:
+        return _export_index_query_csv_one(tokens[0])
+
+    out_buf = io.StringIO()
+    w = csv.writer(out_buf)
+    for i, t in enumerate(tokens):
+        if i > 0:
+            w.writerow([])
+        w.writerow(["# consulta", t])
+        sub = _export_index_query_csv_one(t)
+        for row in csv.reader(io.StringIO(sub)):
+            w.writerow(row)
+    return out_buf.getvalue()

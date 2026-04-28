@@ -26,7 +26,7 @@ def test_index_access_id_bajada_muestra_cambiar_sn(client, monkeypatch):
     r = client.post("/", data={"value": "105"})
     assert r.status_code == 200
     html = r.get_data(as_text=True)
-    assert 'id="btn-cambiar-sn"' in html
+    assert 'class="btn-mini consulta-sn-btn"' in html
     assert 'onclick="cambiarSNDesdeUIBtn(this)"' in html
 
 

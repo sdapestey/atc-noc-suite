@@ -11,13 +11,13 @@ from flask import Response, current_app, g, jsonify, redirect, render_template, 
 from urllib.parse import quote_plus
 
 from db import healthcheck_db
+from services.domain import split_index_query_tokens
 from services import (
     ALLOWED_HISTORICO_DAYS,
     cambiar_sn_ont,
     consultar_access_id_desde_alias,
     consultar_access_id_baja_o_ausente,
     consultar_access_id_detalle_desde_bajada_inventario,
-    consultar_access_id_estructura,
     consultar_access_id_potencias,
     consultar_cto_coordenadas,
     consultar_cto_estructura,
@@ -37,6 +37,7 @@ from services import (
     export_dashboard_ramas_csv,
     export_csv_potencias_historico_rama,
     export_index_query_csv,
+    consultar_potencias_altiplano_ahora_rama,
     consultar_potencias_historico_rama,
 )
 
@@ -75,6 +76,93 @@ def _is_alias_identifier(value_upper: str) -> bool:
         or value_upper.startswith("RES_MT_")
         or value_upper.startswith("RES_IP_")
     )
+
+
+def _resolve_index_consulta(token: str) -> dict:
+    """Resuelve un token de búsqueda del índice (AID, CTO FATC, RAMA RATC o alias)."""
+    token = (token or "").strip()
+    vu = token.upper()
+    consulta = {
+        "token": token,
+        "resultado": None,
+        "tabla_cto": None,
+        "es_rama": False,
+        "ruta": {"aid": None, "cto": None, "rama": None},
+        "cto_maps_url": None,
+        "busqueda_aid": None,
+    }
+    if not token:
+        return consulta
+
+    if token.isdigit():
+        resultado = consultar_access_id_detalle_desde_bajada_inventario(token)
+        if resultado:
+            consulta["resultado"] = resultado
+            consulta["cto_maps_url"] = _update_route_and_maps_from_result(resultado, consulta["ruta"])
+        else:
+            consulta["busqueda_aid"] = consultar_access_id_baja_o_ausente(token)
+
+    elif "FATC" in vu:
+        consulta["tabla_cto"] = consultar_cto_estructura(token)
+        consulta["ruta"]["cto"] = token
+        coords = consultar_cto_coordenadas(token)
+        if coords:
+            lat_lon = f"{coords['lat']},{coords['lon']}"
+            consulta["cto_maps_url"] = (
+                "https://www.google.com/maps/search/?api=1&query="
+                f"{quote_plus(lat_lon)}"
+            )
+
+    elif "RATC" in vu:
+        consulta["tabla_cto"] = consultar_rama_estructura(token)
+        consulta["es_rama"] = True
+        consulta["ruta"]["rama"] = token
+
+    elif _is_alias_identifier(vu):
+        resultado = consultar_access_id_desde_alias(token)
+        if resultado:
+            consulta["resultado"] = resultado
+            consulta["cto_maps_url"] = _update_route_and_maps_from_result(resultado, consulta["ruta"])
+        else:
+            consulta["busqueda_aid"] = {"tipo": "no_existe", "AID": token}
+
+    return consulta
+
+
+def _consulta_fila_count(c: dict) -> int:
+    """Filas con equipos (detalle=1, tabla CTO/RAMA=suma de ONT)."""
+    if c.get("resultado"):
+        return 1
+    t = c.get("tabla_cto")
+    if not t:
+        return 0
+    if c.get("es_rama"):
+        return sum(len(rows) for rows in t.values())
+    return len(t) if isinstance(t, list) else 0
+
+
+def _consulta_operadores_union(consultas: list[dict]) -> list[str]:
+    """Unión de operadores con orden estable (para un solo toolbar con varias consultas)."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for q in consultas:
+        t = q.get("tabla_cto")
+        if not t or q.get("resultado"):
+            continue
+        if q.get("es_rama"):
+            for rows in t.values():
+                for r in rows:
+                    op = (r or {}).get("OPERADOR")
+                    if op and op not in seen:
+                        seen.add(op)
+                        out.append(op)
+        else:
+            for r in t:
+                op = (r or {}).get("OPERADOR")
+                if op and op not in seen:
+                    seen.add(op)
+                    out.append(op)
+    return out
 
 
 def _request_context_for_log() -> dict:
@@ -129,61 +217,26 @@ def register(app):
     @app.route("/", methods=["GET", "POST"])
     def index():
         value = ""
-        resultado = None
-        tabla_cto = None
-        es_rama = False
-        ruta = {"aid": None, "cto": None, "rama": None}
-        cto_maps_url = None
-        busqueda_aid = None
+        consultas = []
 
         if request.method == "POST":
             value = request.form.get("value", "").strip()
+            for token in split_index_query_tokens(value):
+                consultas.append(_resolve_index_consulta(token))
 
-            value_upper = value.upper()
-
-            if value.isdigit():
-                # Solo dígitos: aux.bajada_inventario → detalle; si no, aux.bajas_de_inventario y
-                # aux.bajas_inventario → banner de baja; si no, no existe en ATC.
-                resultado = consultar_access_id_detalle_desde_bajada_inventario(value)
-                busqueda_aid = None
-                if resultado:
-                    cto_maps_url = _update_route_and_maps_from_result(resultado, ruta)
-                else:
-                    busqueda_aid = consultar_access_id_baja_o_ausente(value)
-
-            elif "FATC" in value_upper:
-                tabla_cto = consultar_cto_estructura(value)
-                ruta["cto"] = value
-                coords = consultar_cto_coordenadas(value)
-                if coords:
-                    lat_lon = f"{coords['lat']},{coords['lon']}"
-                    cto_maps_url = (
-                        "https://www.google.com/maps/search/?api=1&query="
-                        f"{quote_plus(lat_lon)}"
-                    )
-
-            elif "RATC" in value_upper:
-                tabla_cto = consultar_rama_estructura(value)
-                es_rama = True
-                ruta["rama"] = value
-
-            elif _is_alias_identifier(value_upper):
-                resultado = consultar_access_id_desde_alias(value)
-                busqueda_aid = None
-                if resultado:
-                    cto_maps_url = _update_route_and_maps_from_result(resultado, ruta)
-                else:
-                    busqueda_aid = {"tipo": "no_existe", "AID": value}
+        if len(consultas) > 1:
+            consulta_ops_merged = _consulta_operadores_union(consultas)
+            consulta_row_counts = [_consulta_fila_count(c) for c in consultas]
+        else:
+            consulta_ops_merged = None
+            consulta_row_counts = None
 
         return render_template(
             "index.html",
-            resultado=resultado,
-            tabla_cto=tabla_cto,
-            es_rama=es_rama,
+            consultas=consultas,
             value=value,
-            ruta=ruta,
-            cto_maps_url=cto_maps_url,
-            busqueda_aid=busqueda_aid,
+            consulta_ops_merged=consulta_ops_merged,
+            consulta_row_counts=consulta_row_counts,
         )
 
     @app.route("/potencias", methods=["POST"])
@@ -332,6 +385,18 @@ def register(app):
         if not payload.get("ok"):
             return jsonify({"error": payload.get("error", "Error de consulta")}), int(
                 payload.get("status_code", 500)
+            )
+        return jsonify(payload)
+
+    @app.route("/api/potencias-historico/<ratc>/consultar-ahora", methods=["POST"])
+    def api_potencias_historico_consultar_ahora(ratc):
+        try:
+            payload = consultar_potencias_altiplano_ahora_rama(ratc)
+        except Exception:
+            return _log_and_internal_error("Error interno consultando Altiplano (tiempo real)")
+        if not payload.get("ok"):
+            return jsonify({"error": payload.get("error", "Error de consulta")}), int(
+                payload.get("status_code", 400)
             )
         return jsonify(payload)
 

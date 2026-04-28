@@ -1,4 +1,22 @@
 <div class="app-nav-wrap">
+  <div class="global-nav-cols">
+  <div class="global-nav-dropdown" data-nav-dropdown>
+    <button type="button" class="global-nav-dd-trigger" id="global-nav-dd-btn" aria-haspopup="true" aria-controls="global-nav-dd-menu" aria-expanded="false">
+      <span class="global-nav-dd-text">{{ nav_tab_label }}</span>
+      <svg class="global-nav-dd-chevron" viewBox="0 0 12 12" width="14" height="14" aria-hidden="true" focusable="false">
+        <path d="M2.5 4.25L6 7.75L9.5 4.25" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+      </svg>
+    </button>
+    <div class="global-nav-dd-backdrop" hidden aria-hidden="true"></div>
+    <div id="global-nav-dd-menu" class="global-nav-dd-menu" role="menu" aria-labelledby="global-nav-dd-btn" hidden aria-hidden="true">
+      <a class="global-nav-dd-link global-tab{% if nav_tab == 'index' %} global-nav-dd-link--current{% endif %}" role="menuitem" href="{{ url_for('index') }}">Consulta</a>
+      <a class="global-nav-dd-link global-tab{% if nav_tab == 'rama' %} global-nav-dd-link--current{% endif %}" role="menuitem" href="{{ url_for('dash_rama') }}">RAMA / CTO</a>
+      <a class="global-nav-dd-link global-tab{% if nav_tab == 'olt' %} global-nav-dd-link--current{% endif %}" role="menuitem" href="{{ url_for('dash_olt') }}">OLT / LT</a>
+      <a class="global-nav-dd-link global-tab{% if nav_tab == 'camino' %} global-nav-dd-link--current{% endif %}" role="menuitem" href="{{ url_for('dash_camino_optico') }}">Camino Optico</a>
+      <a class="global-nav-dd-link global-tab{% if nav_tab == 'historico' %} global-nav-dd-link--current{% endif %}" role="menuitem" href="{{ url_for('dash_potencias_historico') }}">Historico Potencias</a>
+      <span class="global-nav-dd-link is-disabled" role="menuitem" aria-disabled="true" title="Temporalmente inhabilitado">Altiplano (inhabilitado)</span>
+    </div>
+  </div>
   <nav class="global-tabs" aria-label="Secciones de dashboard">
     <a class="global-tab{% if nav_tab == 'index' %} active{% endif %}" href="{{ url_for('index') }}">Consulta</a>
     <a class="global-tab{% if nav_tab == 'rama' %} active{% endif %}" href="{{ url_for('dash_rama') }}">RAMA / CTO</a>
@@ -11,5 +29,6 @@
       title="Temporalmente inhabilitado"
     >Altiplano (inhabilitado)</span>
   </nav>
+  </div>
   <p class="dashboard-tab-nav-loading-caption" aria-hidden="true">Cargando</p>
 </div>

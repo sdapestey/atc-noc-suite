@@ -120,3 +120,19 @@ def clasificar_rx_dbm(rx: Any) -> Optional[str]:
     if v <= -25:
         return "amarillo"
     return "verde"
+
+
+def split_index_query_tokens(raw: str | None) -> list[str]:
+    """Separa varios valores de consulta del índice por comas o saltos de línea."""
+    if raw is None:
+        return []
+    s = str(raw).strip()
+    if not s:
+        return []
+    normalized = s.replace("\r\n", "\n").replace("\r", "\n").replace("\n", ",")
+    out: list[str] = []
+    for chunk in normalized.split(","):
+        t = chunk.strip()
+        if t:
+            out.append(t)
+    return out

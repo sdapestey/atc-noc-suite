@@ -550,3 +550,37 @@ def consultar_rama_potencias(rama):
     for _cto, group in groupby(rows, key=lambda r: r[2]):
         resultado.extend(_potencias_desde_filas_ont_cto(list(group)))
     return resultado
+
+
+def consultar_rama_potencias_altiplano_por_ont(rama: str) -> list[dict]:
+    """TX/RX en vivo vía Altiplano, misma agrupación por CTO que `consultar_rama_potencias`.
+
+    Por CTO se llama a `obtener_potencias_por_cto` (worker pool en altiplano).
+    Si `operator_id` no tiene target en el mapa de Altiplano (`_ALTIPLANO_POWER_TARGETS_BY_OPERATOR_ID` en `altiplano.py`),
+    esa ONT no obtiene lectura y se devuelve `rx_dbm` / `tx_dbm` en null.
+    """
+    if rama is None or not str(rama).strip():
+        return []
+
+    with db_cursor() as cur:
+        cur.execute(QUERIES["onts_por_rama"], (str(rama).strip(),))
+        rows = cur.fetchall()
+
+    out: list[dict] = []
+    for _cto, group in groupby(rows, key=lambda r: r[2]):
+        grp = list(group)
+        ne = calcular_ne(grp[0][4])
+        onts = [(str(r[0]), r[4], r[7]) for r in grp if r[4]]
+        potencias = obtener_potencias_por_cto(ne, onts)
+        for r in grp:
+            aid = str(r[0])
+            obj_raw = r[4]
+            ont_key = str(obj_raw).split("-")[-1] if obj_raw else ""
+            tx, rx = potencias.get(aid, (None, None))
+            out.append({
+                "aid": aid,
+                "ont_key": ont_key,
+                "rx_dbm": None if rx is None else float(rx),
+                "tx_dbm": None if tx is None else float(tx),
+            })
+    return out

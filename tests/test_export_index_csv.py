@@ -69,3 +69,30 @@ def test_export_fatc_still_uses_cto_estructura():
 
     out = exp.export_index_query_csv("ES01-FATC-8-1")
     assert "AID" in out or "error" in out
+
+
+def test_export_multiple_tokens_two_blocks(monkeypatch):
+    import services.exports as exp
+
+    det = lambda aid: {
+        "AID": aid,
+        "OPERADOR": "TASA",
+        "Status": "IN SERVICE",
+        "CTO": "TG01-FATC-8-1",
+        "RAMA": "TG01-RATC-0-1",
+        "ONT": "ONT-1",
+        "SN": "SN123",
+        "fuente_detalle": "bajada_inventario",
+    }
+
+    monkeypatch.setattr(
+        exp,
+        "consultar_access_id_detalle_desde_bajada_inventario",
+        lambda v: det(v) if v in ("105", "106") else None,
+    )
+    monkeypatch.setattr(exp, "consultar_access_id_baja_o_ausente", lambda _v: {"tipo": "no_existe"})
+
+    out = exp.export_index_query_csv("105, 106")
+    assert "# consulta" in out
+    assert "105" in out
+    assert "106" in out

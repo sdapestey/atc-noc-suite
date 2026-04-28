@@ -38,6 +38,7 @@
       <button class="btn btn-primary" type="submit" id="btn-search">Buscar</button>
       <button class="btn btn-ghost" type="button" onclick="resetDashboard()">Limpiar</button>
       <button class="btn btn-ghost" type="button" id="btn-export" disabled>Exportar CSV</button>
+      <button class="btn btn-ghost" type="button" id="btn-consultar-ahora" disabled>Consultar RX</button>
     </form>
 
     <div class="metrics-grid" id="stats-grid">
@@ -183,6 +184,60 @@ function _isOntDatasetLabel(label) {
   return String(label || "").trim().toUpperCase().startsWith("ONT ");
 }
 
+function _isUmbralDataset(ds) {
+  return String(ds.label || "").toLowerCase().includes("umbral");
+}
+
+function plotDatasetsFromChart() {
+  return powerChart.data.datasets.map(function (d, idx) {
+    return {label: d.label, color: d.borderColor, index: idx};
+  });
+}
+
+function mergeSnapshot(payload) {
+  if (!payload || !payload.ok || !powerChart) return;
+  const ts = payload.timestamp;
+  const sampleMap = {};
+  (payload.samples || []).forEach(function (s) {
+    sampleMap[String(s.ont_key)] = s.rx_dbm;
+  });
+
+  const labels = powerChart.data.labels;
+  let idx = labels.indexOf(ts);
+  if (idx === -1) {
+    let i = 0;
+    while (i < labels.length && labels[i] < ts) {
+      i += 1;
+    }
+    labels.splice(i, 0, ts);
+    idx = i;
+    powerChart.data.datasets.forEach(function (ds) {
+      if (_isUmbralDataset(ds)) {
+        const val = String(ds.label).indexOf("28") !== -1 ? -28 : -30;
+        ds.data.splice(i, 0, val);
+      } else {
+        ds.data.splice(i, 0, null);
+      }
+    });
+  }
+
+  powerChart.data.datasets.forEach(function (ds) {
+    if (_isOntDatasetLabel(ds.label)) {
+      const m = ds.label.match(/^ONT\s+(.+)$/);
+      const key = m ? m[1].trim() : "";
+      const v = sampleMap[key];
+      ds.data[idx] = v === undefined || v === null ? null : Number(v);
+    }
+  });
+
+  powerChart.update();
+  const hintEl = document.getElementById("kpi-status-hint");
+  if (hintEl) {
+    hintEl.innerText = "último punto Altiplano: " + ts + " (KPIs = histórico)";
+  }
+  buildLegend(plotDatasetsFromChart());
+}
+
 function _syncLegendChecks() {
   document.querySelectorAll(".historico-legend-check[data-dataset-index]").forEach(function (el) {
     const idx = Number(el.getAttribute("data-dataset-index"));
@@ -235,6 +290,7 @@ function resetDashboard() {
   noDataEl.style.display = "block";
   chartStage.style.display = "none";
   document.getElementById("btn-export").disabled = true;
+  document.getElementById("btn-consultar-ahora").disabled = true;
   document.getElementById("btn-reset-zoom").disabled = true;
   document.getElementById("btn-toggle-legend").disabled = true;
   document.getElementById("btn-show-all").disabled = true;
@@ -329,13 +385,16 @@ function renderChart(data) {
 
 async function fetchData() {
   const ratc = String(document.getElementById("ratc-input").value || "").trim();
-  if (!ratc) return;
+  if (!ratc) {
+    return false;
+  }
 
   const btn = document.getElementById("btn-search");
   btn.disabled = true;
   btn.innerText = "Consultando...";
   noDataEl.style.display = "none";
   document.getElementById("btn-export").disabled = true;
+  document.getElementById("btn-consultar-ahora").disabled = true;
 
   try {
     const response = await fetch(
@@ -349,7 +408,9 @@ async function fetchData() {
     renderChart(payload);
     chartStage.style.display = "block";
     document.getElementById("btn-export").disabled = false;
+    document.getElementById("btn-consultar-ahora").disabled = false;
     updateDeepLink();
+    return true;
   } catch (err) {
     chartStage.style.display = "none";
     noDataEl.style.display = "block";
@@ -364,9 +425,78 @@ async function fetchData() {
       noDataEl.innerText = "Error interno de consulta.";
     }
     updateDeepLink();
+    return false;
   } finally {
     btn.disabled = false;
     btn.innerText = "Buscar";
+  }
+}
+
+function _setConsultarRxLoading(btn, loading) {
+  if (!btn) return;
+  if (loading) {
+    if (!btn.dataset.potLabel) btn.dataset.potLabel = (btn.textContent || "").trim() || "Consultar RX";
+    btn.disabled = true;
+    btn.classList.add("pot-btn-loading");
+    btn.innerHTML = "";
+    const inner = document.createElement("span");
+    inner.className = "pot-btn-loading-inner";
+    const sp = document.createElement("span");
+    sp.className = "pot-txrx-spin";
+    sp.setAttribute("aria-hidden", "true");
+    const lab = document.createElement("span");
+    lab.className = "pot-txrx-label";
+    lab.textContent = "Cargando RX";
+    inner.appendChild(sp);
+    inner.appendChild(lab);
+    btn.appendChild(inner);
+    btn.setAttribute("aria-busy", "true");
+  } else {
+    btn.disabled = false;
+    btn.classList.remove("pot-btn-loading");
+    btn.removeAttribute("aria-busy");
+    btn.textContent = btn.dataset.potLabel || "Consultar RX";
+  }
+}
+
+async function consultarAhora() {
+  const ratc = String(document.getElementById("ratc-input").value || "").trim();
+  if (!ratc) return;
+
+  const btn = document.getElementById("btn-consultar-ahora");
+  _setConsultarRxLoading(btn, true);
+
+  try {
+    if (!powerChart || lastRATC !== ratc) {
+      const loaded = await fetchData();
+      if (!loaded || !powerChart) {
+        return;
+      }
+    }
+
+    const resp = await fetch(
+      "/api/potencias-historico/" + encodeURIComponent(ratc) + "/consultar-ahora",
+      {method: "POST"}
+    );
+    const payload = await resp.json();
+    if (!resp.ok) {
+      noDataEl.innerText = String(payload.error || "No se pudo consultar Altiplano.");
+      noDataEl.style.display = "block";
+      return;
+    }
+    mergeSnapshot(payload);
+    noDataEl.innerText = "Punto Altiplano agregado al grafico (" + payload.timestamp + ").";
+    noDataEl.style.display = "block";
+    setTimeout(function () {
+      if (powerChart) {
+        noDataEl.style.display = "none";
+      }
+    }, 4500);
+  } catch (_err) {
+    noDataEl.innerText = "Error al consultar Altiplano.";
+    noDataEl.style.display = "block";
+  } finally {
+    _setConsultarRxLoading(btn, false);
   }
 }
 
@@ -395,6 +525,10 @@ document.getElementById("btn-export").addEventListener("click", function () {
     + encodeURIComponent(lastRATC)
     + "&days=" + encodeURIComponent(String(selectedDays));
   window.location.href = url;
+});
+
+document.getElementById("btn-consultar-ahora").addEventListener("click", function () {
+  consultarAhora();
 });
 
 document.getElementById("btn-toggle-legend").addEventListener("click", function () {

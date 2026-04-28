@@ -36,7 +36,11 @@ def _compute_dashboard_ramas():
             SELECT
                 f.path_atc AS rama,
                 COUNT(*)::int AS ont_count,
-                COUNT(DISTINCT f.location_description)::int AS cto_count
+                COUNT(DISTINCT f.location_description)::int AS cto_count,
+                COALESCE(
+                    STRING_AGG(DISTINCT f.location_description, ' ' ORDER BY f.location_description),
+                    ''
+                ) AS ctos_search
             FROM cm.inventory_fat_occupation f
             WHERE f.status = 'IN SERVICE'
               AND f.path_atc IS NOT NULL
@@ -47,11 +51,12 @@ def _compute_dashboard_ramas():
         rows = cur.fetchall()
 
     ramas = []
-    for rama, ont_count, cto_count in rows:
+    for rama, ont_count, cto_count, ctos_search in rows:
         ramas.append({
             "RAMA": rama,
             "CTO_COUNT": int(cto_count or 0),
             "ONT_COUNT": int(ont_count or 0),
+            "CTOS_SEARCH": str(ctos_search or ""),
             "ROJAS": 0,
             "AMARILLAS": 0,
             "VERDES": 0,

@@ -54,8 +54,11 @@ function _rowsPonesSeleccionados() {
   }
 
   const lines = [];
-  lines.push(["PON", "RAMA", "CTO", "ACCESS_ID", "OPERADOR", "ONT"].join("\t"));
+  lines.push(["PON", "RAMA", "CTO", "ACCESS ID", "OPERADOR", "ONT"].join("\t"));
   let n = 0;
+  const selectedRamas = new Set();
+  const selectedCtos = new Set();
+  let selectedOnts = 0;
 
   selected.forEach((cb) => {
     const uid = cb.getAttribute("data-uid") || "";
@@ -65,10 +68,20 @@ function _rowsPonesSeleccionados() {
     if (!ponBlock) return;
     const ramas = ponBlock.RAMAS || {};
     Object.keys(ramas).forEach((rama) => {
+      selectedRamas.add(rama);
       const ctos = (ramas[rama] || {}).CTOS || {};
       Object.keys(ctos).forEach((cto) => {
+        selectedCtos.add(rama + "||" + cto);
         (ctos[cto] || []).forEach((o) => {
-          lines.push([pon, rama, cto, o.AID || "", o.OPERADOR || "", o.ONT || ""].join("\t"));
+          selectedOnts += 1;
+          lines.push([
+            pon,
+            rama,
+            cto,
+            o.AID || "",
+            o.OPERADOR || "",
+            o.ONT || "",
+          ].join("\t"));
           n++;
         });
       });
@@ -78,7 +91,22 @@ function _rowsPonesSeleccionados() {
   if (n === 0) {
     return { error: "No hay filas para exportar con esa selección", lines: [], count: 0 };
   }
-  return { error: null, lines: lines, count: n };
+  lines.push("");
+  lines.push("RESUMEN:");
+  lines.push("PON: " + String(selected.length));
+  lines.push("RAMAS: " + String(selectedRamas.size));
+  lines.push("CTO: " + String(selectedCtos.size));
+  lines.push("ONT: " + String(selectedOnts));
+  return {
+    error: null,
+    lines: lines,
+    count: n,
+    resumen: {
+      ramas: selectedRamas.size,
+      ctos: selectedCtos.size,
+      onts: selectedOnts,
+    },
+  };
 }
 
 function copiarPonesSeleccionados() {
@@ -133,6 +161,70 @@ function exportarPonesSeleccionadosPortapapeles() {
     return;
   }
   copyTextToClipboardOlt(res.lines.join("\n"));
+}
+
+function _oltMetricPillHtml(n, label, kind, title) {
+  const v = String(Math.max(0, Number(n) || 0));
+  const empty = v === "0";
+  return (
+    '<span class="olt-metric-pill olt-metric-pill--' +
+    kind +
+    (empty ? " olt-metric-pill--empty" : "") +
+    '" title="' +
+    title +
+    '">' +
+    '<span class="olt-metric-pill__n">' +
+    v +
+    "</span> " +
+    '<span class="olt-metric-pill__l">' +
+    label +
+    "</span></span>"
+  );
+}
+
+function _oltPonSummaryHtml(pon, ramas, cto, ont) {
+  const p = String(Math.max(0, Number(pon) || 0));
+  const r = String(Math.max(0, Number(ramas) || 0));
+  const c = String(Math.max(0, Number(cto) || 0));
+  const o = String(Math.max(0, Number(ont) || 0));
+  const emptyPon = p === "0";
+  return (
+    "Seleccionados: " +
+    '<span class="olt-pon-selected-kicker' +
+    (emptyPon ? " olt-pon-selected-kicker--empty" : "") +
+    '" title="PON marcados para copiar o exportar CSV">' +
+    '<span class="olt-pon-selected-count">' +
+    p +
+    "</span> " +
+    '<span class="olt-pon-selected-label">PON</span></span>' +
+    ' <span class="olt-summary-sep" aria-hidden="true">·</span> ' +
+    _oltMetricPillHtml(r, "RAMAs", "ramas", "RAMAs únicas en el inventario de la selección") +
+    ' <span class="olt-summary-sep" aria-hidden="true">·</span> ' +
+    _oltMetricPillHtml(c, "CTO", "cto", "CTO únicas en el inventario de la selección") +
+    ' <span class="olt-summary-sep" aria-hidden="true">·</span> ' +
+    _oltMetricPillHtml(o, "ONT", "ont", "ONT (filas) en el inventario de la selección")
+  );
+}
+
+function updatePonesSelectionSummary() {
+  const el = document.getElementById("pon-selection-summary");
+  if (!el) return;
+  const selectedPones = document.querySelectorAll(".pon-select:checked").length;
+  if (!selectedPones) {
+    el.innerHTML = _oltPonSummaryHtml(0, 0, 0, 0);
+    return;
+  }
+  const res = _rowsPonesSeleccionados();
+  if (res.error || !res.resumen) {
+    el.innerHTML = _oltPonSummaryHtml(selectedPones, 0, 0, 0);
+    return;
+  }
+  el.innerHTML = _oltPonSummaryHtml(
+    selectedPones,
+    res.resumen.ramas,
+    res.resumen.ctos,
+    res.resumen.onts
+  );
 }
 
 function colapsarTodoOlt() {
@@ -257,43 +349,52 @@ async function restoreOltDashboardState() {
 }
 
 function closeNode(id, skipSave) {
-    state[id] = false;
-    const arrow = document.getElementById('arrow-' + id);
-    if (arrow) arrow.textContent = '▶';
-
-    childrenByParent(id).forEach(el => {
-        el.classList.add('hidden');
-        const child = el.getAttribute('data-node-id');
-        if (child) closeNode(child, true);
-    });
-    if (!skipSave) _saveOltStateSoon();
+  state[id] = false;
+  const arrow = document.getElementById("arrow-" + id);
+  if (arrow) {
+    arrow.textContent = "▶";
+  }
+  childrenByParent(id).forEach((el) => {
+    el.classList.add("hidden");
+    const child = el.getAttribute("data-node-id");
+    if (child) {
+      closeNode(child, true);
+    }
+  });
+  if (!skipSave) {
+    _saveOltStateSoon();
+  }
 }
 
 /* ===============================
    TOGGLE GENÉRICO
    =============================== */
 function toggleNode(id) {
-    if (state[id]) {
-        closeNode(id);
-        return;
-    }
-
-    state[id] = true;
-    const arrow = document.getElementById('arrow-' + id);
-    if (arrow) arrow.textContent = '▼';
-
-    childrenByParent(id).forEach(el => {
-        el.classList.remove('hidden');
-    });
-    _saveOltStateSoon();
+  if (state[id]) {
+    closeNode(id);
+    return;
+  }
+  state[id] = true;
+  const arrow = document.getElementById("arrow-" + id);
+  if (arrow) {
+    arrow.textContent = "▼";
+  }
+  childrenByParent(id).forEach((el) => {
+    el.classList.remove("hidden");
+  });
+  _saveOltStateSoon();
 }
 
 /** Abre un nodo sin alternar (para filtro / resultados). */
 function ensureNodeOpen(id) {
-  if (!id || state[id]) return;
+  if (!id || state[id]) {
+    return;
+  }
   state[id] = true;
   const arrow = document.getElementById("arrow-" + id);
-  if (arrow) arrow.textContent = "▼";
+  if (arrow) {
+    arrow.textContent = "▼";
+  }
   childrenByParent(id).forEach((el) => {
     el.classList.remove("hidden");
   });
@@ -376,8 +477,8 @@ function buildRamaBlockHtml(uid, rama, block, parentRamaId, depth) {
                  data-node-id="${ramaId}"${parentAttr}
                  data-olt-tree-kind="${kindLabel}"
                  onclick="toggleNode('${ramaId}')">
-                <span class="olt-tree-kind">${kindLabel}</span>
-                <span class="arrow" id="arrow-${ramaId}">▶</span> <span class="olt-tree-label">${_esc(rama)}</span>
+                <span class="olt-tree-kind rama-row-kind rama-row-kind--rama">${kindLabel}</span>
+                <span class="arrow" id="arrow-${ramaId}">▶</span> <span class="olt-tree-label rama-row-label">${_esc(rama)}</span>
                 <button type="button" class="btn-mini pot-rama" data-pot-rama="${encodeURIComponent(rama)}">Consultar</button>
             </div>`;
 
@@ -394,8 +495,8 @@ function buildRamaBlockHtml(uid, rama, block, parentRamaId, depth) {
                      data-node-id="${ctoId}"
                      data-olt-tree-kind="CTO"
                      onclick="toggleNode('${ctoId}')">
-                    <span class="olt-tree-kind">CTO</span>
-                    <span class="arrow" id="arrow-${ctoId}">▶</span> <span class="olt-tree-label">${_esc(cto)}</span>
+                    <span class="olt-tree-kind rama-row-kind rama-row-kind--cto">CTO</span>
+                    <span class="arrow" id="arrow-${ctoId}">▶</span> <span class="olt-tree-label rama-row-label">${_esc(cto)}</span>
                     <button type="button" class="btn-mini pot-cto" data-pot-cto="${encodeURIComponent(cto)}">Consultar</button>
                 </div>
 
@@ -410,7 +511,7 @@ function buildRamaBlockHtml(uid, rama, block, parentRamaId, depth) {
                       <td>${_esc(o.ONT || "—")}</td>
                       <td>-</td>
                       <td>-</td>
-                      <td><button type="button" class="btn-mini btn-aid pot-aid" data-pot-aid="${encodeURIComponent(o.AID)}">ID</button></td>
+                      <td><button type="button" class="btn-mini pot-aid" data-pot-aid="${encodeURIComponent(o.AID)}">TX / RX</button></td>
                     </tr>`;
     });
 
@@ -629,8 +730,82 @@ function _setPotButtonLoading(btn, loading) {
   }
 }
 
+/** Celdas TX/RX: spinner mientras se consulta potencia por CTO (mismo criterio que el botón). */
+function _setCtoOltTxRxCellsLoading(wrap, cto) {
+  wrap.querySelectorAll("tr[data-aid]").forEach((tr) => {
+    if (decodeURIComponent(tr.getAttribute("data-cto") || "") !== cto) {
+      return;
+    }
+    [3, 4].forEach((idx) => {
+      const td = tr.children[idx];
+      if (!td) {
+        return;
+      }
+      td.setAttribute("aria-busy", "true");
+      td.setAttribute("aria-label", "Cargando");
+      td.classList.add("olt-txrx-cell--loading");
+      td.innerHTML =
+        '<span class="olt-txrx-loading-wrap" title="Cargando potencias…"><span class="olt-txrx-cell-spin" aria-hidden="true"></span></span>';
+    });
+  });
+}
+
+function _oltTxRxCellsStuckToDashForCto(wrap, cto) {
+  wrap.querySelectorAll("tr[data-aid]").forEach((tr) => {
+    if (decodeURIComponent(tr.getAttribute("data-cto") || "") !== cto) {
+      return;
+    }
+    [3, 4].forEach((idx) => {
+      const td = tr.children[idx];
+      if (td && td.classList && td.classList.contains("olt-txrx-cell--loading")) {
+        td.classList.remove("olt-txrx-cell--loading");
+        td.removeAttribute("aria-busy");
+        td.removeAttribute("aria-label");
+        td.textContent = "-";
+      }
+    });
+  });
+}
+
+function _setOltTxRxCellsLoadingForRama(wrap, rama) {
+  wrap.querySelectorAll("tr[data-aid]").forEach((tr) => {
+    if (decodeURIComponent(tr.getAttribute("data-rama") || "") !== rama) {
+      return;
+    }
+    [3, 4].forEach((idx) => {
+      const td = tr.children[idx];
+      if (!td) {
+        return;
+      }
+      td.setAttribute("aria-busy", "true");
+      td.setAttribute("aria-label", "Cargando");
+      td.classList.add("olt-txrx-cell--loading");
+      td.innerHTML =
+        '<span class="olt-txrx-loading-wrap" title="Cargando potencias…"><span class="olt-txrx-cell-spin" aria-hidden="true"></span></span>';
+    });
+  });
+}
+
+function _oltTxRxCellsStuckToDashForRama(wrap, rama) {
+  wrap.querySelectorAll("tr[data-aid]").forEach((tr) => {
+    if (decodeURIComponent(tr.getAttribute("data-rama") || "") !== rama) {
+      return;
+    }
+    [3, 4].forEach((idx) => {
+      const td = tr.children[idx];
+      if (td && td.classList && td.classList.contains("olt-txrx-cell--loading")) {
+        td.classList.remove("olt-txrx-cell--loading");
+        td.removeAttribute("aria-busy");
+        td.removeAttribute("aria-label");
+        td.textContent = "-";
+      }
+    });
+  });
+}
+
 function potenciaRama(rama, wrap, row, btnEl) {
   _setPotButtonLoading(btnEl, true);
+  _setOltTxRxCellsLoadingForRama(wrap, rama);
   fetch("/dashboard/rama/consultar", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -653,6 +828,12 @@ function potenciaRama(rama, wrap, row, btnEl) {
           if (!tr) return;
           if (decodeURIComponent(tr.getAttribute("data-rama") || "") !== rama) return;
           if (tr.children[3] && tr.children[4]) {
+            tr.children[3].classList.remove("olt-txrx-cell--loading");
+            tr.children[3].removeAttribute("aria-busy");
+            tr.children[3].removeAttribute("aria-label");
+            tr.children[4].classList.remove("olt-txrx-cell--loading");
+            tr.children[4].removeAttribute("aria-busy");
+            tr.children[4].removeAttribute("aria-label");
             tr.children[3].textContent = _formatPowerDbm(cell.TX);
             tr.children[4].textContent = _formatPowerDbm(cell.RX);
           }
@@ -660,12 +841,19 @@ function potenciaRama(rama, wrap, row, btnEl) {
       });
       _recomputePeor(wrap, row);
     })
-    .catch(() => toastOlt("Error al consultar potencias (rama)"))
-    .finally(() => _setPotButtonLoading(btnEl, false));
+    .catch(() => {
+      toastOlt("Error al consultar potencias (rama)");
+      _oltTxRxCellsStuckToDashForRama(wrap, rama);
+    })
+    .finally(() => {
+      _oltTxRxCellsStuckToDashForRama(wrap, rama);
+      _setPotButtonLoading(btnEl, false);
+    });
 }
 
 function potenciaCto(cto, wrap, row, btnEl) {
   _setPotButtonLoading(btnEl, true);
+  _setCtoOltTxRxCellsLoading(wrap, cto);
   fetch("/dashboard/cto/consultar", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -676,11 +864,21 @@ function potenciaCto(cto, wrap, row, btnEl) {
       return r.json();
     })
     .then((arr) => {
-      if (!Array.isArray(arr)) return;
+      if (!Array.isArray(arr)) {
+        return;
+      }
       arr.forEach((rec) => {
         const tr = findTrByAid(wrap, rec.AID);
-        if (!tr || decodeURIComponent(tr.getAttribute("data-cto") || "") !== cto) return;
+        if (!tr || decodeURIComponent(tr.getAttribute("data-cto") || "") !== cto) {
+          return;
+        }
         if (tr.children[3] && tr.children[4]) {
+          tr.children[3].classList.remove("olt-txrx-cell--loading");
+          tr.children[3].removeAttribute("aria-busy");
+          tr.children[3].removeAttribute("aria-label");
+          tr.children[4].classList.remove("olt-txrx-cell--loading");
+          tr.children[4].removeAttribute("aria-busy");
+          tr.children[4].removeAttribute("aria-label");
           tr.children[3].textContent = _formatPowerDbm(rec.TX);
           tr.children[4].textContent = _formatPowerDbm(rec.RX);
           _addSemFromRx(row, rec.RX);
@@ -688,8 +886,14 @@ function potenciaCto(cto, wrap, row, btnEl) {
       });
       _recomputePeor(wrap, row);
     })
-    .catch(() => toastOlt("Error al consultar potencias (CTO)"))
-    .finally(() => _setPotButtonLoading(btnEl, false));
+    .catch(() => {
+      toastOlt("Error al consultar potencias (CTO)");
+      _oltTxRxCellsStuckToDashForCto(wrap, cto);
+    })
+    .finally(() => {
+      _oltTxRxCellsStuckToDashForCto(wrap, cto);
+      _setPotButtonLoading(btnEl, false);
+    });
 }
 
 function potenciaAid(aid, wrap, row, btnEl) {
@@ -795,13 +999,20 @@ window.addEventListener("load", () => {
 
   document.body.addEventListener("change", (e) => {
     const all = e.target.closest("input.pon-select-all");
-    if (!all) return;
-    const uid = all.getAttribute("data-uid") || "";
-    const detail = document.getElementById("detail-" + uid);
-    if (!detail) return;
-    detail.querySelectorAll("input.pon-select").forEach((cb) => {
-      cb.checked = !!all.checked;
-    });
+    if (all) {
+      const uid = all.getAttribute("data-uid") || "";
+      const detail = document.getElementById("detail-" + uid);
+      if (!detail) return;
+      detail.querySelectorAll("input.pon-select").forEach((cb) => {
+        cb.checked = !!all.checked;
+      });
+      updatePonesSelectionSummary();
+      return;
+    }
+    const ponCb = e.target.closest("input.pon-select");
+    if (ponCb) {
+      updatePonesSelectionSummary();
+    }
   });
 
   if (window.initNocPage) {
@@ -824,6 +1035,7 @@ window.addEventListener("load", () => {
   window.addEventListener("scroll", _saveOltStateSoon, { passive: true });
 
   restoreOltDashboardState();
+  updatePonesSelectionSummary();
 });
 </script>
 </head>
@@ -837,7 +1049,7 @@ window.addEventListener("load", () => {
         {% include 'partials/brand_logo.html' %}
         <h1>ATC GPON Inventory</h1>
       </div>
-      <p class="page-lead"><strong>OLT / LT</strong> — <strong>Sitio principal</strong> → sitio (código) → OLT → LT → RAMA → CTO → AID. Expandí un <strong>LT</strong> para inventario; potencias con <strong>Consultar</strong> en RAMA/CTO o <strong>ID</strong>.</p>
+      <p class="page-lead page-lead--one-line"><strong>OLT / LT</strong> — <strong>Sitio principal</strong> → sitio (código) → OLT → LT → RAMA → CTO → AID. Expandí un <strong>LT</strong> para inventario; potencias con <strong>Consultar</strong> en RAMA/CTO o&nbsp;<strong>ID</strong>.</p>
     </div>
     {% include 'partials/noc_topbar.html' %}
   </div>
@@ -851,6 +1063,7 @@ window.addEventListener("load", () => {
       <button type="button" class="btn" onclick="exportarPonesSeleccionadosCsv()" title="Descargar PON seleccionados (CSV)">Exportar PON seleccionados CSV</button>
       <button type="button" class="btn btn-ghost" onclick="colapsarTodoOlt()">Colapsar todo</button>
     </div>
+    <p class="controls-hint olt-controls-hint" id="pon-selection-summary">Seleccionados: <span class="olt-pon-selected-kicker olt-pon-selected-kicker--empty" title="PON marcados para copiar o exportar CSV"><span class="olt-pon-selected-count">0</span> <span class="olt-pon-selected-label">PON</span></span> <span class="olt-summary-sep" aria-hidden="true">·</span> <span class="olt-metric-pill olt-metric-pill--ramas olt-metric-pill--empty" title="RAMAs únicas en el inventario de la selección"><span class="olt-metric-pill__n">0</span> <span class="olt-metric-pill__l">RAMAs</span></span> <span class="olt-summary-sep" aria-hidden="true">·</span> <span class="olt-metric-pill olt-metric-pill--cto olt-metric-pill--empty" title="CTO únicas en el inventario de la selección"><span class="olt-metric-pill__n">0</span> <span class="olt-metric-pill__l">CTO</span></span> <span class="olt-summary-sep" aria-hidden="true">·</span> <span class="olt-metric-pill olt-metric-pill--ont olt-metric-pill--empty" title="ONT (filas) en el inventario de la selección"><span class="olt-metric-pill__n">0</span> <span class="olt-metric-pill__l">ONT</span></span></p>
     <p class="controls-hint olt-controls-hint"><strong class="hint-kicker">NOC</strong> Marcá PON (o “Seleccionar todos los PON de este LT”) y usá copiar / exportar CSV (descarga local, UTF‑8).</p>
   </div>
 

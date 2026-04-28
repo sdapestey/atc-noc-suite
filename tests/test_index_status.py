@@ -22,7 +22,7 @@ def test_index_access_id_renders_estado_field(client, monkeypatch):
     r = client.post("/", data={"value": "105"})
     assert r.status_code == 200
     html = r.get_data(as_text=True)
-    assert "<th>Estado</th><td id=\"estado-id\"" in html
+    assert "<th>Estado</th><td id=\"s0-estado-id\"" in html
     assert "(aux.bajada_inventario)" in html
 
 
@@ -51,8 +51,8 @@ def test_index_cto_table_renders_estado_column(client, monkeypatch):
     r = client.post("/", data={"value": "TG01-FATC-8-100987"})
     assert r.status_code == 200
     html = r.get_data(as_text=True)
-    assert "<th>Status</th><th>TX</th><th>RX</th><th>Estado</th>" in html
-    assert "id=\"st-105\"" in html
+    assert "<th>Status</th>" in html and "<th>TX (dBm)</th>" in html and "<th>Estado</th>" in html
+    assert "id=\"s0-st-105\"" in html
 
 
 def test_index_rama_table_renders_estado_column(client, monkeypatch):
@@ -79,5 +79,5 @@ def test_index_rama_table_renders_estado_column(client, monkeypatch):
     r = client.post("/", data={"value": "TG01-RATC-0-000308"})
     assert r.status_code == 200
     html = r.get_data(as_text=True)
-    assert "<th>AID</th><th>Operador</th><th>ONT</th><th>SN</th><th>TX</th><th>RX</th><th>Estado</th>" in html
-    assert "id=\"st-105\"" in html
+    assert "<th>AID</th>" in html and "<th>TX (dBm)</th>" in html and "<th>Estado</th>" in html
+    assert "id=\"s0-st-105\"" in html

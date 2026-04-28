@@ -10,4 +10,10 @@ def test_dashboard_olt_template_contains_pon_node_builder():
     assert "poncount" in tpl
     assert "pon-select" in tpl
     assert "exportarPonesSeleccionados" in tpl
-    assert '["PON", "RAMA", "CTO", "ACCESS_ID", "OPERADOR", "ONT"]' in tpl
+    assert "ACCESS ID" in tpl
+    assert "noc-tools.js" in tpl
+    assert "RESUMEN:" in tpl
+    assert "olt-pon-selected-kicker" in tpl
+    assert "olt-metric-pill" in tpl
+    assert "_setCtoOltTxRxCellsLoading" in tpl
+    assert "_setOltTxRxCellsLoadingForRama" in tpl

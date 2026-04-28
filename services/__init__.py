@@ -14,6 +14,7 @@ from .exports import (
 )
 from .historico_potencias import (
     ALLOWED_HISTORICO_DAYS,
+    consultar_potencias_altiplano_ahora_rama,
     consultar_potencias_historico_rama,
     export_csv_potencias_historico_rama,
 )
@@ -50,6 +51,7 @@ __all__ = [
     "export_dashboard_olts_csv",
     "export_index_query_csv",
     "consultar_potencias_historico_rama",
+    "consultar_potencias_altiplano_ahora_rama",
     "export_csv_potencias_historico_rama",
     "ALLOWED_HISTORICO_DAYS",
     "dashboard_camino_optico_cto",

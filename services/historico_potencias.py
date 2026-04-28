@@ -9,6 +9,8 @@ from statistics import median
 from db import db_cursor
 from queries import QUERIES
 
+from .inventory import consultar_rama_potencias_altiplano_por_ont
+
 
 _OBJ_RE = re.compile(r"^(.*?):1-1-(\d+)-(\d+)-")
 ALLOWED_HISTORICO_DAYS = (1, 7, 15, 30)
@@ -140,4 +142,40 @@ def export_csv_potencias_historico_rama(ratc: str, days: int = 30) -> dict:
         "csv": out.getvalue(),
         "ratc": (ratc or "").strip(),
         "days": payload.get("days", 30),
+    }
+
+
+def consultar_potencias_altiplano_ahora_rama(ratc: str) -> dict:
+    """Lectura instantánea Altiplano para todas las ONT de la rama (sin persistir en BD).
+
+    Valida RAMA vía `_resolver_pon_desde_rama` como el histórico. Timestamp `YYYY-MM-DD HH:MM`.
+    Las ONT sin operador soportado en Altiplano van con `rx_dbm: null` en `samples`.
+
+    Los KPIs del formulario siguen mostrando solo el histórico en Postgres; el gráfico
+    incorpora el punto en el cliente.
+    """
+    rama = (ratc or "").strip()
+    if not rama:
+        return {"ok": False, "status_code": 400, "error": "Parámetro ratc requerido"}
+
+    pon = _resolver_pon_desde_rama(rama)
+    if not pon:
+        return {
+            "ok": False,
+            "status_code": 404,
+            "error": "Rama RATC no encontrada en inventario",
+        }
+
+    rows = consultar_rama_potencias_altiplano_por_ont(rama)
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+    samples = [
+        {"ont_key": r["ont_key"], "rx_dbm": r["rx_dbm"]}
+        for r in rows
+    ]
+
+    return {
+        "ok": True,
+        "timestamp": ts,
+        "pon": pon,
+        "samples": samples,
     }

@@ -11,6 +11,29 @@ def test_dashboard_potencias_historico_get_renders(client):
     assert "btn-toggle-legend" in html
     assert "btn-show-all" in html
     assert "btn-hide-all" in html
+    assert 'id="btn-consultar-ahora"' in html
+
+
+def test_api_potencias_historico_consultar_ahora_success(client, monkeypatch):
+    import web.routes as routes
+
+    monkeypatch.setattr(
+        routes,
+        "consultar_potencias_altiplano_ahora_rama",
+        lambda _ratc: {
+            "ok": True,
+            "timestamp": "2026-04-27 18:00",
+            "pon": "BA_OLTA_MR01_01-1-1",
+            "samples": [{"ont_key": "3", "rx_dbm": -20.5}],
+        },
+    )
+    r = client.post("/api/potencias-historico/MR01-RATC-0-000200/consultar-ahora")
+    assert r.status_code == 200
+    payload = r.get_json()
+    assert payload["timestamp"] == "2026-04-27 18:00"
+    assert payload["pon"] == "BA_OLTA_MR01_01-1-1"
+    assert payload["samples"][0]["ont_key"] == "3"
+    assert payload["samples"][0]["rx_dbm"] == -20.5
 
 
 def test_api_potencias_historico_success(client, monkeypatch):

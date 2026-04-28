@@ -79,5 +79,5 @@ def test_index_rama_table_renders_sn_column(client, monkeypatch):
     r = client.post("/", data={"value": "TG01-RATC-0-000308"})
     assert r.status_code == 200
     html = r.get_data(as_text=True)
-    assert "<th>AID</th><th>Operador</th><th>ONT</th><th>SN</th><th>TX</th><th>RX</th>" in html
+    assert "<th>AID</th>" in html and "<th>SN</th>" in html and "<th>TX (dBm)</th>" in html
     assert "04EDFBADD5F81" in html
