@@ -10,7 +10,7 @@ from uuid import uuid4
 from flask import Response, current_app, g, jsonify, redirect, render_template, request, url_for
 from urllib.parse import quote_plus
 
-from db import healthcheck_db
+from db import ensure_db_connection_ready, healthcheck_db
 from services.domain import split_index_query_tokens
 from services import (
     ALLOWED_HISTORICO_DAYS,
@@ -190,6 +190,28 @@ def register(app):
     @app.before_request
     def attach_request_id():
         g.request_id = request.headers.get("X-Request-Id", "").strip() or str(uuid4())[:12]
+
+    @app.before_request
+    def ensure_db_ready():
+        # Evita checks en assets/health y durante tests; en runtime previene 500 por conexión stale.
+        if current_app.config.get("TESTING"):
+            return None
+        if request.path.startswith("/static/") or request.path == "/health":
+            return None
+
+        if ensure_db_connection_ready():
+            return None
+
+        message = "Base de datos no disponible temporalmente. Reintentá en unos segundos."
+        is_json = (
+            request.path.startswith("/api/")
+            or request.path.endswith("/consultar")
+            or request.path.endswith(".json")
+            or request.accept_mimetypes.best == "application/json"
+        )
+        if is_json:
+            return jsonify({"error": message, "request_id": getattr(g, "request_id", "-")}), 503
+        return message, 503
 
     @app.route("/health")
     def health():

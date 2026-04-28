@@ -2,6 +2,8 @@
 Pool de conexiones PostgreSQL y context manager para cursores.
 """
 import logging
+import threading
+import time
 from contextlib import contextmanager
 from typing import Optional
 
@@ -13,6 +15,8 @@ from config import Config, get_db_params
 logger = logging.getLogger(__name__)
 
 _pool: Optional[ThreadedConnectionPool] = None
+_last_healthcheck_ok_monotonic = 0.0
+_healthcheck_lock = threading.Lock()
 
 
 def init_pool() -> ThreadedConnectionPool:
@@ -115,4 +119,38 @@ def healthcheck_db() -> bool:
         return True
     except Exception:
         logger.exception("healthcheck_db falló")
+        return False
+
+
+def ensure_db_connection_ready(max_age_seconds: int = 20) -> bool:
+    """Verifica conectividad DB y recicla el pool si detecta estado roto.
+
+    Para evitar sobrecarga en cada request, usa una ventana temporal (`max_age_seconds`)
+    durante la cual considera válida la última verificación exitosa.
+    """
+    global _last_healthcheck_ok_monotonic
+    now = time.monotonic()
+    if now - _last_healthcheck_ok_monotonic <= max_age_seconds:
+        return True
+
+    with _healthcheck_lock:
+        now = time.monotonic()
+        if now - _last_healthcheck_ok_monotonic <= max_age_seconds:
+            return True
+
+        if healthcheck_db():
+            _last_healthcheck_ok_monotonic = time.monotonic()
+            return True
+
+        logger.warning("Fallo de healthcheck DB; reciclando pool y reintentando una vez")
+        close_pool()
+        try:
+            init_pool()
+        except Exception:
+            logger.exception("No se pudo recrear el pool de DB")
+            return False
+
+        if healthcheck_db():
+            _last_healthcheck_ok_monotonic = time.monotonic()
+            return True
         return False
