@@ -15,6 +15,7 @@ RULES = {
     "blank_serial_number": {"label": "Serial nulo/vacio", "severity": "media"},
     "null_invocator_system": {"label": "invocator_system nulo en OLT", "severity": "media"},
 }
+ALLOWED_BASE_STATUSES = ("IN SERVICE", "RESERVED", "TO BE DELETED")
 
 
 def _norm_rule(value: str | None) -> str:
@@ -30,6 +31,11 @@ def _norm_q(value: str | None) -> str:
     return (value or "").strip()
 
 
+def _norm_base_status(value: str | None) -> str:
+    v = (value or "").strip().upper()
+    return v if v in ALLOWED_BASE_STATUSES else ""
+
+
 def _norm_limit(value, default: int = 500, max_allowed: int = 5000) -> int:
     try:
         n = int(value)
@@ -43,12 +49,13 @@ def _base_cte_sql() -> str:
     WITH fat_active AS (
         SELECT
             btrim(f.access_id) AS access_id,
+            f.status AS base_status,
             MAX(NULLIF(btrim(f.path_atc), '')) AS path_atc,
             MAX(NULLIF(btrim(f.location_description), '')) AS cto
         FROM cm.inventory_fat_occupation f
-        WHERE f.status = 'IN SERVICE'
+        WHERE f.status IN ('IN SERVICE', 'RESERVED', 'TO BE DELETED')
           AND btrim(COALESCE(f.access_id, '')) <> ''
-        GROUP BY btrim(f.access_id)
+        GROUP BY btrim(f.access_id), f.status
     ),
     serial_by_aid AS (
         SELECT
@@ -77,6 +84,13 @@ def dashboard_calidad_inventario_resumen() -> dict:
         sql = (
             _base_cte_sql()
             + """
+        , fat_status_counts AS (
+            SELECT
+                COUNT(DISTINCT btrim(f.access_id)) FILTER (WHERE f.status = 'RESERVED')::int AS total_aid_reserved,
+                COUNT(DISTINCT btrim(f.access_id)) FILTER (WHERE f.status = 'TO BE DELETED')::int AS total_aid_to_be_deleted
+            FROM cm.inventory_fat_occupation f
+            WHERE btrim(COALESCE(f.access_id, '')) <> ''
+        )
         SELECT
             COUNT(*)::int AS total_aid_in_service,
             COUNT(*) FILTER (WHERE s.access_id IS NULL)::int AS aid_sin_match_serial,
@@ -90,10 +104,13 @@ def dashboard_calidad_inventario_resumen() -> dict:
             COUNT(*) FILTER (
                 WHERE o.access_id IS NOT NULL
                   AND COALESCE(o.has_invocator_system, FALSE) = FALSE
-            )::int AS aid_invocator_system_nulo_en_olt
+            )::int AS aid_invocator_system_nulo_en_olt,
+            MAX(sc.total_aid_reserved)::int AS total_aid_reserved,
+            MAX(sc.total_aid_to_be_deleted)::int AS total_aid_to_be_deleted
         FROM fat_active f
         LEFT JOIN serial_by_aid s ON s.access_id = f.access_id
         LEFT JOIN olt_by_aid o ON o.access_id = f.access_id
+        CROSS JOIN fat_status_counts sc
         """
         )
         with db_cursor() as cur:
@@ -108,9 +125,13 @@ def dashboard_calidad_inventario_resumen() -> dict:
             no_cto,
             blank_serial,
             null_invocator,
+            total_reserved,
+            total_to_be_deleted,
         ) = row
         return {
             "total_aid_in_service": int(total or 0),
+            "total_aid_reserved": int(total_reserved or 0),
+            "total_aid_to_be_deleted": int(total_to_be_deleted or 0),
             "aid_sin_match_serial": int(no_serial_match or 0),
             "aid_sin_match_olt": int(no_olt_match or 0),
             "aid_path_atc_nulo_vacio": int(no_path or 0),
@@ -125,12 +146,14 @@ def dashboard_calidad_inventario_resumen() -> dict:
 def dashboard_calidad_inventario_hallazgos(
     regla: str | None = None,
     operador: str | None = None,
+    estado_base: str | None = None,
     q: str | None = None,
     limit=500,
 ) -> dict:
     """Detalle de hallazgos de calidad por regla."""
     regla_norm = _norm_rule(regla)
     operador_norm = _norm_operator(operador)
+    estado_base_norm = _norm_base_status(estado_base)
     q_norm = _norm_q(q)
     limit_norm = _norm_limit(limit)
 
@@ -143,6 +166,7 @@ def dashboard_calidad_inventario_hallazgos(
             %s::text AS regla,
             %s::text AS severidad,
             f.access_id,
+            f.base_status,
             f.path_atc,
             f.cto,
             COALESCE(o.operador, '—') AS operador
@@ -158,6 +182,7 @@ def dashboard_calidad_inventario_hallazgos(
             %s::text AS regla,
             %s::text AS severidad,
             f.access_id,
+            f.base_status,
             f.path_atc,
             f.cto,
             '—'::text AS operador
@@ -172,6 +197,7 @@ def dashboard_calidad_inventario_hallazgos(
             %s::text AS regla,
             %s::text AS severidad,
             f.access_id,
+            f.base_status,
             f.path_atc,
             f.cto,
             COALESCE(o.operador, '—') AS operador
@@ -186,6 +212,7 @@ def dashboard_calidad_inventario_hallazgos(
             %s::text AS regla,
             %s::text AS severidad,
             f.access_id,
+            f.base_status,
             f.path_atc,
             f.cto,
             COALESCE(o.operador, '—') AS operador
@@ -200,6 +227,7 @@ def dashboard_calidad_inventario_hallazgos(
             %s::text AS regla,
             %s::text AS severidad,
             f.access_id,
+            f.base_status,
             f.path_atc,
             f.cto,
             COALESCE(o.operador, '—') AS operador
@@ -215,6 +243,7 @@ def dashboard_calidad_inventario_hallazgos(
             %s::text AS regla,
             %s::text AS severidad,
             f.access_id,
+            f.base_status,
             f.path_atc,
             f.cto,
             '—'::text AS operador
@@ -226,12 +255,14 @@ def dashboard_calidad_inventario_hallazgos(
         regla_id,
         regla,
         access_id,
+        base_status,
         COALESCE(path_atc, '—') AS path_atc,
         COALESCE(cto, '—') AS cto,
         operador,
         severidad
     FROM findings
     WHERE (%s = '' OR regla_id = %s)
+      AND (%s = '' OR base_status = %s)
       AND (%s = '' OR operador = %s)
       AND (
           %s = ''
@@ -262,6 +293,8 @@ def dashboard_calidad_inventario_hallazgos(
         RULES["null_invocator_system"]["severity"],
         regla_norm,
         regla_norm,
+        estado_base_norm,
+        estado_base_norm,
         operador_norm,
         operador_norm,
         q_norm,
@@ -277,11 +310,12 @@ def dashboard_calidad_inventario_hallazgos(
 
     findings = []
     for row in rows:
-        regla_id, regla_label, access_id, path_atc, cto, operador_val, severidad = row
+        regla_id, regla_label, access_id, base_status, path_atc, cto, operador_val, severidad = row
         findings.append({
             "regla_id": regla_id,
             "regla": regla_label,
             "access_id": access_id,
+            "base_status": base_status,
             "path_atc": path_atc,
             "cto": cto,
             "operador": operador_val,
@@ -290,8 +324,10 @@ def dashboard_calidad_inventario_hallazgos(
 
     return {
         "rules": [{"id": rid, "label": meta["label"]} for rid, meta in RULES.items()],
+        "base_statuses": [{"id": s, "label": s} for s in ALLOWED_BASE_STATUSES],
         "filters": {
             "regla": regla_norm,
+            "estado_base": estado_base_norm,
             "operador": operador_norm,
             "q": q_norm,
             "limit": limit_norm,
@@ -304,22 +340,25 @@ def dashboard_calidad_inventario_hallazgos(
 def export_dashboard_calidad_inventario_csv(
     regla: str | None = None,
     operador: str | None = None,
+    estado_base: str | None = None,
     q: str | None = None,
 ) -> str:
     """Exporta CSV de hallazgos para los filtros aplicados."""
     data = dashboard_calidad_inventario_hallazgos(
         regla=regla,
         operador=operador,
+        estado_base=estado_base,
         q=q,
         limit=200000,
     )
     out = io.StringIO()
     writer = csv.writer(out)
-    writer.writerow(["regla", "access_id", "path_atc", "cto", "operador", "severidad"])
+    writer.writerow(["regla", "access_id", "estado_base", "path_atc", "cto", "operador", "severidad"])
     for item in data["findings"]:
         writer.writerow([
             item["regla"],
             item["access_id"],
+            item["base_status"],
             item["path_atc"],
             item["cto"],
             item["operador"],

@@ -21,6 +21,8 @@ function _esc(v) {
 function _kpiRows(data) {
   return [
     ["Total AID IN SERVICE (base FAT)", data.total_aid_in_service],
+    ["Total AID RESERVED", data.total_aid_reserved],
+    ["Total AID TO BE DELETED", data.total_aid_to_be_deleted],
     ["AID IN SERVICE sin match en SERIAL", data.aid_sin_match_serial],
     ["AID IN SERVICE sin match en OLT", data.aid_sin_match_olt],
     ["AID IN SERVICE con path_atc nulo/vacio", data.aid_path_atc_nulo_vacio],
@@ -50,19 +52,31 @@ function renderRules(rules) {
   sel.value = current;
 }
 
+function renderBaseStatuses(statuses) {
+  const sel = document.getElementById("f-estado");
+  if (!sel) return;
+  const current = sel.value || "";
+  const options = [{ id: "", label: "Todos" }].concat(Array.isArray(statuses) ? statuses : []);
+  sel.innerHTML = options
+    .map((s) => `<option value="${_esc(s.id)}">${_esc(s.label)}</option>`)
+    .join("");
+  sel.value = current;
+}
+
 function renderFindings(payload) {
   const body = document.getElementById("findings-body");
   const count = document.getElementById("qualityCount");
   if (!body) return;
   const list = payload && Array.isArray(payload.findings) ? payload.findings : [];
   if (!list.length) {
-    body.innerHTML = '<tr><td colspan="6">Sin hallazgos para los filtros aplicados.</td></tr>';
+    body.innerHTML = '<tr><td colspan="7">Sin hallazgos para los filtros aplicados.</td></tr>';
   } else {
     body.innerHTML = list
       .map((f) => `
       <tr>
         <td>${_esc(f.regla)}</td>
         <td class="mono">${_esc(f.access_id)}</td>
+        <td class="mono">${_esc(f.base_status)}</td>
         <td class="mono">${_esc(f.path_atc)}</td>
         <td class="mono">${_esc(f.cto)}</td>
         <td class="mono">${_esc(f.operador)}</td>
@@ -77,6 +91,7 @@ function renderFindings(payload) {
 function _filters() {
   return {
     regla: (document.getElementById("f-regla")?.value || "").trim(),
+    estado_base: (document.getElementById("f-estado")?.value || "").trim(),
     operador: (document.getElementById("f-operador")?.value || "").trim(),
     q: (document.getElementById("f-q")?.value || "").trim(),
   };
@@ -85,6 +100,7 @@ function _filters() {
 function _queryString(filters) {
   const params = new URLSearchParams();
   if (filters.regla) params.set("regla", filters.regla);
+  if (filters.estado_base) params.set("estado_base", filters.estado_base);
   if (filters.operador) params.set("operador", filters.operador);
   if (filters.q) params.set("q", filters.q);
   return params.toString();
@@ -117,6 +133,7 @@ async function refreshCalidadDashboard() {
     const [resumen, payload] = await Promise.all([fetchResumen(), fetchFindings(filters)]);
     renderResumen(resumen);
     renderRules(payload.rules || []);
+    renderBaseStatuses(payload.base_statuses || []);
     renderFindings(payload);
   } catch (_err) {
     qualityToast("No se pudo actualizar el dashboard");
@@ -124,7 +141,7 @@ async function refreshCalidadDashboard() {
 }
 
 window.addEventListener("load", () => {
-  const bindIds = ["f-regla", "f-operador", "f-q"];
+  const bindIds = ["f-regla", "f-estado", "f-operador", "f-q"];
   bindIds.forEach((id) => {
     const el = document.getElementById(id);
     if (!el) return;

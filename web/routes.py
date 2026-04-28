@@ -414,12 +414,14 @@ def register(app):
     @app.route("/dashboard/calidad-inventario/hallazgos.json")
     def dash_calidad_inventario_hallazgos_json():
         regla = (request.args.get("regla") or "").strip()
+        estado_base = (request.args.get("estado_base") or "").strip()
         operador = (request.args.get("operador") or "").strip()
         q = (request.args.get("q") or "").strip()
         limit = request.args.get("limit", default=500, type=int)
         try:
             payload = dashboard_calidad_inventario_hallazgos(
                 regla=regla,
+                estado_base=estado_base,
                 operador=operador,
                 q=q,
                 limit=limit,
@@ -431,11 +433,13 @@ def register(app):
     @app.route("/dashboard/calidad-inventario/export.csv")
     def dash_calidad_inventario_export_csv():
         regla = (request.args.get("regla") or "").strip()
+        estado_base = (request.args.get("estado_base") or "").strip()
         operador = (request.args.get("operador") or "").strip()
         q = (request.args.get("q") or "").strip()
         try:
             csv_text = export_dashboard_calidad_inventario_csv(
                 regla=regla,
+                estado_base=estado_base,
                 operador=operador,
                 q=q,
             )

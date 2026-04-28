@@ -32,6 +32,10 @@
         <select id="f-regla" class="chip" aria-label="Filtrar por regla"></select>
       </div>
       <div class="field">
+        <label for="f-estado" class="hint">Estado base</label>
+        <select id="f-estado" class="chip" aria-label="Filtrar por estado base"></select>
+      </div>
+      <div class="field">
         <label for="f-operador" class="hint">Operador (invocator_system)</label>
         <input id="f-operador" placeholder="Ej: 1001" autocomplete="off" />
       </div>
@@ -62,6 +66,7 @@
           <tr>
             <th>Regla</th>
             <th>Access ID</th>
+            <th>Estado</th>
             <th>Rama</th>
             <th>CTO</th>
             <th>Operador</th>
@@ -69,7 +74,7 @@
           </tr>
         </thead>
         <tbody id="findings-body">
-          <tr><td colspan="6">Cargando hallazgos…</td></tr>
+          <tr><td colspan="7">Cargando hallazgos…</td></tr>
         </tbody>
       </table>
     </div>
