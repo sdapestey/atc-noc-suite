@@ -12,6 +12,9 @@ def test_dashboard_potencias_historico_get_renders(client):
     assert "btn-show-all" in html
     assert "btn-hide-all" in html
     assert 'id="btn-consultar-ahora"' in html
+    assert 'id="kpi-snapshot-hint"' in html
+    assert "Snapshot RX sin lecturas válidas" in html
+    assert "RX manual ONT " in html
 
 
 def test_api_potencias_historico_consultar_ahora_success(client, monkeypatch):
@@ -22,7 +25,7 @@ def test_api_potencias_historico_consultar_ahora_success(client, monkeypatch):
         "consultar_potencias_altiplano_ahora_rama",
         lambda _ratc: {
             "ok": True,
-            "timestamp": "2026-04-27 18:00",
+            "timestamp": "2026-04-27 18:00:31",
             "pon": "BA_OLTA_MR01_01-1-1",
             "samples": [{"ont_key": "3", "rx_dbm": -20.5}],
         },
@@ -30,10 +33,31 @@ def test_api_potencias_historico_consultar_ahora_success(client, monkeypatch):
     r = client.post("/api/potencias-historico/MR01-RATC-0-000200/consultar-ahora")
     assert r.status_code == 200
     payload = r.get_json()
-    assert payload["timestamp"] == "2026-04-27 18:00"
+    assert payload["timestamp"] == "2026-04-27 18:00:31"
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}", payload["timestamp"])
     assert payload["pon"] == "BA_OLTA_MR01_01-1-1"
     assert payload["samples"][0]["ont_key"] == "3"
     assert payload["samples"][0]["rx_dbm"] == -20.5
+
+
+def test_api_potencias_historico_consultar_ahora_without_valid_samples(client, monkeypatch):
+    import web.routes as routes
+
+    monkeypatch.setattr(
+        routes,
+        "consultar_potencias_altiplano_ahora_rama",
+        lambda _ratc: {
+            "ok": True,
+            "timestamp": "2026-04-27 18:00:31",
+            "pon": "BA_OLTA_MR01_01-1-1",
+            "samples": [{"ont_key": "3", "rx_dbm": None}, {"ont_key": "4", "rx_dbm": None}],
+        },
+    )
+    r = client.post("/api/potencias-historico/MR01-RATC-0-000200/consultar-ahora")
+    assert r.status_code == 200
+    payload = r.get_json()
+    assert len(payload["samples"]) == 2
+    assert all(s["rx_dbm"] is None for s in payload["samples"])
 
 
 def test_api_potencias_historico_success(client, monkeypatch):
@@ -142,3 +166,17 @@ def test_api_potencias_historico_internal_error_includes_request_id(client, monk
     payload = r.get_json()
     assert "error" in payload
     assert "request_id" in payload
+
+
+def test_service_consultar_ahora_uses_seconds_timestamp(monkeypatch):
+    import services.historico_potencias as historico
+
+    monkeypatch.setattr(historico, "_resolver_pon_desde_rama", lambda _ratc: "BA_OLTA_MR01_01-1-1")
+    monkeypatch.setattr(
+        historico,
+        "consultar_rama_potencias_altiplano_por_ont",
+        lambda _ratc: [{"ont_key": "3", "rx_dbm": -20.5}],
+    )
+    payload = historico.consultar_potencias_altiplano_ahora_rama("MR01-RATC-0-000200")
+    assert payload["ok"] is True
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}", payload["timestamp"])

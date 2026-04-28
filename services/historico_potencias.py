@@ -148,7 +148,7 @@ def export_csv_potencias_historico_rama(ratc: str, days: int = 30) -> dict:
 def consultar_potencias_altiplano_ahora_rama(ratc: str) -> dict:
     """Lectura instantánea Altiplano para todas las ONT de la rama (sin persistir en BD).
 
-    Valida RAMA vía `_resolver_pon_desde_rama` como el histórico. Timestamp `YYYY-MM-DD HH:MM`.
+    Valida RAMA vía `_resolver_pon_desde_rama` como el histórico. Timestamp `YYYY-MM-DD HH:MM:SS`.
     Las ONT sin operador soportado en Altiplano van con `rx_dbm: null` en `samples`.
 
     Los KPIs del formulario siguen mostrando solo el histórico en Postgres; el gráfico
@@ -167,7 +167,7 @@ def consultar_potencias_altiplano_ahora_rama(ratc: str) -> dict:
         }
 
     rows = consultar_rama_potencias_altiplano_por_ont(rama)
-    ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     samples = [
         {"ont_key": r["ont_key"], "rx_dbm": r["rx_dbm"]}
         for r in rows

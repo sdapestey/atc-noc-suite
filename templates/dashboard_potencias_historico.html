@@ -58,6 +58,7 @@
         <div class="label">Estado</div>
         <div class="value status-neutral" id="kpi-status">-</div>
         <div class="hint" id="kpi-status-hint">sin muestras en 30d</div>
+        <div class="hint" id="kpi-snapshot-hint">sin snapshot manual RX</div>
       </div>
     </div>
 
@@ -86,6 +87,7 @@ let powerChart = null;
 let selectedDays = 30;
 let lastRATC = "";
 let legendVisible = true;
+const snapshotColors = ["#f43f5e", "#22d3ee", "#d946ef", "#fb7185", "#06b6d4"];
 const chartCanvas = document.getElementById("power-chart");
 const chartStage = document.getElementById("chart-stage");
 const noDataEl = document.getElementById("no-data");
@@ -188,54 +190,122 @@ function _isUmbralDataset(ds) {
   return String(ds.label || "").toLowerCase().includes("umbral");
 }
 
+function _isSnapshotDatasetLabel(label) {
+  return String(label || "").trim().toUpperCase().startsWith("RX MANUAL ONT ");
+}
+
 function plotDatasetsFromChart() {
   return powerChart.data.datasets.map(function (d, idx) {
     return {label: d.label, color: d.borderColor, index: idx};
   });
 }
 
+function _upsertLabelAtTimestamp(ts) {
+  const labels = powerChart.data.labels;
+  let idx = labels.indexOf(ts);
+  if (idx !== -1) return idx;
+  let i = 0;
+  while (i < labels.length && labels[i] < ts) {
+    i += 1;
+  }
+  labels.splice(i, 0, ts);
+  powerChart.data.datasets.forEach(function (ds) {
+    if (_isUmbralDataset(ds)) {
+      const val = String(ds.label).indexOf("28") !== -1 ? -28 : -30;
+      ds.data.splice(i, 0, val);
+      return;
+    }
+    if (_isSnapshotDatasetLabel(ds.label)) {
+      ds.data.splice(i, 0, null);
+      return;
+    }
+    ds.data.splice(i, 0, null);
+  });
+  return i;
+}
+
+function _applyRecentZoom() {
+  if (!powerChart || !powerChart.options || !powerChart.options.scales || !powerChart.options.scales.x) {
+    return;
+  }
+  const labels = powerChart.data.labels || [];
+  if (labels.length < 3) {
+    powerChart.update();
+    return;
+  }
+  const keep = Math.min(12, labels.length);
+  const xScale = powerChart.options.scales.x;
+  xScale.min = labels.length - keep;
+  xScale.max = labels.length - 1;
+  powerChart.update();
+}
+
+function _setSnapshotKpiHint(message) {
+  const el = document.getElementById("kpi-snapshot-hint");
+  if (el) el.innerText = message;
+}
+
+function _roundToSingleDecimal(value) {
+  return Math.round(Number(value) * 10) / 10;
+}
+
+function _median(numbers) {
+  if (!numbers.length) return null;
+  const sorted = numbers.slice().sort(function (a, b) { return a - b; });
+  const mid = Math.floor(sorted.length / 2);
+  if (sorted.length % 2 === 1) return sorted[mid];
+  return (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
 function mergeSnapshot(payload) {
-  if (!payload || !payload.ok || !powerChart) return;
+  if (!payload || !payload.ok || !powerChart) return { validCount: 0, totalCount: 0, medianValue: null };
   const ts = payload.timestamp;
   const sampleMap = {};
   (payload.samples || []).forEach(function (s) {
     sampleMap[String(s.ont_key)] = s.rx_dbm;
   });
+  const idx = _upsertLabelAtTimestamp(ts);
+  const validValues = [];
 
-  const labels = powerChart.data.labels;
-  let idx = labels.indexOf(ts);
-  if (idx === -1) {
-    let i = 0;
-    while (i < labels.length && labels[i] < ts) {
-      i += 1;
-    }
-    labels.splice(i, 0, ts);
-    idx = i;
-    powerChart.data.datasets.forEach(function (ds) {
-      if (_isUmbralDataset(ds)) {
-        const val = String(ds.label).indexOf("28") !== -1 ? -28 : -30;
-        ds.data.splice(i, 0, val);
-      } else {
-        ds.data.splice(i, 0, null);
-      }
+  powerChart.data.datasets.forEach(function (ds, dsIndex) {
+    if (!_isOntDatasetLabel(ds.label)) return;
+    const m = ds.label.match(/^ONT\s+(.+)$/);
+    const key = m ? m[1].trim() : "";
+    const v = sampleMap[key];
+    if (v === undefined || v === null) return;
+    const num = Number(v);
+    if (!Number.isFinite(num)) return;
+    validValues.push(num);
+
+    const snapshotLabel = "RX manual ONT " + key;
+    let snapshotDataset = powerChart.data.datasets.find(function (candidate) {
+      return String(candidate.label) === snapshotLabel;
     });
-  }
-
-  powerChart.data.datasets.forEach(function (ds) {
-    if (_isOntDatasetLabel(ds.label)) {
-      const m = ds.label.match(/^ONT\s+(.+)$/);
-      const key = m ? m[1].trim() : "";
-      const v = sampleMap[key];
-      ds.data[idx] = v === undefined || v === null ? null : Number(v);
+    if (!snapshotDataset) {
+      snapshotDataset = {
+        type: "scatter",
+        label: snapshotLabel,
+        data: powerChart.data.labels.map(function () { return null; }),
+        borderColor: snapshotColors[dsIndex % snapshotColors.length],
+        backgroundColor: snapshotColors[dsIndex % snapshotColors.length],
+        pointRadius: 6,
+        pointHoverRadius: 8,
+        pointBorderWidth: 1.5,
+        showLine: false,
+      };
+      powerChart.data.datasets.push(snapshotDataset);
     }
+    snapshotDataset.data[idx] = num;
   });
 
   powerChart.update();
-  const hintEl = document.getElementById("kpi-status-hint");
-  if (hintEl) {
-    hintEl.innerText = "último punto Altiplano: " + ts + " (KPIs = histórico)";
-  }
   buildLegend(plotDatasetsFromChart());
+  return {
+    validCount: validValues.length,
+    totalCount: (payload.samples || []).length,
+    medianValue: _median(validValues),
+    timestamp: ts,
+  };
 }
 
 function _syncLegendChecks() {
@@ -286,6 +356,7 @@ function resetDashboard() {
   document.getElementById("ratc-input").value = "";
   lastRATC = "";
   setKPIs({pon: "-", total_onts: 0, median: "-", status: "Sin datos"});
+  _setSnapshotKpiHint("sin snapshot manual RX");
   noDataEl.innerText = "Ingresa una rama RATC para visualizar el historico de potencia Rx.";
   noDataEl.style.display = "block";
   chartStage.style.display = "none";
@@ -381,6 +452,7 @@ function renderChart(data) {
   });
   buildLegend(plotDatasets.map((d, idx) => ({label: d.label, color: d.borderColor, index: idx})));
   document.getElementById("btn-reset-zoom").disabled = false;
+  _setSnapshotKpiHint("sin snapshot manual RX");
 }
 
 async function fetchData() {
@@ -484,8 +556,20 @@ async function consultarAhora() {
       noDataEl.style.display = "block";
       return;
     }
-    mergeSnapshot(payload);
-    noDataEl.innerText = "Punto Altiplano agregado al grafico (" + payload.timestamp + ").";
+    const merged = mergeSnapshot(payload);
+    _applyRecentZoom();
+    if (merged.validCount > 0) {
+      const med = _roundToSingleDecimal(merged.medianValue);
+      const msg = "RX manual agregado: "
+        + String(merged.validCount) + "/" + String(merged.totalCount)
+        + " ONTs con lectura, mediana " + String(med) + " dBm, " + payload.timestamp;
+      noDataEl.innerText = msg;
+      _setSnapshotKpiHint(msg);
+    } else {
+      const msg = "RX manual recibido sin lecturas (rama posiblemente caída o sin respuesta Altiplano).";
+      noDataEl.innerText = msg;
+      _setSnapshotKpiHint("Snapshot RX sin lecturas válidas (" + payload.timestamp + ")");
+    }
     noDataEl.style.display = "block";
     setTimeout(function () {
       if (powerChart) {
