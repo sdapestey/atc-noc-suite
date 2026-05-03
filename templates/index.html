@@ -1,5 +1,21 @@
 <!DOCTYPE html>
 <html lang="es">
+{# Celda TX/RX/Estado Altiplano (misma lógica ONUs por CTO y por RAMA) #}
+{% macro index_potencias_cells(sec, aid, st) -%}
+            {% if st == 'FREE' %}
+            <td id="{{ sec }}-tx-{{ aid }}" class="mono">-</td>
+            <td id="{{ sec }}-rx-{{ aid }}" class="mono">-</td>
+            <td id="{{ sec }}-st-{{ aid }}" class="mono">-</td>
+            {% elif st == 'RESERVED' %}
+            <td id="{{ sec }}-tx-{{ aid }}" class="mono">-</td>
+            <td id="{{ sec }}-rx-{{ aid }}" class="mono">-</td>
+            <td id="{{ sec }}-st-{{ aid }}" class="mono status-down">DOWN</td>
+            {% else %}
+            <td id="{{ sec }}-tx-{{ aid }}" class="mono">⏳</td>
+            <td id="{{ sec }}-rx-{{ aid }}" class="mono">⏳</td>
+            <td id="{{ sec }}-st-{{ aid }}" class="mono status-pending">Cargando...</td>
+            {% endif %}
+{%- endmacro %}
 <head>
 <meta charset="UTF-8">
 <title>Consulta · ATC GPON Inventory</title>
@@ -583,6 +599,15 @@ window.addEventListener("load", () => {
 
       <div class="content">
         {% if c.resultado %}
+        {% if c.resultado.CTO and c.resultado.CTO != "—" %}
+        <div class="consulta-mapa-cto-card" data-consulta-cto-map data-cto="{{ c.resultado.CTO }}">
+          <div class="consulta-mapa-cto-head">
+            <span class="consulta-mapa-cto-title">Ubicación (CTO)</span>
+          </div>
+          <p class="consulta-cto-map-msg" aria-live="polite"></p>
+          <div class="rama-cto-map-canvas consulta-mapa-cto-leaflet" data-consulta-cto-mapa-canvas hidden></div>
+        </div>
+        {% endif %}
         <div class="section-title">
           <h2>Detalle{% if c.resultado.get('fuente_detalle') == 'bajada_inventario' %} <span class="muted source-note">(aux.bajada_inventario)</span>{% endif %}</h2>
           <span class="pill"><span class="dot good"></span> TX/RX via Altiplano</span>
@@ -629,15 +654,6 @@ window.addEventListener("load", () => {
           {% endif %}
         </table>
         </div>
-        {% if c.resultado.CTO and c.resultado.CTO != "—" %}
-        <div class="consulta-mapa-cto-card" data-consulta-cto-map data-cto="{{ c.resultado.CTO }}">
-          <div class="consulta-mapa-cto-head">
-            <span class="consulta-mapa-cto-title">Ubicación (CTO)</span>
-          </div>
-          <p class="consulta-cto-map-msg" aria-live="polite"></p>
-          <div class="rama-cto-map-canvas consulta-mapa-cto-leaflet" data-consulta-cto-mapa-canvas hidden></div>
-        </div>
-        {% endif %}
         {% endif %}
 
         {% if c.tabla_cto and not c.es_rama %}
@@ -648,32 +664,20 @@ window.addEventListener("load", () => {
         <div class="table-wrap">
         <table>
           <tr>
-            <th>OUT</th><th>AID</th><th>Operador</th><th>Sitio</th><th>RAMA</th><th>ONT</th><th>SN</th>
+            <th>OUT</th><th>AID</th><th>Operador</th><th>Sitio</th><th>RAMA</th><th>ONT</th>
             <th>Status</th><th>TX (dBm)</th><th>RX (dBm)</th><th>Estado</th>
           </tr>
           {% for r in c.tabla_cto %}
-          <tr data-operador="{{ r.OPERADOR }}" data-aid="{{ r.AID }}" data-fat-status="{{ r.STATUS }}">
+          {% set st = r.STATUS %}
+          <tr data-operador="{{ r.OPERADOR }}" data-aid="{{ r.AID }}" data-fat-status="{{ st }}">
             <td class="mono">{{ loop.index }}</td>
-            <td class="mono">{% if r.STATUS == 'FREE' %}-{% else %}{{ r.AID }}{% endif %}</td>
-            <td>{% if r.STATUS == 'FREE' %}-{% else %}{{ r.OPERADOR }}{% endif %}</td>
+            <td class="mono">{% if st == 'FREE' %}-{% else %}{{ r.AID }}{% endif %}</td>
+            <td>{% if st == 'FREE' %}-{% else %}{{ r.OPERADOR }}{% endif %}</td>
             <td>{{ r.PRINCIPAL }}</td>
             <td class="mono">{{ r.RAMA or "—" }}</td>
             <td class="mono">{{ r.ONT }}</td>
-            <td class="mono">{{ r.SN }}</td>
-            <td>{{ r.STATUS }}</td>
-            {% if r.STATUS == 'FREE' %}
-            <td id="{{ sec }}-tx-{{ r.AID }}" class="mono">-</td>
-            <td id="{{ sec }}-rx-{{ r.AID }}" class="mono">-</td>
-            <td id="{{ sec }}-st-{{ r.AID }}" class="mono">-</td>
-            {% elif r.STATUS == 'RESERVED' %}
-            <td id="{{ sec }}-tx-{{ r.AID }}" class="mono">-</td>
-            <td id="{{ sec }}-rx-{{ r.AID }}" class="mono">-</td>
-            <td id="{{ sec }}-st-{{ r.AID }}" class="mono status-down">DOWN</td>
-            {% else %}
-            <td id="{{ sec }}-tx-{{ r.AID }}" class="mono">⏳</td>
-            <td id="{{ sec }}-rx-{{ r.AID }}" class="mono">⏳</td>
-            <td id="{{ sec }}-st-{{ r.AID }}" class="mono status-pending">Cargando...</td>
-            {% endif %}
+            <td>{{ st }}</td>
+            {{ index_potencias_cells(sec, r.AID, st) }}
           </tr>
           {% endfor %}
         </table>
@@ -685,27 +689,20 @@ window.addEventListener("load", () => {
         <div class="cto-header">CTO <span class="mono">{{ cto }}</span></div>
         <div class="table-wrap">
         <table>
-          <tr><th>OUT</th><th>AID</th><th>Operador</th><th>ONT</th><th>SN</th><th>TX (dBm)</th><th>RX (dBm)</th><th>Estado</th></tr>
+          <tr>
+            <th>OUT</th><th>AID</th><th>OPERATOR</th><th>SITIO</th><th>ONT</th><th>STATUS</th>
+            <th>TX</th><th>RX</th><th>ESTADO</th>
+          </tr>
           {% for r in rows %}
-          <tr data-operador="{{ r.OPERADOR }}" data-aid="{{ r.AID }}" data-fat-status="{{ r.STATUS }}">
+          {% set st = r.STATUS %}
+          <tr data-operador="{{ r.OPERADOR }}" data-aid="{{ r.AID }}" data-fat-status="{{ st }}">
             <td class="mono">{{ loop.index }}</td>
-            <td class="mono">{% if r.STATUS == 'FREE' %}-{% else %}{{ r.AID }}{% endif %}</td>
-            <td>{% if r.STATUS == 'FREE' %}-{% else %}{{ r.OPERADOR }}{% endif %}</td>
+            <td class="mono">{% if st == 'FREE' %}-{% else %}{{ r.AID }}{% endif %}</td>
+            <td>{% if st == 'FREE' %}-{% else %}{{ r.OPERADOR }}{% endif %}</td>
+            <td>{{ r.PRINCIPAL or "—" }}</td>
             <td class="mono">{{ r.ONT }}</td>
-            <td class="mono">{{ r.SN }}</td>
-            {% if r.STATUS == 'FREE' %}
-            <td id="{{ sec }}-tx-{{ r.AID }}" class="mono">-</td>
-            <td id="{{ sec }}-rx-{{ r.AID }}" class="mono">-</td>
-            <td id="{{ sec }}-st-{{ r.AID }}" class="mono">-</td>
-            {% elif r.STATUS == 'RESERVED' %}
-            <td id="{{ sec }}-tx-{{ r.AID }}" class="mono">-</td>
-            <td id="{{ sec }}-rx-{{ r.AID }}" class="mono">-</td>
-            <td id="{{ sec }}-st-{{ r.AID }}" class="mono status-down">DOWN</td>
-            {% else %}
-            <td id="{{ sec }}-tx-{{ r.AID }}" class="mono">⏳</td>
-            <td id="{{ sec }}-rx-{{ r.AID }}" class="mono">⏳</td>
-            <td id="{{ sec }}-st-{{ r.AID }}" class="mono status-pending">Cargando...</td>
-            {% endif %}
+            <td>{{ st }}</td>
+            {{ index_potencias_cells(sec, r.AID, st) }}
           </tr>
           {% endfor %}
         </table>

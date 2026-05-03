@@ -114,11 +114,13 @@ function _rowsPonesSeleccionados() {
     if (!ponBlock) return;
     const ramas = ponBlock.RAMAS || {};
     Object.keys(ramas).forEach((rama) => {
-      selectedRamas.add(rama);
       const ctos = (ramas[rama] || {}).CTOS || {};
       Object.keys(ctos).forEach((cto) => {
-        selectedCtos.add(rama + "||" + cto);
         (ctos[cto] || []).forEach((o) => {
+          const st = String(o.STATUS || "").trim().toUpperCase();
+          if (st !== "IN SERVICE") return;
+          selectedRamas.add(rama);
+          selectedCtos.add(rama + "||" + cto);
           selectedOnts += 1;
           lines.push([
             pon,
@@ -135,7 +137,11 @@ function _rowsPonesSeleccionados() {
   });
 
   if (n === 0) {
-    return { error: "No hay filas para exportar con esa selección", lines: [], count: 0 };
+    return {
+      error: "No hay Access ID en estado IN SERVICE para exportar con esa selección",
+      lines: [],
+      count: 0,
+    };
   }
   lines.push("");
   lines.push("RESUMEN:");
@@ -234,20 +240,35 @@ function _oltPonSummaryHtml(pon, ramas, cto, ont) {
   const o = String(Math.max(0, Number(ont) || 0));
   const emptyPon = p === "0";
   return (
-    "Seleccionados: " +
+    '<span class="olt-selection-summary-label">Seleccionados:</span> ' +
     '<span class="olt-pon-selected-kicker' +
     (emptyPon ? " olt-pon-selected-kicker--empty" : "") +
-    '" title="PON marcados para copiar o exportar CSV">' +
+    '" title="PON marcados; copiar/exportar incluye solo AID IN SERVICE">' +
     '<span class="olt-pon-selected-count">' +
     p +
     "</span> " +
     '<span class="olt-pon-selected-label">PON</span></span>' +
     ' <span class="olt-summary-sep" aria-hidden="true">·</span> ' +
-    _oltMetricPillHtml(r, "RAMAs", "ramas", "RAMAs únicas en el inventario de la selección") +
+    _oltMetricPillHtml(
+      r,
+      "RAMAs",
+      "ramas",
+      "RAMAs únicas con al menos un AID IN SERVICE en la selección"
+    ) +
     ' <span class="olt-summary-sep" aria-hidden="true">·</span> ' +
-    _oltMetricPillHtml(c, "CTO", "cto", "CTO únicas en el inventario de la selección") +
+    _oltMetricPillHtml(
+      c,
+      "CTO",
+      "cto",
+      "CTO únicas con al menos un AID IN SERVICE en la selección"
+    ) +
     ' <span class="olt-summary-sep" aria-hidden="true">·</span> ' +
-    _oltMetricPillHtml(o, "ONT", "ont", "ONT (filas) en el inventario de la selección")
+    _oltMetricPillHtml(
+      o,
+      "ONT",
+      "ont",
+      "Filas de inventario con estado IN SERVICE (copiar / exportar)"
+    )
   );
 }
 
@@ -278,6 +299,10 @@ function colapsarTodoOlt() {
     if (state[id]) closeNode(id, true);
   });
   _restoringOltState = false;
+  document.querySelectorAll("input.pon-select, input.pon-select-all").forEach((cb) => {
+    cb.checked = false;
+  });
+  updatePonesSelectionSummary();
   _saveOltStateSoon();
 }
 

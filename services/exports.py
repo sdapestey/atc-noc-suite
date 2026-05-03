@@ -151,7 +151,7 @@ def _export_index_query_csv_one(value: str) -> str:
         return buf.getvalue()
     elif "FATC" in value_upper:
         rows = consultar_cto_estructura(value)
-        w.writerow(["OUT", "AID", "OPERADOR", "PRINCIPAL", "RAMA", "ONT", "SN", "STATUS"])
+        w.writerow(["OUT", "AID", "OPERADOR", "PRINCIPAL", "RAMA", "ONT", "STATUS"])
         for i, r in enumerate(rows, start=1):
             w.writerow([
                 i,
@@ -160,15 +160,22 @@ def _export_index_query_csv_one(value: str) -> str:
                 r.get("PRINCIPAL", ""),
                 r["RAMA"],
                 r["ONT"],
-                r.get("SN", ""),
                 r["STATUS"],
             ])
     elif "RATC" in value_upper:
         data = consultar_rama_estructura(value)
-        w.writerow(["CTO", "OUT", "AID", "OPERADOR", "ONT", "SN", "STATUS"])
+        w.writerow(["CTO", "OUT", "AID", "OPERADOR", "SITIO", "ONT", "STATUS"])
         for cto, rows in data.items():
             for i, r in enumerate(rows, start=1):
-                w.writerow([cto, i, r["AID"], r["OPERADOR"], r["ONT"], r.get("SN", ""), r["STATUS"]])
+                w.writerow([
+                    cto,
+                    i,
+                    r["AID"],
+                    r["OPERADOR"],
+                    r.get("PRINCIPAL", ""),
+                    r["ONT"],
+                    r["STATUS"],
+                ])
     else:
         w.writerow(["error", "usar ID numérico, FATC o RATC"])
     return buf.getvalue()

@@ -26,7 +26,7 @@ def test_index_access_id_renders_sn_field(client, monkeypatch):
     assert "04EDFBADD5F81" in html
 
 
-def test_index_cto_table_renders_sn_column(client, monkeypatch):
+def test_index_cto_table_omits_sn_column(client, monkeypatch):
     import web.routes as routes
 
     monkeypatch.setattr(
@@ -51,11 +51,14 @@ def test_index_cto_table_renders_sn_column(client, monkeypatch):
     r = client.post("/", data={"value": "TG01-FATC-8-100987"})
     assert r.status_code == 200
     html = r.get_data(as_text=True)
-    assert "<th>AID</th><th>Operador</th><th>Sitio</th><th>RAMA</th><th>ONT</th><th>SN</th>" in html
-    assert "04EDFBADD5F81" in html
+    assert "ONUs por CTO" in html
+    start = html.index("ONUs por CTO")
+    bloque = html[start : start + 4500]
+    assert "<th>SN</th>" not in bloque
+    assert "04EDFBADD5F81" not in bloque
 
 
-def test_index_rama_table_renders_sn_column(client, monkeypatch):
+def test_index_rama_table_has_sitio_status_without_sn(client, monkeypatch):
     import web.routes as routes
 
     monkeypatch.setattr(
@@ -66,6 +69,7 @@ def test_index_rama_table_renders_sn_column(client, monkeypatch):
                 {
                     "AID": "105",
                     "OPERADOR": "TASA",
+                    "PRINCIPAL": "Tigre",
                     "ONT": "BA_OLTA_TG01_02-2-15-8",
                     "SN": "04EDFBADD5F81",
                     "STATUS": "IN SERVICE",
@@ -79,8 +83,11 @@ def test_index_rama_table_renders_sn_column(client, monkeypatch):
     r = client.post("/", data={"value": "TG01-RATC-0-000308"})
     assert r.status_code == 200
     html = r.get_data(as_text=True)
-    assert "<th>AID</th>" in html and "<th>SN</th>" in html and "<th>TX (dBm)</th>" in html
-    assert "04EDFBADD5F81" in html
+    assert "<th>AID</th>" in html and "<th>STATUS</th>" in html and "<th>SITIO</th>" in html
+    assert "<th>SN</th>" not in html
+    assert "04EDFBADD5F81" not in html
+    assert "Tigre" in html
+    assert "IN SERVICE" in html
     assert "data-consulta-rama-search-map" in html
     assert "Mapa — CTO en esta RAMA" in html
     assert "TG01-RATC-0-000308" in html

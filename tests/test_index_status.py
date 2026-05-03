@@ -66,6 +66,7 @@ def test_index_rama_table_renders_estado_column(client, monkeypatch):
                 {
                     "AID": "105",
                     "OPERADOR": "TASA",
+                    "PRINCIPAL": "Tigre",
                     "ONT": "BA_OLTA_TG01_02-2-15-8",
                     "SN": "04EDFBADD5F81",
                     "STATUS": "IN SERVICE",
@@ -79,5 +80,5 @@ def test_index_rama_table_renders_estado_column(client, monkeypatch):
     r = client.post("/", data={"value": "TG01-RATC-0-000308"})
     assert r.status_code == 200
     html = r.get_data(as_text=True)
-    assert "<th>AID</th>" in html and "<th>TX (dBm)</th>" in html and "<th>Estado</th>" in html
+    assert "<th>AID</th>" in html and "<th>TX</th>" in html and "<th>ESTADO</th>" in html
     assert "id=\"s0-st-105\"" in html
