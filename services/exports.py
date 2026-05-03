@@ -42,7 +42,7 @@ def export_dashboard_ramas_csv() -> str:
               ON o.access_id = f.access_id
             LEFT JOIN altiplano.serial s
               ON s.access_id = f.access_id
-            WHERE f.status = 'IN SERVICE'
+            WHERE f.status IN ('IN SERVICE', 'RESERVED', 'FREE')
               AND f.path_atc IS NOT NULL
             ORDER BY f.path_atc, f.location_description, f.access_id
             """
@@ -151,9 +151,10 @@ def _export_index_query_csv_one(value: str) -> str:
         return buf.getvalue()
     elif "FATC" in value_upper:
         rows = consultar_cto_estructura(value)
-        w.writerow(["AID", "OPERADOR", "PRINCIPAL", "RAMA", "ONT", "SN", "STATUS"])
-        for r in rows:
+        w.writerow(["OUT", "AID", "OPERADOR", "PRINCIPAL", "RAMA", "ONT", "SN", "STATUS"])
+        for i, r in enumerate(rows, start=1):
             w.writerow([
+                i,
                 r["AID"],
                 r["OPERADOR"],
                 r.get("PRINCIPAL", ""),
@@ -164,10 +165,10 @@ def _export_index_query_csv_one(value: str) -> str:
             ])
     elif "RATC" in value_upper:
         data = consultar_rama_estructura(value)
-        w.writerow(["CTO", "AID", "OPERADOR", "ONT", "SN", "STATUS"])
+        w.writerow(["CTO", "OUT", "AID", "OPERADOR", "ONT", "SN", "STATUS"])
         for cto, rows in data.items():
-            for r in rows:
-                w.writerow([cto, r["AID"], r["OPERADOR"], r["ONT"], r.get("SN", ""), r["STATUS"]])
+            for i, r in enumerate(rows, start=1):
+                w.writerow([cto, i, r["AID"], r["OPERADOR"], r["ONT"], r.get("SN", ""), r["STATUS"]])
     else:
         w.writerow(["error", "usar ID numérico, FATC o RATC"])
     return buf.getvalue()

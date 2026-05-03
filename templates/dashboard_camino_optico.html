@@ -16,7 +16,7 @@
       </div>
       <p class="page-lead">
         <strong>Camino óptico</strong> — inventario <code class="inline-code">cm.inventory_fat_occupation</code> +
-        <code class="inline-code">cm.cm_report_isp</code>. Buscá por CTO (FATC), rama (RATC) o Access ID.
+        <code class="inline-code">cm.cm_report_isp</code>. Un solo campo: identificador <code class="inline-code">…-FATC-…</code>, rama <code class="inline-code">…-RATC-…</code> o Access ID (solo dígitos).
       </p>
     </div>
     {% include 'partials/noc_topbar.html' %}
@@ -26,16 +26,7 @@
 
   <div class="panel camino-panel">
     <div class="camino-panel-inner">
-    <div class="row camino-row">
-      <div>
-        <span class="t">Modo</span>
-        <div class="modes">
-          <label><input type="radio" name="tipo" value="cto" checked> CTO (FATC)</label>
-          <label><input type="radio" name="tipo" value="rama"> Rama (RATC)</label>
-          <label><input type="radio" name="tipo" value="access_id"> Access ID</label>
-        </div>
-      </div>
-    </div>
+    <div class="camino-query-row">
     <div class="row camino-row">
       <div class="camino-field-wrap">
         <label class="t" for="q">Valor</label>
@@ -44,6 +35,10 @@
       <button type="button" class="btn btn-primary" id="btn">Buscar</button>
       <button type="button" class="btn btn-ghost" onclick="limpiarBusquedaCamino()">Limpiar</button>
     </div>
+    </div>
+    <p class="muted camino-leyenda" role="note">
+      Ingresá un identificador con <span class="kbd">FATC</span> (CTO), <span class="kbd">RATC</span> (RAMA) o solo dígitos (Access ID) y tocá <strong>Buscar</strong>. El sistema detecta el tipo automáticamente.
+    </p>
     </div>
   </div>
 
@@ -205,11 +200,6 @@
     out.innerHTML = '<div class="err">Respuesta no reconocida</div>';
   }
 
-  function tipoSeleccionado(){
-    const r = document.querySelector('input[name="tipo"]:checked');
-    return r ? r.value : "cto";
-  }
-
   function limpiarBusquedaCamino(){
     q.value = "";
     q.focus();
@@ -227,7 +217,7 @@
     fetch("/dashboard/camino-optico/consultar", {
       method: "POST",
       headers: { "Content-Type": "application/json", "Accept": "application/json" },
-      body: JSON.stringify({ tipo: tipoSeleccionado(), valor: valor }),
+      body: JSON.stringify({ valor: valor }),
     })
       .then(function(res){ return res.json().then(function(j){ return { ok: res.ok, j: j }; }); })
       .then(function(x){

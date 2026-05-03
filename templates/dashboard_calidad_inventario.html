@@ -15,7 +15,12 @@
         {% include 'partials/brand_logo.html' %}
         <h1>ATC GPON Inventory</h1>
       </div>
-      <small><strong>Calidad Inventario</strong> — integridad y completitud de datos por Access ID</small>
+      <p class="page-lead">
+        <strong>Calidad Inventario</strong> — cruce <code class="inline-code">cm.inventory_fat_occupation</code> +
+        <code class="inline-code">cm.inventory_olt_occupation</code> +
+        <code class="inline-code">altiplano.serial</code> +
+        <code class="inline-code">aux.bajada_inventario</code>.
+      </p>
     </div>
     <div class="topbar-meta">
       <span id="qualityCount" class="count">—</span>
@@ -27,9 +32,10 @@
 
   <div class="panel">
     <div class="controls">
-      <div class="field">
+      <div class="field field-regla">
         <label for="f-regla" class="hint">Regla</label>
         <select id="f-regla" class="chip" aria-label="Filtrar por regla"></select>
+        <p id="f-regla-rule-help" class="field-help" role="note" hidden></p>
       </div>
       <div class="field">
         <label for="f-estado" class="hint">Estado base</label>
@@ -70,11 +76,10 @@
             <th>Rama</th>
             <th>CTO</th>
             <th>Operador</th>
-            <th>Severidad</th>
           </tr>
         </thead>
         <tbody id="findings-body">
-          <tr><td colspan="7">Cargando hallazgos…</td></tr>
+          <tr><td colspan="6">Cargando hallazgos…</td></tr>
         </tbody>
       </table>
     </div>

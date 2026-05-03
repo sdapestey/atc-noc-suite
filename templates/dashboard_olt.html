@@ -18,7 +18,7 @@
         {% include 'partials/brand_logo.html' %}
         <h1>ATC GPON Inventory</h1>
       </div>
-      <p class="page-lead page-lead--one-line"><strong>OLT / LT</strong> — <strong>Sitio principal</strong> → sitio (código) → OLT → LT → RAMA → CTO → AID. Expandí un <strong>LT</strong> para inventario; potencias con <strong>Consultar</strong> en RAMA/CTO o&nbsp;<strong>ID</strong>.</p>
+      <p class="page-lead page-lead--one-line"><strong>OLT / LT</strong> — <strong>Sitio principal</strong> → sitio (código) → OLT → LT → RAMA → CTO → AID. Expandí un <strong>LT</strong> para inventario; al abrir una <strong>CTO</strong> o con <strong>Consultar</strong> se cargan potencias (como en RAMA&nbsp;/&nbsp;CTO).</p>
     </div>
     {% include 'partials/noc_topbar.html' %}
   </div>
@@ -69,14 +69,15 @@
 
     {% for l in o.LTS %}
     {% set uid = l.LT|replace('.','_') %}
-    <tr class="ltrow" id="lt-row-{{ uid }}"
+    <tr class="ltrow lt-row-trigger"
+        id="lt-row-{{ uid }}"
+        tabindex="0"
+        role="button"
+        aria-label="Expandir o contraer inventario del LT {{ l.LT|e }}"
         data-principal="{{ bloque.PRINCIPAL }}"
         data-sitio="{{ o.SITIO_CODIGO }}"
         data-olt="{{ o.OLT_LOGICO }}">
     <td class="node lt-row-toggle"
-        role="button"
-        tabindex="0"
-        aria-label="Expandir inventario LT"
         data-lt="{{ l.LT|e }}"
         data-lt-json="{{ l.LT|tojson|e }}"
         data-uid="{{ uid }}">

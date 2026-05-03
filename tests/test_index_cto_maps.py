@@ -33,6 +33,10 @@ def test_index_cto_shows_google_maps_link_when_coords_exist(client, monkeypatch)
     assert expected_href in html
     assert 'target="_blank"' in html
     assert 'rel="noopener noreferrer"' in html
+    assert "Ubicación (CTO)" in html
+    assert "data-consulta-cto-map" in html
+    assert "noc-map-tiles.js" in html
+    assert "consulta-index-map.js" in html
 
 
 def test_index_cto_shows_no_coords_when_missing(client, monkeypatch):
@@ -48,3 +52,18 @@ def test_index_cto_shows_no_coords_when_missing(client, monkeypatch):
     assert "CTO consultada" in html
     assert "Sin coordenadas" in html
     assert "Ver en Google Maps" not in html
+    assert "data-consulta-cto-map" in html
+
+
+def test_index_cto_search_no_ver_mapa_beside_rama_in_breadcrumb(client, monkeypatch):
+    import web.routes as routes
+
+    monkeypatch.setattr(routes, "consultar_cto_estructura", lambda _cto: _mock_cto_rows())
+    monkeypatch.setattr(routes, "consultar_cto_coordenadas", lambda _cto: None)
+
+    r = client.post("/", data={"value": "TG01-FATC-8-601814"})
+    assert r.status_code == 200
+    html = r.get_data(as_text=True)
+    assert "consultaToggleMapaRama" not in html
+    assert "panel-mapa-rama" not in html
+    assert "Ver historico" not in html

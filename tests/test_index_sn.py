@@ -81,3 +81,9 @@ def test_index_rama_table_renders_sn_column(client, monkeypatch):
     html = r.get_data(as_text=True)
     assert "<th>AID</th>" in html and "<th>SN</th>" in html and "<th>TX (dBm)</th>" in html
     assert "04EDFBADD5F81" in html
+    assert "data-consulta-rama-search-map" in html
+    assert "Mapa — CTO en esta RAMA" in html
+    assert "TG01-RATC-0-000308" in html
+    assert "data-consulta-cto-map" not in html
+    assert "Ver historico" in html
+    assert "/dashboard/potencias-historico?ratc=TG01-RATC-0-000308" in html

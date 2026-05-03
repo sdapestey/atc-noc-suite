@@ -8,14 +8,35 @@ from db import db_cursor
 from .dashboard_cache import get_cached_calidad_resumen
 
 RULES = {
-    "missing_serial_match": {"label": "Sin match en SERIAL", "severity": "alta"},
-    "missing_olt_match": {"label": "Sin match en OLT", "severity": "alta"},
-    "missing_path_atc": {"label": "Path ATC nulo/vacio", "severity": "media"},
-    "missing_cto": {"label": "CTO nulo/vacio", "severity": "media"},
-    "blank_serial_number": {"label": "Serial nulo/vacio", "severity": "media"},
-    "null_invocator_system": {"label": "invocator_system nulo en OLT", "severity": "media"},
+    "missing_serial_match": {
+        "label": "Sin match en SERIAL",
+        "description": (
+            "Desde Altiplano: no hay en INP una ONT-connection ni el intent en el VNO para este access_id; "
+            "en ConnectMaster el FAT sí está presente. Equivale operativamente a no haber match en "
+            "altiplano.serial en este cruce."
+        ),
+    },
+    "missing_olt_match": {
+        "label": "Sin match en OLT",
+        "description": (
+            "Suele coincidir con ausencia de ONT-connection en INP y del intent del VNO en Altiplano, "
+            "y en ConnectMaster con punto sin object name u ocupación OLT completa."
+        ),
+    },
+    "missing_path_atc": {
+        "label": "Path ATC nulo/vacio",
+        "description": (
+            "En ConnectMaster (FAT) no viene informado el path ATC para ese access_id (nulo o solo espacios)."
+        ),
+    },
+    "blank_serial_number": {
+        "label": "Serial nulo/vacio",
+        "description": (
+            "Suele verse puerto y punto en ConnectMaster; en Altiplano puede haber ONT-connection en INP y el lado VNO vacío."
+        ),
+    },
 }
-ALLOWED_BASE_STATUSES = ("IN SERVICE", "RESERVED", "TO BE DELETED")
+ALLOWED_BASE_STATUSES = ("IN SERVICE", "RESERVED", "TO BE DELETED", "FREE")
 
 
 def _norm_rule(value: str | None) -> str:
@@ -53,7 +74,7 @@ def _base_cte_sql() -> str:
             MAX(NULLIF(btrim(f.path_atc), '')) AS path_atc,
             MAX(NULLIF(btrim(f.location_description), '')) AS cto
         FROM cm.inventory_fat_occupation f
-        WHERE f.status IN ('IN SERVICE', 'RESERVED', 'TO BE DELETED')
+        WHERE f.status IN ('IN SERVICE', 'RESERVED', 'TO BE DELETED', 'FREE')
           AND btrim(COALESCE(f.access_id, '')) <> ''
         GROUP BY btrim(f.access_id), f.status
     ),
@@ -87,7 +108,8 @@ def dashboard_calidad_inventario_resumen() -> dict:
         , fat_status_counts AS (
             SELECT
                 COUNT(DISTINCT btrim(f.access_id)) FILTER (WHERE f.status = 'RESERVED')::int AS total_aid_reserved,
-                COUNT(DISTINCT btrim(f.access_id)) FILTER (WHERE f.status = 'TO BE DELETED')::int AS total_aid_to_be_deleted
+                COUNT(DISTINCT btrim(f.access_id)) FILTER (WHERE f.status = 'TO BE DELETED')::int AS total_aid_to_be_deleted,
+                COUNT(DISTINCT btrim(f.access_id)) FILTER (WHERE f.status = 'FREE')::int AS total_aid_free
             FROM cm.inventory_fat_occupation f
             WHERE btrim(COALESCE(f.access_id, '')) <> ''
         )
@@ -96,17 +118,13 @@ def dashboard_calidad_inventario_resumen() -> dict:
             COUNT(*) FILTER (WHERE s.access_id IS NULL)::int AS aid_sin_match_serial,
             COUNT(*) FILTER (WHERE o.access_id IS NULL)::int AS aid_sin_match_olt,
             COUNT(*) FILTER (WHERE f.path_atc IS NULL)::int AS aid_path_atc_nulo_vacio,
-            COUNT(*) FILTER (WHERE f.cto IS NULL)::int AS aid_cto_nulo_vacio,
             COUNT(*) FILTER (
                 WHERE s.access_id IS NOT NULL
                   AND COALESCE(s.has_serial_number, FALSE) = FALSE
             )::int AS aid_serial_nulo_vacio,
-            COUNT(*) FILTER (
-                WHERE o.access_id IS NOT NULL
-                  AND COALESCE(o.has_invocator_system, FALSE) = FALSE
-            )::int AS aid_invocator_system_nulo_en_olt,
             MAX(sc.total_aid_reserved)::int AS total_aid_reserved,
-            MAX(sc.total_aid_to_be_deleted)::int AS total_aid_to_be_deleted
+            MAX(sc.total_aid_to_be_deleted)::int AS total_aid_to_be_deleted,
+            MAX(sc.total_aid_free)::int AS total_aid_free
         FROM fat_active f
         LEFT JOIN serial_by_aid s ON s.access_id = f.access_id
         LEFT JOIN olt_by_aid o ON o.access_id = f.access_id
@@ -122,22 +140,20 @@ def dashboard_calidad_inventario_resumen() -> dict:
             no_serial_match,
             no_olt_match,
             no_path,
-            no_cto,
             blank_serial,
-            null_invocator,
             total_reserved,
             total_to_be_deleted,
+            total_free,
         ) = row
         return {
             "total_aid_in_service": int(total or 0),
             "total_aid_reserved": int(total_reserved or 0),
             "total_aid_to_be_deleted": int(total_to_be_deleted or 0),
+            "total_aid_free": int(total_free or 0),
             "aid_sin_match_serial": int(no_serial_match or 0),
             "aid_sin_match_olt": int(no_olt_match or 0),
             "aid_path_atc_nulo_vacio": int(no_path or 0),
-            "aid_cto_nulo_vacio": int(no_cto or 0),
             "aid_serial_nulo_vacio": int(blank_serial or 0),
-            "aid_invocator_system_nulo_en_olt": int(null_invocator or 0),
         }
 
     return get_cached_calidad_resumen(get_dashboard_calidad_cache_seconds(), _compute)
@@ -164,7 +180,6 @@ def dashboard_calidad_inventario_hallazgos(
         SELECT
             'missing_serial_match'::text AS regla_id,
             %s::text AS regla,
-            %s::text AS severidad,
             f.access_id,
             f.base_status,
             f.path_atc,
@@ -180,7 +195,6 @@ def dashboard_calidad_inventario_hallazgos(
         SELECT
             'missing_olt_match'::text AS regla_id,
             %s::text AS regla,
-            %s::text AS severidad,
             f.access_id,
             f.base_status,
             f.path_atc,
@@ -195,7 +209,6 @@ def dashboard_calidad_inventario_hallazgos(
         SELECT
             'missing_path_atc'::text AS regla_id,
             %s::text AS regla,
-            %s::text AS severidad,
             f.access_id,
             f.base_status,
             f.path_atc,
@@ -208,24 +221,8 @@ def dashboard_calidad_inventario_hallazgos(
         UNION ALL
 
         SELECT
-            'missing_cto'::text AS regla_id,
-            %s::text AS regla,
-            %s::text AS severidad,
-            f.access_id,
-            f.base_status,
-            f.path_atc,
-            f.cto,
-            COALESCE(o.operador, '—') AS operador
-        FROM fat_active f
-        LEFT JOIN olt_by_aid o ON o.access_id = f.access_id
-        WHERE f.cto IS NULL
-
-        UNION ALL
-
-        SELECT
             'blank_serial_number'::text AS regla_id,
             %s::text AS regla,
-            %s::text AS severidad,
             f.access_id,
             f.base_status,
             f.path_atc,
@@ -235,21 +232,6 @@ def dashboard_calidad_inventario_hallazgos(
         JOIN serial_by_aid s ON s.access_id = f.access_id
         LEFT JOIN olt_by_aid o ON o.access_id = f.access_id
         WHERE COALESCE(s.has_serial_number, FALSE) = FALSE
-
-        UNION ALL
-
-        SELECT
-            'null_invocator_system'::text AS regla_id,
-            %s::text AS regla,
-            %s::text AS severidad,
-            f.access_id,
-            f.base_status,
-            f.path_atc,
-            f.cto,
-            '—'::text AS operador
-        FROM fat_active f
-        JOIN olt_by_aid o ON o.access_id = f.access_id
-        WHERE COALESCE(o.has_invocator_system, FALSE) = FALSE
     )
     SELECT
         regla_id,
@@ -258,8 +240,7 @@ def dashboard_calidad_inventario_hallazgos(
         base_status,
         COALESCE(path_atc, '—') AS path_atc,
         COALESCE(cto, '—') AS cto,
-        operador,
-        severidad
+        operador
     FROM findings
     WHERE (%s = '' OR regla_id = %s)
       AND (%s = '' OR base_status = %s)
@@ -271,7 +252,6 @@ def dashboard_calidad_inventario_hallazgos(
           OR COALESCE(cto, '') ILIKE ('%%' || %s || '%%')
       )
     ORDER BY
-        CASE severidad WHEN 'alta' THEN 0 WHEN 'media' THEN 1 ELSE 2 END,
         regla,
         access_id
     LIMIT %s
@@ -280,17 +260,9 @@ def dashboard_calidad_inventario_hallazgos(
 
     params = (
         RULES["missing_serial_match"]["label"],
-        RULES["missing_serial_match"]["severity"],
         RULES["missing_olt_match"]["label"],
-        RULES["missing_olt_match"]["severity"],
         RULES["missing_path_atc"]["label"],
-        RULES["missing_path_atc"]["severity"],
-        RULES["missing_cto"]["label"],
-        RULES["missing_cto"]["severity"],
         RULES["blank_serial_number"]["label"],
-        RULES["blank_serial_number"]["severity"],
-        RULES["null_invocator_system"]["label"],
-        RULES["null_invocator_system"]["severity"],
         regla_norm,
         regla_norm,
         estado_base_norm,
@@ -310,7 +282,7 @@ def dashboard_calidad_inventario_hallazgos(
 
     findings = []
     for row in rows:
-        regla_id, regla_label, access_id, base_status, path_atc, cto, operador_val, severidad = row
+        regla_id, regla_label, access_id, base_status, path_atc, cto, operador_val = row
         findings.append({
             "regla_id": regla_id,
             "regla": regla_label,
@@ -319,11 +291,17 @@ def dashboard_calidad_inventario_hallazgos(
             "path_atc": path_atc,
             "cto": cto,
             "operador": operador_val,
-            "severidad": severidad,
         })
 
     return {
-        "rules": [{"id": rid, "label": meta["label"]} for rid, meta in RULES.items()],
+        "rules": [
+            {
+                "id": rid,
+                "label": meta["label"],
+                **({"description": meta["description"]} if meta.get("description") else {}),
+            }
+            for rid, meta in RULES.items()
+        ],
         "base_statuses": [{"id": s, "label": s} for s in ALLOWED_BASE_STATUSES],
         "filters": {
             "regla": regla_norm,
@@ -353,7 +331,7 @@ def export_dashboard_calidad_inventario_csv(
     )
     out = io.StringIO()
     writer = csv.writer(out)
-    writer.writerow(["regla", "access_id", "estado_base", "path_atc", "cto", "operador", "severidad"])
+    writer.writerow(["regla", "access_id", "estado_base", "path_atc", "cto", "operador"])
     for item in data["findings"]:
         writer.writerow([
             item["regla"],
@@ -362,6 +340,5 @@ def export_dashboard_calidad_inventario_csv(
             item["path_atc"],
             item["cto"],
             item["operador"],
-            item["severidad"],
         ])
     return out.getvalue()

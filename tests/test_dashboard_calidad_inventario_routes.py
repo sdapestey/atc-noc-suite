@@ -6,6 +6,11 @@ def test_dashboard_calidad_inventario_get_renders(client):
     assert r.status_code == 200
     html = r.get_data(as_text=True)
     assert "Calidad Inventario" in html
+    assert 'class="page-lead"' in html
+    assert "cm.inventory_fat_occupation" in html
+    assert "cm.inventory_olt_occupation" in html
+    assert "altiplano.serial" in html
+    assert "aux.bajada_inventario" in html
     assert 'id="f-regla"' in html
     assert 'id="f-estado"' in html
     assert 'id="f-operador"' in html
@@ -29,12 +34,11 @@ def test_dashboard_calidad_resumen_json_success(client, monkeypatch):
             "total_aid_in_service": 10,
             "total_aid_reserved": 3,
             "total_aid_to_be_deleted": 2,
+            "total_aid_free": 7,
             "aid_sin_match_serial": 1,
             "aid_sin_match_olt": 2,
             "aid_path_atc_nulo_vacio": 3,
-            "aid_cto_nulo_vacio": 4,
             "aid_serial_nulo_vacio": 5,
-            "aid_invocator_system_nulo_en_olt": 6,
         },
     )
     r = client.get("/dashboard/calidad-inventario/resumen.json")
@@ -43,6 +47,7 @@ def test_dashboard_calidad_resumen_json_success(client, monkeypatch):
     assert payload["total_aid_in_service"] == 10
     assert payload["total_aid_reserved"] == 3
     assert payload["total_aid_to_be_deleted"] == 2
+    assert payload["total_aid_free"] == 7
     assert payload["aid_sin_match_serial"] == 1
 
 
@@ -73,15 +78,15 @@ def test_dashboard_calidad_export_csv_success(client, monkeypatch):
         routes,
         "export_dashboard_calidad_inventario_csv",
         lambda **_kwargs: (
-            "regla,access_id,estado_base,path_atc,cto,operador,severidad\r\n"
-            "Sin match en OLT,123,IN SERVICE,R1,C1,1001,alta\r\n"
+            "regla,access_id,estado_base,path_atc,cto,operador\r\n"
+            "Sin match en OLT,123,IN SERVICE,R1,C1,1001\r\n"
         ),
     )
     r = client.get("/dashboard/calidad-inventario/export.csv?regla=missing_olt_match")
     assert r.status_code == 200
     assert "text/csv" in r.headers["Content-Type"]
     assert "attachment; filename=dashboard_calidad_inventario.csv" in r.headers["Content-Disposition"]
-    assert "regla,access_id,estado_base,path_atc,cto,operador,severidad" in r.get_data(as_text=True)
+    assert "regla,access_id,estado_base,path_atc,cto,operador" in r.get_data(as_text=True)
 
 
 def test_dashboard_calidad_hallazgos_internal_error_includes_request_id(client, monkeypatch):

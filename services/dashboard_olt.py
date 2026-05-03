@@ -2,6 +2,7 @@
 import copy
 import re
 from collections import defaultdict
+from itertools import groupby
 
 from psycopg2 import sql
 from psycopg2.errors import UndefinedColumn, UndefinedTable
@@ -12,12 +13,16 @@ from db import db_cursor
 from .dashboard_cache import get_cached_olt
 from .domain import (
     OLT_PRESENCIA_FORZADA,
+    SITIO_PRINCIPAL_DEFAULT,
+    SITIO_PRINCIPAL_POR_REGION,
     lt_desde_object_name,
     natural_sort_key_str,
     nombre_operador,
     principal_sort_key,
     principal_y_sitio_desde_olt,
+    region_desde_rama,
 )
+from .inventory import _aid_clave_fila
 
 
 def _is_fatc_path(path: str) -> bool:
@@ -161,6 +166,7 @@ def _pon_por_access_ids(cur, access_ids):
 def estructura_dashboard_lt(lt):
     """
     Inventario bajo un LT: RAMA → CTO → ONT (sin TX/RX).
+    Incluye puertos FREE/RESERVED en las mismas CTO que aportan ONT del LT (como en Consulta).
     Las potencias se consultan aparte por RAMA, CTO o Access ID para no saturar Altiplano.
     """
     if not lt or not str(lt).strip():
@@ -189,26 +195,101 @@ def estructura_dashboard_lt(lt):
         )
         rows = cur.fetchall()
 
-    selected_rows = []
-    for rama, cto, aid, obj_raw, inv in rows:
+    pairs = set()
+    for rama, cto, _aid, obj_raw, _inv in rows:
         if rama is None or not obj_raw:
             continue
         if lt_desde_object_name(obj_raw) != lt:
             continue
-        selected_rows.append((rama, cto, aid, obj_raw, inv))
+        pairs.add((str(rama), str(cto)))
 
+    if not pairs:
+        return {
+            "RESUMEN": {"ROJAS": 0, "AMARILLAS": 0, "VERDES": 0, "PEOR_RX": None},
+            "RESUMEN_LT": {"PON_COUNT": 0, "RAMAS": 0, "CTO_COUNT": 0, "ONT_COUNT": 0},
+            "PONES": {},
+        }
+
+    pair_tuple = tuple(pairs)
     with db_cursor() as cur:
-        pon_map = _pon_por_access_ids(cur, [r[2] for r in selected_rows])
+        cur.execute(
+            """
+            SELECT
+                f.path_atc AS rama,
+                f.location_description AS cto,
+                f.access_id,
+                f.status,
+                s.object_name AS obj_raw,
+                s.serial_number AS serial_number,
+                o.invocator_system
+            FROM cm.inventory_fat_occupation f
+            LEFT JOIN altiplano.serial s ON s.access_id = f.access_id
+            LEFT JOIN cm.inventory_olt_occupation o ON o.access_id = f.access_id
+            WHERE (f.path_atc, f.location_description) IN %s
+              AND f.status IN ('IN SERVICE', 'RESERVED', 'FREE')
+            ORDER BY
+                f.path_atc,
+                f.location_description,
+                COALESCE(
+                    f.port_number,
+                    NULLIF(regexp_replace(COALESCE(f.port_name, ''), '[^0-9]', '', 'g'), '')::bigint
+                ) NULLS LAST,
+                f.access_id
+            """,
+            (pair_tuple,),
+        )
+        fat_rows = cur.fetchall()
+
+        ids_for_pon = [str(r[2]) for r in fat_rows if r[2] is not None]
+        pon_map = _pon_por_access_ids(cur, ids_for_pon)
+
+    default_pon = {}
+    for r in fat_rows:
+        rama, cto, access_id, _status, obj_raw, _serial, _inv = r
+        key = (str(rama or ""), str(cto or ""))
+        if key in default_pon or not obj_raw:
+            continue
+        aid_s = str(access_id) if access_id is not None else ""
+        pon_guess = pon_map.get(aid_s) or _pon_desde_object_name(obj_raw)
+        if pon_guess and pon_guess != "PON desconocido":
+            default_pon[key] = pon_guess
 
     por_pon = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
-    for rama, cto, aid, obj_raw, inv in selected_rows:
-        pon = pon_map.get(str(aid)) or _pon_desde_object_name(obj_raw)
-        ont_ui = str(obj_raw or "").replace(":1-1", "") if obj_raw else "—"
-        por_pon[pon][rama][cto].append({
-            "AID": str(aid),
-            "OPERADOR": nombre_operador(inv),
-            "ONT": ont_ui,
-        })
+
+    def _append_ont_entry(group_rows):
+        key_rc = (str(group_rows[0][0] or ""), str(group_rows[0][1] or ""))
+        dp = default_pon.get(key_rc) or "PON"
+        for idx, r in enumerate(group_rows):
+            rama, cto, access_id, status, obj_raw, serial_number, invocator = r
+            cto_ref = str(cto or "").strip()
+            st_u = str(status or "").strip().upper()
+            aid_key = _aid_clave_fila(access_id, idx, cto_ref)
+            obj_ui = ""
+            if obj_raw:
+                obj_ui = str(obj_raw).replace(":1-1", "").strip()
+            sn = (str(serial_number).strip() if serial_number else "") or obj_ui
+            reg = region_desde_rama(rama)
+            principal = SITIO_PRINCIPAL_POR_REGION.get(reg, SITIO_PRINCIPAL_DEFAULT)
+            if obj_raw:
+                pon_key = pon_map.get(str(access_id)) if access_id is not None else None
+                if not pon_key or pon_key == "PON desconocido":
+                    pon_key = _pon_desde_object_name(obj_raw)
+            else:
+                pon_key = dp
+            por_pon[pon_key][rama][cto].append({
+                "AID": aid_key,
+                "OPERADOR": "-" if st_u == "FREE" else nombre_operador(invocator),
+                "ONT": obj_ui or "—",
+                "SN": sn,
+                "STATUS": status,
+                "PRINCIPAL": principal,
+                "RAMA": rama,
+                "TX": None,
+                "RX": None,
+            })
+
+    for _rc, grp in groupby(fat_rows, key=lambda x: (x[0], x[1])):
+        _append_ont_entry(list(grp))
 
     pones_out = {}
     ramas_lt = set()

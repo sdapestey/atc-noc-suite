@@ -2,14 +2,14 @@ from contextlib import contextmanager
 
 
 class _FakeCursor:
-    def __init__(self, scripts):
+    def __init__(self, scripts, state):
         self._scripts = scripts
-        self._idx = -1
+        self._state = state
         self._rows = []
 
     def execute(self, _query, _params=None):
-        self._idx += 1
-        self._rows = self._scripts[self._idx]
+        self._state["i"] += 1
+        self._rows = self._scripts[self._state["i"]]
 
     def fetchall(self):
         return list(self._rows)
@@ -21,9 +21,11 @@ class _FakeCursor:
 
 
 def _fake_db_cursor_factory(scripts):
+    state = {"i": -1}
+
     @contextmanager
     def _ctx():
-        yield _FakeCursor(scripts)
+        yield _FakeCursor(scripts, state)
 
     return _ctx
 
@@ -34,10 +36,20 @@ def test_estructura_dashboard_lt_includes_pon_from_aux(monkeypatch):
     rows_lt = [
         ("TG01-RATC-0-000308", "TG01-FATC-8-100987", 105, "BA_OLTA_TG01_02-2-15-8", 1001),
     ]
+    fat_row = (
+        "TG01-RATC-0-000308",
+        "TG01-FATC-8-100987",
+        105,
+        "IN SERVICE",
+        "BA_OLTA_TG01_02-2-15-8",
+        None,
+        1001,
+    )
     scripts = [
-        rows_lt,                 # query inventario LT
-        [("pon",)],             # columns in aux.bajada_inventario
-        [("105", "15")],        # explicit PON by access_id
+        rows_lt,  # descubrir LT (IN SERVICE + joins)
+        [fat_row],  # filas FAT por (rama, CTO) extendidas
+        [("pon",)],  # information_schema.columns
+        [("105", "15")],  # explicit PON en aux.bajada_inventario
     ]
     monkeypatch.setattr(mod, "db_cursor", _fake_db_cursor_factory(scripts))
 
@@ -59,9 +71,19 @@ def test_estructura_dashboard_lt_pon_fallback_from_object_name(monkeypatch):
     rows_lt = [
         ("TG01-RATC-0-000308", "TG01-FATC-8-100987", 105, "BA_OLTA_TG01_02-2-15-8", 1001),
     ]
+    fat_row = (
+        "TG01-RATC-0-000308",
+        "TG01-FATC-8-100987",
+        105,
+        "IN SERVICE",
+        "BA_OLTA_TG01_02-2-15-8",
+        None,
+        1001,
+    )
     scripts = [
-        rows_lt,                 # query inventario LT
-        [],                      # aux.bajada_inventario columns missing/empty
+        rows_lt,
+        [fat_row],
+        [],  # sin columna pon en information_schema → fallback object_name
     ]
     monkeypatch.setattr(mod, "db_cursor", _fake_db_cursor_factory(scripts))
 

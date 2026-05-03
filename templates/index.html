@@ -4,6 +4,11 @@
 <meta charset="UTF-8">
 <title>Consulta · ATC GPON Inventory</title>
 {% include 'partials/noc_head.html' %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/rama-cto-map.css') }}">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script src="{{ url_for('static', filename='js/noc-map-tiles.js') }}"></script>
+<script src="{{ url_for('static', filename='js/consulta-index-map.js') }}"></script>
 
 <script src="{{ url_for('static', filename='js/noc-tools.js') }}"></script>
 <script>
@@ -57,6 +62,10 @@ function _setStatusCell(el, mode) {
     el.classList.add("status-down");
     return;
   }
+  if (mode === "dash") {
+    el.innerText = "-";
+    return;
+  }
   el.innerText = "Cargando...";
   el.classList.add("status-pending");
 }
@@ -66,8 +75,32 @@ function _potCell(pre, suffix) {
   return document.getElementById(id);
 }
 
+function _filaSaltaPotencias(tr) {
+  if (!tr) return false;
+  const st = (tr.getAttribute("data-fat-status") || "").trim().toUpperCase();
+  return st === "FREE" || st === "RESERVED";
+}
+
 function cargarPotenciasSeccion(valor, root) {
   const pre = root.getAttribute("data-section-prefix") || "";
+  const pfx = pre ? pre + "-" : "";
+
+  const detSt = (root.getAttribute("data-detalle-fat-status") || "").trim().toUpperCase();
+  if (detSt === "FREE" || detSt === "RESERVED") {
+    const tx = _potCell(pre, "tx");
+    const rx = _potCell(pre, "rx");
+    const estadoId = _potCell(pre, "estado-id");
+    if (tx) {
+      tx.innerText = "-";
+      tx.classList.remove("loading");
+    }
+    if (rx) {
+      rx.innerText = "-";
+      rx.classList.remove("loading");
+    }
+    if (estadoId) _setStatusCell(estadoId, detSt === "FREE" ? "dash" : "down");
+    return Promise.resolve();
+  }
 
   const cells = [];
   const addCells = (els) => {
@@ -75,16 +108,23 @@ function cargarPotenciasSeccion(valor, root) {
       if (el && !cells.includes(el)) cells.push(el);
     });
   };
-  const pfx = pre ? pre + "-" : "";
   addCells([_potCell(pre, "tx"), _potCell(pre, "rx")]);
   root.querySelectorAll("[id^='" + pfx + "tx-']").forEach((el) => addCells([el]));
   root.querySelectorAll("[id^='" + pfx + "rx-']").forEach((el) => addCells([el]));
-  cells.forEach((el) => el.classList.add("loading"));
+  const cellsCarga = cells.filter((el) => {
+    const tr = el.closest("tr");
+    return !tr || !_filaSaltaPotencias(tr);
+  });
+  cellsCarga.forEach((el) => el.classList.add("loading"));
   const statusCells = [];
   const eid = _potCell(pre, "estado-id");
   if (eid) statusCells.push(eid);
   root.querySelectorAll("[id^='" + pfx + "st-']").forEach((el) => statusCells.push(el));
-  statusCells.forEach((el) => _setStatusCell(el, "pending"));
+  const statusCarga = statusCells.filter((el) => {
+    const tr = el.closest("tr");
+    return !tr || !_filaSaltaPotencias(tr);
+  });
+  statusCarga.forEach((el) => _setStatusCell(el, "pending"));
 
   return fetch("/potencias", {
     method: "POST",
@@ -108,7 +148,7 @@ function cargarPotenciasSeccion(valor, root) {
             (_hasPower(data.TX) || _hasPower(data.RX)) ? "up" : "down"
           );
         }
-        cells.forEach((el) => el.classList.remove("loading"));
+        cellsCarga.forEach((el) => el.classList.remove("loading"));
         return;
       }
       if (Array.isArray(data)) {
@@ -117,6 +157,11 @@ function cargarPotenciasSeccion(valor, root) {
           const tx = document.getElementById(pfx + "tx-" + r.AID);
           const rx = document.getElementById(pfx + "rx-" + r.AID);
           const st = document.getElementById(pfx + "st-" + r.AID);
+          const tr = tx ? tx.closest("tr") : null;
+          if (tr && _filaSaltaPotencias(tr)) {
+            if (st) seen.add(st.id);
+            return;
+          }
           if (tx) tx.innerText = _formatPowerDbm(r.TX);
           if (rx) rx.innerText = _formatPowerDbm(r.RX);
           if (st) {
@@ -125,17 +170,20 @@ function cargarPotenciasSeccion(valor, root) {
           }
         });
         root.querySelectorAll("[id^='" + pfx + "st-']").forEach((el) => {
+          if (seen.has(el.id)) return;
+          const tr = el.closest("tr");
+          if (tr && _filaSaltaPotencias(tr)) return;
           if (!seen.has(el.id)) _setStatusCell(el, "down");
         });
-        cells.forEach((el) => el.classList.remove("loading"));
+        cellsCarga.forEach((el) => el.classList.remove("loading"));
         filtrarOperador(_activeOperador);
         return;
       }
-      cells.forEach((el) => el.classList.remove("loading"));
+      cellsCarga.forEach((el) => el.classList.remove("loading"));
     })
     .catch(() => {
-      cells.forEach((el) => el.classList.remove("loading"));
-      statusCells.forEach((el) => _setStatusCell(el, "down"));
+      cellsCarga.forEach((el) => el.classList.remove("loading"));
+      statusCarga.forEach((el) => _setStatusCell(el, "down"));
       toast("Error al cargar potencias");
     });
 }
@@ -286,6 +334,10 @@ window.addEventListener("load", () => {
       },
     });
   }
+
+  if (window.consultaInitAllCtoMaps) {
+    consultaInitAllCtoMaps();
+  }
 });
 </script>
 </head>
@@ -358,7 +410,7 @@ window.addEventListener("load", () => {
     {% for c in consultas %}
     {% set sec = 's' ~ loop.index0 %}
     {% set nrows = consulta_row_counts[loop.index0] if consulta_row_counts else 0 %}
-    <section id="consulta-{{ sec }}" class="consulta-section{% if consulta_row_counts %} consulta-section--multi{% endif %}" data-section-prefix="{{ sec }}" data-query-token="{{ c.token }}">
+    <section id="consulta-{{ sec }}" class="consulta-section{% if consulta_row_counts %} consulta-section--multi{% endif %}" data-section-prefix="{{ sec }}" data-query-token="{{ c.token }}"{% if c.resultado %} data-detalle-fat-status="{{ c.resultado.Status }}"{% endif %}>
       {% if consulta_row_counts %}
       <details class="consulta-panel" open>
       <summary class="consulta-panel__summary">
@@ -408,7 +460,6 @@ window.addEventListener("load", () => {
           <input type="hidden" name="value" value="{{ c.resultado.RAMA }}">
           <button class="crumb-btn" type="submit">{{ c.resultado.RAMA }}</button>
         </form>
-        <a class="dash-link" href="/dashboard/potencias-historico?ratc={{ c.resultado.RAMA|urlencode }}&days=30">Ver historico</a>
         {% else %}
         <span class="muted">RAMA: —</span>
         {% endif %}
@@ -416,40 +467,61 @@ window.addEventListener("load", () => {
 
       {% elif c.ruta.cto %}
       {% if c.tabla_cto and c.tabla_cto|length > 0 %}
-      <div class="ubicacion-cto" role="region" aria-label="Ubicación topológica">
-        <div class="row">
-          <span class="label">Sitio principal</span>
-          <span class="mono">{{ c.tabla_cto[0].PRINCIPAL }}</span>
+      <div class="ubicacion-cto consulta-ubicacion-card" role="region" aria-label="Ubicación topológica">
+        <div class="consulta-ubicacion-grid">
+          <div class="row">
+            <span class="label">Sitio principal</span>
+            <span class="mono">{{ c.tabla_cto[0].PRINCIPAL }}</span>
+          </div>
+          <div class="row">
+            <span class="label">RAMA (path ATC)</span>
+            {% if c.tabla_cto[0].RAMA %}
+            <form method="POST">
+              <input type="hidden" name="value" value="{{ c.tabla_cto[0].RAMA }}">
+              <button class="crumb-btn mono" type="submit" title="Ver todas las ONU bajo esta RAMA">{{ c.tabla_cto[0].RAMA }}</button>
+            </form>
+            {% else %}
+            <span class="muted">— sin path ATC en inventario</span>
+            {% endif %}
+          </div>
+          <div class="row consulta-ubicacion-row--full">
+            <span class="label">CTO consultada</span>
+            <span class="mono">{{ c.ruta.cto }}</span>
+            {% if c.cto_maps_url %}
+            <a class="dash-link" href="{{ c.cto_maps_url }}" target="_blank" rel="noopener noreferrer">Ver en Google Maps</a>
+            {% else %}
+            <span class="muted">Sin coordenadas</span>
+            {% endif %}
+          </div>
         </div>
-        <div class="row">
-          <span class="label">RAMA (path ATC)</span>
-          {% if c.tabla_cto[0].RAMA %}
-          <form method="POST">
-            <input type="hidden" name="value" value="{{ c.tabla_cto[0].RAMA }}">
-            <button class="crumb-btn mono" type="submit" title="Ver todas las ONU bajo esta RAMA">{{ c.tabla_cto[0].RAMA }}</button>
-          </form>
-          <a class="dash-link" href="/dashboard/potencias-historico?ratc={{ c.tabla_cto[0].RAMA|urlencode }}&days=30">Ver historico</a>
-          {% else %}
-          <span class="muted">— sin path ATC en inventario</span>
-          {% endif %}
+        <div class="consulta-ubicacion-actions">
+          <a class="dash-link" href="/dashboard/rama?q={{ c.ruta.cto|urlencode }}">Abrir esta CTO en el dashboard RAMA (árbol)</a>
         </div>
-        <div class="row">
-          <span class="label">CTO consultada</span>
-          <span class="mono">{{ c.ruta.cto }}</span>
-          {% if c.cto_maps_url %}
-          <a class="dash-link" href="{{ c.cto_maps_url }}" target="_blank" rel="noopener noreferrer">Ver en Google Maps</a>
-          {% else %}
-          <span class="muted">Sin coordenadas</span>
-          {% endif %}
-        </div>
-        <a class="dash-link" href="/dashboard/rama?q={{ c.ruta.cto|urlencode }}">Abrir esta CTO en el dashboard RAMA (árbol)</a>
       </div>
+      {% if c.ruta.cto %}
+      <div class="consulta-mapa-cto-card" data-consulta-cto-map data-cto="{{ c.ruta.cto }}">
+        <div class="consulta-mapa-cto-head">
+          <span class="consulta-mapa-cto-title">Ubicación (CTO)</span>
+        </div>
+        <p class="consulta-cto-map-msg" aria-live="polite"></p>
+        <div class="rama-cto-map-canvas consulta-mapa-cto-leaflet" data-consulta-cto-mapa-canvas hidden></div>
+      </div>
+      {% endif %}
       {% else %}
       <div class="breadcrumb">
         <strong>CTO:</strong>
         <span class="mono">{{ c.ruta.cto }}</span>
         <span class="muted">— sin ONU en inventario para esta CTO.</span>
       </div>
+      {% if c.ruta.cto %}
+      <div class="consulta-mapa-cto-card" data-consulta-cto-map data-cto="{{ c.ruta.cto }}">
+        <div class="consulta-mapa-cto-head">
+          <span class="consulta-mapa-cto-title">Ubicación (CTO)</span>
+        </div>
+        <p class="consulta-cto-map-msg" aria-live="polite"></p>
+        <div class="rama-cto-map-canvas consulta-mapa-cto-leaflet" data-consulta-cto-mapa-canvas hidden></div>
+      </div>
+      {% endif %}
       {% endif %}
 
       {% elif c.ruta.rama %}
@@ -459,7 +531,24 @@ window.addEventListener("load", () => {
           <input type="hidden" name="value" value="{{ c.ruta.rama }}">
           <button class="crumb-btn" type="submit">{{ c.ruta.rama }}</button>
         </form>
-        <a class="dash-link" href="/dashboard/potencias-historico?ratc={{ c.ruta.rama|urlencode }}&days=30">Ver historico</a>
+        <a
+          class="dash-link"
+          href="/dashboard/potencias-historico?ratc={{ c.ruta.rama|urlencode }}&days=30"
+          title="Histórico de potencia para esta rama"
+        >Ver historico</a>
+      </div>
+      <div
+        class="consulta-mapa-rama-card"
+        data-consulta-rama-search-map
+        data-rama="{{ c.ruta.rama }}"
+        aria-label="Mapa de CTO en la RAMA"
+      >
+        <div class="consulta-mapa-rama-head">
+          <span class="consulta-mapa-rama-title">Mapa — CTO en esta RAMA</span>
+        </div>
+        <p class="consulta-rama-mapa-msg" aria-live="polite"></p>
+        <div class="rama-mapa-canvas consulta-mapa-rama-leaflet" data-consulta-rama-mapa-canvas hidden></div>
+        <p class="consulta-rama-mapa-footer" aria-live="polite"></p>
       </div>
       {% endif %}
 
@@ -525,11 +614,30 @@ window.addEventListener("load", () => {
               </button>
             </td>
           </tr>
+          {% if c.resultado.Status == 'FREE' %}
+          <tr><th>TX (dBm)</th><td id="{{ sec }}-tx" class="mono">-</td></tr>
+          <tr><th>RX (dBm)</th><td id="{{ sec }}-rx" class="mono">-</td></tr>
+          <tr><th>Estado</th><td id="{{ sec }}-estado-id" class="mono">-</td></tr>
+          {% elif c.resultado.Status == 'RESERVED' %}
+          <tr><th>TX (dBm)</th><td id="{{ sec }}-tx" class="mono">-</td></tr>
+          <tr><th>RX (dBm)</th><td id="{{ sec }}-rx" class="mono">-</td></tr>
+          <tr><th>Estado</th><td id="{{ sec }}-estado-id" class="mono status-down">DOWN</td></tr>
+          {% else %}
           <tr><th>TX (dBm)</th><td id="{{ sec }}-tx" class="mono">⏳</td></tr>
           <tr><th>RX (dBm)</th><td id="{{ sec }}-rx" class="mono">⏳</td></tr>
           <tr><th>Estado</th><td id="{{ sec }}-estado-id" class="mono status-pending">Cargando...</td></tr>
+          {% endif %}
         </table>
         </div>
+        {% if c.resultado.CTO and c.resultado.CTO != "—" %}
+        <div class="consulta-mapa-cto-card" data-consulta-cto-map data-cto="{{ c.resultado.CTO }}">
+          <div class="consulta-mapa-cto-head">
+            <span class="consulta-mapa-cto-title">Ubicación (CTO)</span>
+          </div>
+          <p class="consulta-cto-map-msg" aria-live="polite"></p>
+          <div class="rama-cto-map-canvas consulta-mapa-cto-leaflet" data-consulta-cto-mapa-canvas hidden></div>
+        </div>
+        {% endif %}
         {% endif %}
 
         {% if c.tabla_cto and not c.es_rama %}
@@ -540,21 +648,32 @@ window.addEventListener("load", () => {
         <div class="table-wrap">
         <table>
           <tr>
-            <th>AID</th><th>Operador</th><th>Sitio</th><th>RAMA</th><th>ONT</th><th>SN</th>
+            <th>OUT</th><th>AID</th><th>Operador</th><th>Sitio</th><th>RAMA</th><th>ONT</th><th>SN</th>
             <th>Status</th><th>TX (dBm)</th><th>RX (dBm)</th><th>Estado</th>
           </tr>
           {% for r in c.tabla_cto %}
-          <tr data-operador="{{ r.OPERADOR }}">
-            <td class="mono">{{ r.AID }}</td>
-            <td>{{ r.OPERADOR }}</td>
+          <tr data-operador="{{ r.OPERADOR }}" data-aid="{{ r.AID }}" data-fat-status="{{ r.STATUS }}">
+            <td class="mono">{{ loop.index }}</td>
+            <td class="mono">{% if r.STATUS == 'FREE' %}-{% else %}{{ r.AID }}{% endif %}</td>
+            <td>{% if r.STATUS == 'FREE' %}-{% else %}{{ r.OPERADOR }}{% endif %}</td>
             <td>{{ r.PRINCIPAL }}</td>
             <td class="mono">{{ r.RAMA or "—" }}</td>
             <td class="mono">{{ r.ONT }}</td>
             <td class="mono">{{ r.SN }}</td>
             <td>{{ r.STATUS }}</td>
+            {% if r.STATUS == 'FREE' %}
+            <td id="{{ sec }}-tx-{{ r.AID }}" class="mono">-</td>
+            <td id="{{ sec }}-rx-{{ r.AID }}" class="mono">-</td>
+            <td id="{{ sec }}-st-{{ r.AID }}" class="mono">-</td>
+            {% elif r.STATUS == 'RESERVED' %}
+            <td id="{{ sec }}-tx-{{ r.AID }}" class="mono">-</td>
+            <td id="{{ sec }}-rx-{{ r.AID }}" class="mono">-</td>
+            <td id="{{ sec }}-st-{{ r.AID }}" class="mono status-down">DOWN</td>
+            {% else %}
             <td id="{{ sec }}-tx-{{ r.AID }}" class="mono">⏳</td>
             <td id="{{ sec }}-rx-{{ r.AID }}" class="mono">⏳</td>
             <td id="{{ sec }}-st-{{ r.AID }}" class="mono status-pending">Cargando...</td>
+            {% endif %}
           </tr>
           {% endfor %}
         </table>
@@ -566,16 +685,27 @@ window.addEventListener("load", () => {
         <div class="cto-header">CTO <span class="mono">{{ cto }}</span></div>
         <div class="table-wrap">
         <table>
-          <tr><th>AID</th><th>Operador</th><th>ONT</th><th>SN</th><th>TX (dBm)</th><th>RX (dBm)</th><th>Estado</th></tr>
+          <tr><th>OUT</th><th>AID</th><th>Operador</th><th>ONT</th><th>SN</th><th>TX (dBm)</th><th>RX (dBm)</th><th>Estado</th></tr>
           {% for r in rows %}
-          <tr data-operador="{{ r.OPERADOR }}">
-            <td class="mono">{{ r.AID }}</td>
-            <td>{{ r.OPERADOR }}</td>
+          <tr data-operador="{{ r.OPERADOR }}" data-aid="{{ r.AID }}" data-fat-status="{{ r.STATUS }}">
+            <td class="mono">{{ loop.index }}</td>
+            <td class="mono">{% if r.STATUS == 'FREE' %}-{% else %}{{ r.AID }}{% endif %}</td>
+            <td>{% if r.STATUS == 'FREE' %}-{% else %}{{ r.OPERADOR }}{% endif %}</td>
             <td class="mono">{{ r.ONT }}</td>
             <td class="mono">{{ r.SN }}</td>
+            {% if r.STATUS == 'FREE' %}
+            <td id="{{ sec }}-tx-{{ r.AID }}" class="mono">-</td>
+            <td id="{{ sec }}-rx-{{ r.AID }}" class="mono">-</td>
+            <td id="{{ sec }}-st-{{ r.AID }}" class="mono">-</td>
+            {% elif r.STATUS == 'RESERVED' %}
+            <td id="{{ sec }}-tx-{{ r.AID }}" class="mono">-</td>
+            <td id="{{ sec }}-rx-{{ r.AID }}" class="mono">-</td>
+            <td id="{{ sec }}-st-{{ r.AID }}" class="mono status-down">DOWN</td>
+            {% else %}
             <td id="{{ sec }}-tx-{{ r.AID }}" class="mono">⏳</td>
             <td id="{{ sec }}-rx-{{ r.AID }}" class="mono">⏳</td>
             <td id="{{ sec }}-st-{{ r.AID }}" class="mono status-pending">Cargando...</td>
+            {% endif %}
           </tr>
           {% endfor %}
         </table>

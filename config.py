@@ -195,6 +195,15 @@ def get_dashboard_calidad_cache_seconds() -> int:
     return get_dashboard_tree_cache_seconds_default()
 
 
+def get_altiplano_token_cache_max_age_seconds() -> int:
+    """
+    Edad máxima del token Altiplano cacheado antes de forzar nuevo login.
+    ``0`` desactiva la caducidad por tiempo (solo se renueva por 401/403 o force_refresh).
+    Default 3300 s (~55 min) para anticipar típicos JWT de ~1 h.
+    """
+    return _int_env_positive_or_zero("ALTIPLANO_TOKEN_CACHE_MAX_AGE_SECONDS", 3300)
+
+
 def get_altiplano_power_workers() -> int:
     """Cantidad máxima de workers para consultar potencias en paralelo."""
     return _int_env_at_least("ALTIPLANO_POWER_WORKERS", 8, 1)
@@ -211,7 +220,7 @@ class Config:
     DB_STATEMENT_TIMEOUT_MS = _int_env_positive_or_zero("DB_STATEMENT_TIMEOUT_MS", 30000)
     DB_IDLE_IN_TXN_TIMEOUT_MS = _int_env_positive_or_zero("DB_IDLE_IN_TXN_TIMEOUT_MS", 15000)
     DB_APP_NAME = (os.environ.get("DB_APP_NAME", "gpon-inventory").strip() or "gpon-inventory")
-    # Ruta bajo `static/` para el logo del splash (índice). Ej.: img/SPLASH_LOGO.png
+    # Ruta bajo `static/` para el logo del splash (índice): pictograma sin texto (PNG RGBA por defecto).
     SPLASH_LOGO_STATIC = (
-        os.environ.get("SPLASH_LOGO_PATH", "img/SPLASH_LOGO.png").strip() or "img/SPLASH_LOGO.png"
+        os.environ.get("SPLASH_LOGO_PATH", "img/splash-mark.png").strip() or "img/splash-mark.png"
     )

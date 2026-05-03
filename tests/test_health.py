@@ -24,10 +24,11 @@ def test_dash_cto_consultar_empty_400(client):
 def test_dash_camino_consultar_empty_400(client):
     r = client.post(
         "/dashboard/camino-optico/consultar",
-        json={"tipo": "", "valor": "x"},
+        json={"valor": "%%%sin-formato%%%"},
         content_type="application/json",
     )
     assert r.status_code == 400
+    assert "error" in r.get_json()
     r2 = client.post(
         "/dashboard/camino-optico/consultar",
         json={"tipo": "cto", "valor": ""},

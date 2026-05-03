@@ -58,6 +58,7 @@ html[data-theme="light"] .noc-splash {
 }
 
 .noc-splash-inner {
+  --splash-title-size: clamp(1.35rem, 3.5vw, 2rem);
   position: relative;
   z-index: 1;
   flex: 1 1 auto;
@@ -73,14 +74,16 @@ html[data-theme="light"] .noc-splash {
   box-sizing: border-box;
 }
 
+/* Ancho acorde al título (~anchura de “ATC GPON Inventory”); el SVG/PNG es ancho → manda el width */
 .noc-splash-logo {
-  max-width: min(520px, 88vw);
-  max-height: min(200px, 32vh);
-  width: auto;
-  height: auto;
-  object-fit: contain;
-  margin: 0 auto clamp(20px, 4vh, 40px);
   display: block;
+  width: min(36ch, 92vw);
+  height: auto;
+  max-width: min(640px, 92vw);
+  max-height: min(48vh, 15rem);
+  object-fit: contain;
+  object-position: center;
+  margin: 0 auto clamp(16px, 3.5vh, 32px);
   filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.35));
 }
 
@@ -90,7 +93,7 @@ html[data-theme="light"] .noc-splash-logo {
 
 .noc-splash-title {
   margin: 0 0 10px;
-  font-size: clamp(1.35rem, 3.5vw, 2rem);
+  font-size: var(--splash-title-size);
   font-weight: 800;
   letter-spacing: -0.02em;
 }

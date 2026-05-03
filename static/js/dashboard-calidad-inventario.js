@@ -1,4 +1,5 @@
 let _qualityToastTimer = null;
+let _calidadRules = [];
 
 function qualityToast(msg) {
   const el = document.getElementById("toast");
@@ -20,15 +21,14 @@ function _esc(v) {
 
 function _kpiRows(data) {
   return [
-    ["Total AID IN SERVICE (base FAT)", data.total_aid_in_service],
-    ["Total AID RESERVED", data.total_aid_reserved],
-    ["Total AID TO BE DELETED", data.total_aid_to_be_deleted],
+    ['AID con estado "IN SERVICE"', data.total_aid_in_service],
+    ['AID con estado "RESERVED"', data.total_aid_reserved],
+    ['AID con estado "TO BE DELETED"', data.total_aid_to_be_deleted],
+    ['AID con estado "FREE"', data.total_aid_free],
     ["AID IN SERVICE sin match en SERIAL", data.aid_sin_match_serial],
     ["AID IN SERVICE sin match en OLT", data.aid_sin_match_olt],
     ["AID IN SERVICE con path_atc nulo/vacio", data.aid_path_atc_nulo_vacio],
-    ["AID IN SERVICE con CTO nulo/vacio", data.aid_cto_nulo_vacio],
     ["AID con serial_number nulo/vacio", data.aid_serial_nulo_vacio],
-    ["AID con invocator_system nulo en OLT", data.aid_invocator_system_nulo_en_olt],
   ];
 }
 
@@ -45,11 +45,31 @@ function renderRules(rules) {
   const sel = document.getElementById("f-regla");
   if (!sel) return;
   const current = sel.value || "";
-  const options = [{ id: "", label: "Todas" }].concat(Array.isArray(rules) ? rules : []);
+  _calidadRules = Array.isArray(rules) ? rules : [];
+  const options = [{ id: "", label: "Todas" }].concat(_calidadRules);
   sel.innerHTML = options
     .map((r) => `<option value="${_esc(r.id)}">${_esc(r.label)}</option>`)
     .join("");
   sel.value = current;
+  syncReglaRuleHelp();
+}
+
+function syncReglaRuleHelp() {
+  const sel = document.getElementById("f-regla");
+  const help = document.getElementById("f-regla-rule-help");
+  if (!sel || !help) return;
+  const id = (sel.value || "").trim();
+  const rule = _calidadRules.find((r) => r.id === id);
+  const desc = rule && rule.description ? String(rule.description).trim() : "";
+  if (desc) {
+    help.textContent = desc;
+    help.hidden = false;
+    sel.setAttribute("aria-describedby", "f-regla-rule-help");
+  } else {
+    help.textContent = "";
+    help.hidden = true;
+    sel.removeAttribute("aria-describedby");
+  }
 }
 
 function renderBaseStatuses(statuses) {
@@ -69,7 +89,7 @@ function renderFindings(payload) {
   if (!body) return;
   const list = payload && Array.isArray(payload.findings) ? payload.findings : [];
   if (!list.length) {
-    body.innerHTML = '<tr><td colspan="7">Sin hallazgos para los filtros aplicados.</td></tr>';
+    body.innerHTML = '<tr><td colspan="6">Sin hallazgos para los filtros aplicados.</td></tr>';
   } else {
     body.innerHTML = list
       .map((f) => `
@@ -80,7 +100,6 @@ function renderFindings(payload) {
         <td class="mono">${_esc(f.path_atc)}</td>
         <td class="mono">${_esc(f.cto)}</td>
         <td class="mono">${_esc(f.operador)}</td>
-        <td>${_esc(f.severidad)}</td>
       </tr>
     `)
       .join("");
@@ -148,8 +167,12 @@ window.addEventListener("load", () => {
     el.addEventListener("input", () => {
       const filters = _filters();
       syncExportLink(filters);
+      if (id === "f-regla") syncReglaRuleHelp();
     });
-    el.addEventListener("change", refreshCalidadDashboard);
+    el.addEventListener("change", () => {
+      if (id === "f-regla") syncReglaRuleHelp();
+      refreshCalidadDashboard();
+    });
   });
   const btn = document.getElementById("btn-refresh");
   if (btn) btn.addEventListener("click", refreshCalidadDashboard);

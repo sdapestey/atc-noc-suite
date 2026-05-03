@@ -11,6 +11,35 @@ const _ramaStateStore = window.createNocPageStateStore
   ? window.createNocPageStateStore(_RAMA_STATE_KEY, { debounceMs: 120 })
   : null;
 
+/** Columnas tabla CTO: OUT…Estado (sin SN ni botón por fila). */
+const RAMA_COL_TX = 7;
+const RAMA_COL_RX = 8;
+const RAMA_COL_EST = 9;
+
+function _ramaFatSkipPotencias(tr) {
+  const st = (tr.getAttribute("data-fat-status") || "").trim().toUpperCase();
+  return st === "FREE" || st === "RESERVED";
+}
+
+function _findTrByAidInCtoBody(ctoBody, aid) {
+  const s = String(aid ?? "");
+  if (!s || !ctoBody) return null;
+  for (const tr of ctoBody.querySelectorAll("tr[data-aid]")) {
+    if (String(tr.getAttribute("data-aid") || "") === s) return tr;
+  }
+  return null;
+}
+
+function _ctoBodyTieneFilasPendientesPotencias(ctoBody) {
+  if (!ctoBody) return false;
+  for (const tr of ctoBody.querySelectorAll("tr[data-aid]")) {
+    if (_ramaFatSkipPotencias(tr)) continue;
+    const tx = tr.children[RAMA_COL_TX];
+    if (tx && tx.classList.contains("olt-txrx-cell--loading")) return true;
+  }
+  return false;
+}
+
 function toast(msg) {
   const el = document.getElementById("toast");
   if (!el) return;
@@ -68,7 +97,11 @@ function _rowsCtosSeleccionados() {
     return { error: "Seleccioná al menos una CTO", lines: [], count: 0 };
   }
   const lines = [];
-  lines.push(["Sitio_principal", "RAMA", "CTO", "AID", "Operador", "ONT", "TX", "RX"].join("\t"));
+  lines.push(
+    ["Sitio_principal", "RAMA", "CTO", "OUT", "AID", "Operador", "SITIO", "ONT", "STATUS", "TX", "RX", "Estado"].join(
+      "\t"
+    )
+  );
   let n = 0;
   selected.forEach((cb) => {
     const ctoNode = cb.closest("[data-cto-node]");
@@ -94,6 +127,11 @@ function _rowsCtosSeleccionados() {
         (cells[2]?.innerText || "").trim(),
         (cells[3]?.innerText || "").trim(),
         (cells[4]?.innerText || "").trim(),
+        (cells[5]?.innerText || "").trim(),
+        (cells[6]?.innerText || "").trim(),
+        (cells[7]?.innerText || "").trim(),
+        (cells[8]?.innerText || "").trim(),
+        (cells[9]?.innerText || "").trim(),
       ].join("\t"));
       n++;
     });
@@ -134,6 +172,43 @@ function limpiarBusquedaRama() {
 function colapsarTodoYLimpiarRama() {
   expandAll(false);
   limpiarBusquedaRama();
+}
+
+function _pathnameIsRamaDashboard(pathname) {
+  return /\/dashboard\/rama\/?$/.test(String(pathname || ""));
+}
+
+function colapsarArbolRamaDashboard() {
+  expandAll(false);
+  _persistRamaDashboardState();
+}
+
+function _bindRamaDashboardTabCollapse() {
+  if (!_pathnameIsRamaDashboard(window.location.pathname)) return;
+  document.addEventListener(
+    "click",
+    (e) => {
+      const a = e.target.closest("a.global-tab, a.global-nav-dd-link");
+      if (!a || !a.href) return;
+      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) {
+        return;
+      }
+      let hrefPath = "";
+      try {
+        hrefPath = new URL(a.getAttribute("href") || "", window.location.href).pathname;
+      } catch (_err) {
+        return;
+      }
+      if (!_pathnameIsRamaDashboard(hrefPath)) return;
+      const isCurrent =
+        a.classList.contains("active") || a.classList.contains("global-nav-dd-link--current");
+      if (!isCurrent) return;
+      e.preventDefault();
+      colapsarArbolRamaDashboard();
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    },
+    true
+  );
 }
 
 function setExpanded(el, expanded) {
@@ -275,6 +350,7 @@ function _expandCtoByKey(key) {
       if (ctoBody) {
         ctoBody.classList.remove("hidden");
         setExpanded(ctoNode, true);
+        _scheduleCtoMapIfExpanded(ctoNode);
       }
     });
   });
@@ -317,6 +393,240 @@ async function restoreRamaDashboardState(preQ) {
   if (state && _ramaStateStore) _ramaStateStore.restoreScroll(state.scrollY);
 }
 
+const _RAMA_CTO_MAP_URL = "/dashboard/rama/cto-map";
+const _RAMA_MAP_URL = "/dashboard/rama/rama-map";
+
+function _scheduleCtoMapIfExpanded(ctoNode) {
+  if (!ctoNode) return;
+  queueMicrotask(() => ensureCtoMapForCtoNode(ctoNode));
+}
+
+function ensureCtoMapForCtoNode(ctoNode) {
+  if (!ctoNode || !ctoNode.hasAttribute("data-cto-node")) return;
+  const body = ctoNode.nextElementSibling;
+  if (!body || body.classList.contains("hidden")) return;
+  const shell = body.querySelector("[data-cto-map-shell]");
+  if (!shell) return;
+  const status = shell.dataset.mapReady;
+  if (status === "done" || status === "nocords") return;
+  if (status === "loading") return;
+  const cto = (ctoNode.getAttribute("data-cto") || "").trim();
+  if (!cto) return;
+
+  const msg = shell.querySelector(".rama-cto-map-msg");
+  const canvas = shell.querySelector(".rama-cto-map-canvas");
+  if (!msg || !canvas) return;
+
+  shell.dataset.mapReady = "loading";
+  msg.textContent = "Cargando ubicación…";
+  canvas.hidden = true;
+
+  fetch(_RAMA_CTO_MAP_URL + "?cto=" + encodeURIComponent(cto))
+    .then((r) => {
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    })
+    .then((data) => {
+      if (!data || !data.ok) {
+        msg.textContent = (data && data.error) || "Sin coordenadas para esta CTO";
+        canvas.hidden = true;
+        shell.dataset.mapReady = "nocords";
+        return;
+      }
+      if (typeof window.L === "undefined") {
+        msg.textContent = "No se pudo cargar el mapa (Leaflet).";
+        canvas.hidden = true;
+        shell.dataset.mapReady = "nocords";
+        return;
+      }
+      const lat = Number(data.lat);
+      const lon = Number(data.lon);
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+        msg.textContent = "Sin coordenadas para esta CTO";
+        canvas.hidden = true;
+        shell.dataset.mapReady = "nocords";
+        return;
+      }
+      msg.textContent = "";
+      canvas.hidden = false;
+
+      if (!shell._leafletMap) {
+        const map = window.L.map(canvas, { attributionControl: true, zoomControl: true }).setView([lat, lon], 17);
+        if (window.NocMapTiles && window.NocMapTiles.addBasemapLayer) {
+          shell._nocMapBasemap = window.NocMapTiles.addBasemapLayer(map, window.L);
+        } else {
+          window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+            maxZoom: 19,
+          }).addTo(map);
+        }
+        window.L.marker([lat, lon]).addTo(map);
+        shell._leafletMap = map;
+        requestAnimationFrame(() => {
+          map.invalidateSize();
+        });
+      }
+      shell.dataset.mapReady = "done";
+    })
+    .catch(() => {
+      msg.textContent = "No se pudo obtener la ubicación.";
+      canvas.hidden = true;
+      delete shell.dataset.mapReady;
+    });
+}
+
+function verMapaRama(btn) {
+  if (!btn) return;
+  const card = btn.closest("[data-rama-card]");
+  if (!card) return;
+  const rama = (card.getAttribute("data-rama") || "").trim();
+  if (!rama) return;
+
+  const panel = card.querySelector("[data-rama-map-panel]");
+  const ramaRow = card.querySelector(".rama-row[data-toggle-node]");
+  const indent2 = ramaRow ? ramaRow.nextElementSibling : null;
+  const detail = card.querySelector("[data-rama-detail]");
+  if (!panel || !indent2 || !detail) return;
+
+  if (!panel.classList.contains("hidden")) {
+    panel.classList.add("hidden");
+    panel.setAttribute("aria-hidden", "true");
+    btn.textContent = "Ver mapa";
+    btn.setAttribute("aria-expanded", "false");
+    _saveStateSoon();
+    return;
+  }
+
+  const openPanel = () => {
+    panel.classList.remove("hidden");
+    panel.setAttribute("aria-hidden", "false");
+    btn.textContent = "Ocultar mapa";
+    btn.setAttribute("aria-expanded", "true");
+    const labelEl = panel.querySelector("[data-rama-mapa-label]");
+    if (labelEl) labelEl.textContent = rama;
+    _loadRamaMapPanel(card, rama, panel);
+    _saveStateSoon();
+  };
+
+  if (indent2.classList.contains("hidden")) {
+    cargarInventarioRama(rama, card, detail).finally(() => {
+      indent2.classList.remove("hidden");
+      if (ramaRow) setExpanded(ramaRow, true);
+      openPanel();
+    });
+    return;
+  }
+
+  openPanel();
+}
+
+function _loadRamaMapPanel(card, rama, panel) {
+  const msg = panel.querySelector(".rama-mapa-msg");
+  const footer = panel.querySelector(".rama-mapa-footer");
+  const canvas = panel.querySelector("[data-rama-mapa-canvas]");
+  if (!msg || !canvas) return;
+
+  msg.textContent = "Cargando mapa…";
+  if (footer) footer.textContent = "";
+  canvas.hidden = true;
+
+  fetch(_RAMA_MAP_URL + "?rama=" + encodeURIComponent(rama))
+    .then((r) => {
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    })
+    .then((data) => {
+      if (!data || !data.ok) {
+        msg.textContent = (data && data.error) || "No se pudo cargar el mapa de la RAMA.";
+        canvas.hidden = true;
+        return;
+      }
+      const markers = Array.isArray(data.markers) ? data.markers : [];
+      const sinCoord =
+        data.ctos_sin_coordenadas != null ? Number(data.ctos_sin_coordenadas) : 0;
+      const ctosTotal = data.ctos_total != null ? Number(data.ctos_total) : 0;
+
+      if (markers.length === 0) {
+        if (ctosTotal === 0) {
+          msg.textContent = "No hay CTO en inventario para esta RAMA.";
+        } else {
+          msg.textContent = "Ninguna CTO de esta RAMA tiene coordenadas cargadas.";
+        }
+        canvas.hidden = true;
+        if (footer) {
+          footer.textContent = sinCoord > 0 ? `${sinCoord} CTO sin coordenadas.` : "";
+        }
+        return;
+      }
+
+      msg.textContent = "";
+      canvas.hidden = false;
+      if (footer) {
+        let foot = `${markers.length} CTO en el mapa`;
+        if (sinCoord > 0) foot += ` · ${sinCoord} sin coordenadas`;
+        footer.textContent = foot + ".";
+      }
+
+      if (typeof window.L === "undefined") {
+        msg.textContent = "No se pudo cargar el mapa (Leaflet).";
+        canvas.hidden = true;
+        return;
+      }
+
+      let map = panel._ramaLeafletMap;
+      if (!map) {
+        map = window.L.map(canvas, { attributionControl: true, zoomControl: true });
+        if (window.NocMapTiles && window.NocMapTiles.addBasemapLayer) {
+          panel._nocMapBasemap = window.NocMapTiles.addBasemapLayer(map, window.L);
+        } else {
+          window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+            maxZoom: 19,
+          }).addTo(map);
+        }
+        panel._ramaLeafletMap = map;
+      }
+
+      if (panel._ramaMarkerLayer) {
+        map.removeLayer(panel._ramaMarkerLayer);
+        panel._ramaMarkerLayer = null;
+      }
+
+      const fg = window.L.featureGroup();
+      markers.forEach((mk) => {
+        const lat = Number(mk.lat);
+        const lon = Number(mk.lon);
+        if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+        const marker = window.L.marker([lat, lon]);
+        marker.bindPopup('<span class="mono">' + _escHtml(mk.cto || "") + "</span>", { maxWidth: 320 });
+        fg.addLayer(marker);
+      });
+
+      if (fg.getLayers().length === 0) {
+        msg.textContent = "Coordenadas inválidas en la respuesta.";
+        canvas.hidden = true;
+        return;
+      }
+
+      fg.addTo(map);
+      panel._ramaMarkerLayer = fg;
+
+      requestAnimationFrame(() => {
+        map.invalidateSize();
+        const bounds = fg.getBounds();
+        if (markers.length === 1) {
+          map.setView(bounds.getCenter(), 17);
+        } else {
+          map.fitBounds(bounds, { padding: [28, 28], maxZoom: 17 });
+        }
+      });
+    })
+    .catch(() => {
+      msg.textContent = "No se pudo cargar el mapa.";
+      canvas.hidden = true;
+    });
+}
+
 function toggle(el) {
   const next = el.nextElementSibling;
   if (!next) return;
@@ -337,6 +647,10 @@ function toggle(el) {
   }
   next.classList.toggle("hidden");
   setExpanded(el, willExpand);
+  if (willExpand && el.hasAttribute("data-cto-node") && !isRamaRow) {
+    _scheduleCtoMapIfExpanded(el);
+    _autoConsultarCtoPotenciasAlExpandir(el);
+  }
   _saveStateSoon();
 }
 
@@ -407,6 +721,7 @@ function expandPathToCard(card, q) {
     if (body) {
       body.classList.remove("hidden");
       setExpanded(ctoNode, true);
+      _scheduleCtoMapIfExpanded(ctoNode);
     }
   });
 }
@@ -520,6 +835,53 @@ function _aplicarResaltadoFila(tr, rxText) {
   if (cls) tr.classList.add(cls);
 }
 
+function _hasPowerRama(v) {
+  return !(v === null || v === undefined || String(v).trim() === "" || String(v).trim() === "-");
+}
+
+function _ramaRowCellsHtml(o, rama, cto, outNum) {
+  const st = String(o.STATUS || "").trim().toUpperCase();
+  const aidDisp = st === "FREE" ? "-" : _escHtml(o.AID);
+  const opDisp = st === "FREE" ? "-" : _escHtml(o.OPERADOR);
+  const principal = _escHtml(o.PRINCIPAL || "—");
+  const ramaDisp = _escHtml(o.RAMA || rama || "—");
+  const ontRaw = (o.ONT || "").trim();
+  const ontDisp = st === "FREE" ? "" : _escHtml(ontRaw || "—");
+  const statusDisp = _escHtml(o.STATUS || "");
+  const spin =
+    '<span class="olt-txrx-loading-wrap" title="Cargando potencias…"><span class="olt-txrx-cell-spin" aria-hidden="true"></span></span>';
+
+  let txCell;
+  let rxCell;
+  let estCell;
+  if (st === "FREE") {
+    txCell = '<td class="mono">-</td>';
+    rxCell = '<td class="mono">-</td>';
+    estCell = '<td class="mono">-</td>';
+  } else if (st === "RESERVED") {
+    txCell = '<td class="mono">-</td>';
+    rxCell = '<td class="mono">-</td>';
+    estCell = '<td class="mono status-down">DOWN</td>';
+  } else {
+    txCell = `<td class="mono olt-txrx-cell--loading" aria-busy="true" aria-label="Cargando">${spin}</td>`;
+    rxCell = `<td class="mono olt-txrx-cell--loading" aria-busy="true" aria-label="Cargando">${spin}</td>`;
+    estCell = '<td class="mono status-pending">Cargando...</td>';
+  }
+
+  return `
+            <td class="mono">${outNum}</td>
+            <td class="mono">${aidDisp}</td>
+            <td>${opDisp}</td>
+            <td>${principal}</td>
+            <td class="mono">${ramaDisp}</td>
+            <td class="mono">${ontDisp}</td>
+            <td>${statusDisp}</td>
+            ${txCell}
+            ${rxCell}
+            ${estCell}
+  `;
+}
+
 function renderInventarioRama(rama, inv, container) {
   const ctos = Object.keys(inv || {}).sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: "base" }));
   let html = `
@@ -544,19 +906,18 @@ function renderInventarioRama(rama, inv, container) {
         </span>
       </div>
       <div class="hidden indent3">
+        <div class="rama-cto-map-shell" data-cto-map-shell data-cto="${_escHtml(cto)}">
+          <p class="hint rama-cto-map-msg" aria-live="polite"></p>
+          <div class="rama-cto-map-canvas" hidden></div>
+        </div>
         <div class="table-wrap">
           <table>
-            <tr><th>AID</th><th>Operador</th><th>ONT</th><th>TX (dBm)</th><th>RX (dBm)</th><th></th></tr>
+            <tr><th>OUT</th><th>AID</th><th>Operador</th><th>Sitio</th><th>RAMA</th><th>ONT</th><th>Status</th><th>TX (dBm)</th><th>RX (dBm)</th><th>Estado</th></tr>
     `;
-    onts.forEach((o) => {
+    onts.forEach((o, oix) => {
       html += `
-            <tr data-rama="${_escHtml(rama)}" data-cto="${_escHtml(cto)}" data-aid="${_escHtml(o.AID)}">
-              <td class="mono">${_escHtml(o.AID)}</td>
-              <td>${_escHtml(o.OPERADOR)}</td>
-              <td class="mono">${_escHtml(o.ONT || "—")}</td>
-              <td>-</td>
-              <td>-</td>
-              <td><button type="button" class="btn-mini pot-aid" data-pot-aid="${encodeURIComponent(o.AID)}">TX / RX</button></td>
+            <tr data-rama="${_escHtml(rama)}" data-cto="${_escHtml(cto)}" data-aid="${_escHtml(o.AID)}" data-fat-status="${_escHtml(o.STATUS || "")}">
+              ${_ramaRowCellsHtml(o, rama, cto, oix + 1)}
             </tr>
       `;
     });
@@ -576,13 +937,6 @@ function renderInventarioRama(rama, inv, container) {
       card.querySelectorAll(".cto-select").forEach((cb) => {
         cb.checked = on;
       });
-    });
-  });
-  container.querySelectorAll("button.pot-aid").forEach((btnAid) => {
-    btnAid.addEventListener("click", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      consultarAidRama(decodeURIComponent(btnAid.getAttribute("data-pot-aid") || ""), btnAid);
     });
   });
   container.querySelectorAll("button.pot-cto").forEach((btnCto) => {
@@ -658,6 +1012,7 @@ function _expandAllCtosInRamaCard(card) {
     if (!ctoBody) return;
     ctoBody.classList.remove("hidden");
     setExpanded(ctoNode, true);
+    _scheduleCtoMapIfExpanded(ctoNode);
   });
 }
 
@@ -669,6 +1024,9 @@ function _expandOnlyTargetCtoInCard(card, targetNode) {
     const isTarget = ctoNode === targetNode;
     ctoBody.classList.toggle("hidden", !isTarget);
     setExpanded(ctoNode, isTarget);
+    if (isTarget) {
+      _scheduleCtoMapIfExpanded(ctoNode);
+    }
   });
 }
 
@@ -700,8 +1058,9 @@ function _setRamaCardTxRxCellsLoading(card) {
     return;
   }
   card.querySelectorAll("tr[data-aid]").forEach((tr) => {
-    _setTxRxCellLoading(tr.children[3], true);
-    _setTxRxCellLoading(tr.children[4], true);
+    if (_ramaFatSkipPotencias(tr)) return;
+    _setTxRxCellLoading(tr.children[RAMA_COL_TX], true);
+    _setTxRxCellLoading(tr.children[RAMA_COL_RX], true);
   });
 }
 
@@ -710,11 +1069,11 @@ function _ramaCardTxRxCellsStuckToDash(card) {
     return;
   }
   card.querySelectorAll("tr[data-aid]").forEach((tr) => {
-    if (tr.children[3] && tr.children[3].classList.contains("olt-txrx-cell--loading")) {
-      _setTxRxCellLoading(tr.children[3], false);
+    if (tr.children[RAMA_COL_TX] && tr.children[RAMA_COL_TX].classList.contains("olt-txrx-cell--loading")) {
+      _setTxRxCellLoading(tr.children[RAMA_COL_TX], false);
     }
-    if (tr.children[4] && tr.children[4].classList.contains("olt-txrx-cell--loading")) {
-      _setTxRxCellLoading(tr.children[4], false);
+    if (tr.children[RAMA_COL_RX] && tr.children[RAMA_COL_RX].classList.contains("olt-txrx-cell--loading")) {
+      _setTxRxCellLoading(tr.children[RAMA_COL_RX], false);
     }
   });
 }
@@ -734,15 +1093,26 @@ function _aplicarDataRama(rama, data, row, card) {
     if ((tr.getAttribute("data-rama") || "") !== String(rama)) return;
     const cto = tr.dataset.cto;
     const aid = tr.dataset.aid;
-    if (!tr.children[3] || !tr.children[4]) {
+    if (_ramaFatSkipPotencias(tr)) return;
+    const tdTx = tr.children[RAMA_COL_TX];
+    const tdRx = tr.children[RAMA_COL_RX];
+    const tdEst = tr.children[RAMA_COL_EST];
+    if (!tdTx || !tdRx) {
       return;
     }
     if (data[cto] && data[cto][aid]) {
-      _clearTxRxCellLoadingKeepValue(tr.children[3]);
-      _clearTxRxCellLoadingKeepValue(tr.children[4]);
-      tr.children[3].innerText = _formatPowerDbm(data[cto][aid].TX);
-      tr.children[4].innerText = _formatPowerDbm(data[cto][aid].RX);
-      _aplicarResaltadoFila(tr, tr.children[4].innerText);
+      _clearTxRxCellLoadingKeepValue(tdTx);
+      _clearTxRxCellLoadingKeepValue(tdRx);
+      tdTx.innerText = _formatPowerDbm(data[cto][aid].TX);
+      tdRx.innerText = _formatPowerDbm(data[cto][aid].RX);
+      _aplicarResaltadoFila(tr, tdRx.innerText);
+      if (tdEst) {
+        tdEst.classList.remove("status-pending");
+        const up = _hasPowerRama(data[cto][aid].TX) || _hasPowerRama(data[cto][aid].RX);
+        tdEst.textContent = up ? "UP" : "DOWN";
+        tdEst.classList.remove("status-up", "status-down");
+        tdEst.classList.add(up ? "status-up" : "status-down");
+      }
     }
   });
 }
@@ -774,67 +1144,44 @@ function _setRamaPotButtonLoading(btn, loading) {
   }
 }
 
-function consultarAidRama(aid, btn) {
-  const tr = btn ? btn.closest("tr[data-aid]") : null;
-  if (!aid || !tr) {
-    return;
-  }
-  _setRamaPotButtonLoading(btn, true);
-  _setTxRxCellLoading(tr.children[3], true);
-  _setTxRxCellLoading(tr.children[4], true);
-
-  fetch("/potencias", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: "value=" + encodeURIComponent(aid),
-  })
-    .then((r) => {
-      if (!r.ok) throw new Error("HTTP " + r.status);
-      return r.json();
-    })
-    .then((data) => {
-      const tx = data && data.AID ? data.TX : null;
-      const rx = data && data.AID ? data.RX : null;
-      if (tr.children[3] && tr.children[4]) {
-        _clearTxRxCellLoadingKeepValue(tr.children[3]);
-        _clearTxRxCellLoadingKeepValue(tr.children[4]);
-        tr.children[3].innerText = _formatPowerDbm(tx);
-        tr.children[4].innerText = _formatPowerDbm(rx);
-        _aplicarResaltadoFila(tr, tr.children[4].innerText);
-      }
-    })
-    .catch(() => {
-      toast(`Error consultando potencia: ${aid}`);
-    })
-    .finally(() => {
-      if (tr.children[3] && tr.children[3].classList.contains("olt-txrx-cell--loading")) {
-        _setTxRxCellLoading(tr.children[3], false);
-      }
-      if (tr.children[4] && tr.children[4].classList.contains("olt-txrx-cell--loading")) {
-        _setTxRxCellLoading(tr.children[4], false);
-      }
-      _setRamaPotButtonLoading(btn, false);
-    });
+function _autoConsultarCtoPotenciasAlExpandir(ctoNode) {
+  const ctoBody = ctoNode.nextElementSibling;
+  if (!ctoBody || !_ctoBodyTieneFilasPendientesPotencias(ctoBody)) return;
+  const cto = (ctoNode.getAttribute("data-cto") || "").trim();
+  const card = ctoNode.closest("[data-rama-card]");
+  if (!cto || !card) return;
+  _ejecutarConsultaPotenciasCto(cto, ctoNode, card, null, { silentToast: true });
 }
 
-function consultarCtoRama(cto, btn) {
-  const ctoNode = btn ? btn.closest("[data-cto-node]") : null;
-  const card = btn ? btn.closest("[data-rama-card]") : null;
-  const ctoBody = ctoNode ? ctoNode.nextElementSibling : null;
+function _ejecutarConsultaPotenciasCto(cto, ctoNode, card, feedbackBtn, opts) {
+  opts = opts || {};
+  const silentToast = opts.silentToast === true;
+  const ctoBody = ctoNode.nextElementSibling;
   if (!cto || !card || !ctoBody) {
-    return;
+    return Promise.resolve();
   }
 
-  _setRamaPotButtonLoading(btn, true);
+  const existing = ctoNode._potCtoFetchPromise;
+  if (existing) {
+    if (feedbackBtn) {
+      _setRamaPotButtonLoading(feedbackBtn, true);
+      existing.finally(() => _setRamaPotButtonLoading(feedbackBtn, false));
+    }
+    return existing;
+  }
+
+  if (feedbackBtn) _setRamaPotButtonLoading(feedbackBtn, true);
   ctoBody.classList.remove("hidden");
   setExpanded(ctoNode, true);
+  _scheduleCtoMapIfExpanded(ctoNode);
 
   ctoBody.querySelectorAll("tr[data-aid]").forEach((tr) => {
-    _setTxRxCellLoading(tr.children[3], true);
-    _setTxRxCellLoading(tr.children[4], true);
+    if (_ramaFatSkipPotencias(tr)) return;
+    _setTxRxCellLoading(tr.children[RAMA_COL_TX], true);
+    _setTxRxCellLoading(tr.children[RAMA_COL_RX], true);
   });
 
-  fetch("/dashboard/cto/consultar", {
+  const p = fetch("/dashboard/cto/consultar", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: "cto=" + encodeURIComponent(cto),
@@ -848,31 +1195,60 @@ function consultarCtoRama(cto, btn) {
       rows.forEach((rec) => {
         const aid = String(rec.AID || "");
         if (!aid) return;
-        const tr = ctoBody.querySelector('tr[data-aid="' + aid + '"]');
-        if (!tr || !tr.children[3] || !tr.children[4]) return;
-        _clearTxRxCellLoadingKeepValue(tr.children[3]);
-        _clearTxRxCellLoadingKeepValue(tr.children[4]);
-        tr.children[3].innerText = _formatPowerDbm(rec.TX);
-        tr.children[4].innerText = _formatPowerDbm(rec.RX);
-        _aplicarResaltadoFila(tr, tr.children[4].innerText);
+        const tr = _findTrByAidInCtoBody(ctoBody, aid);
+        if (!tr || _ramaFatSkipPotencias(tr)) return;
+        const tdTx = tr.children[RAMA_COL_TX];
+        const tdRx = tr.children[RAMA_COL_RX];
+        const tdEst = tr.children[RAMA_COL_EST];
+        if (!tdTx || !tdRx) return;
+        _clearTxRxCellLoadingKeepValue(tdTx);
+        _clearTxRxCellLoadingKeepValue(tdRx);
+        tdTx.innerText = _formatPowerDbm(rec.TX);
+        tdRx.innerText = _formatPowerDbm(rec.RX);
+        _aplicarResaltadoFila(tr, tdRx.innerText);
+        if (tdEst) {
+          tdEst.classList.remove("status-pending");
+          const up = _hasPowerRama(rec.TX) || _hasPowerRama(rec.RX);
+          tdEst.textContent = up ? "UP" : "DOWN";
+          tdEst.classList.remove("status-up", "status-down");
+          tdEst.classList.add(up ? "status-up" : "status-down");
+        }
       });
       _saveStateSoon();
-      toast(`Potencias actualizadas CTO: ${cto}`);
+      if (!silentToast) {
+        toast(`Potencias actualizadas CTO: ${cto}`);
+      }
     })
     .catch(() => {
       toast(`Error consultando potencias CTO: ${cto}`);
     })
     .finally(() => {
       ctoBody.querySelectorAll("tr[data-aid]").forEach((tr) => {
-        if (tr.children[3] && tr.children[3].classList.contains("olt-txrx-cell--loading")) {
-          _setTxRxCellLoading(tr.children[3], false);
+        if (tr.children[RAMA_COL_TX] && tr.children[RAMA_COL_TX].classList.contains("olt-txrx-cell--loading")) {
+          _setTxRxCellLoading(tr.children[RAMA_COL_TX], false);
         }
-        if (tr.children[4] && tr.children[4].classList.contains("olt-txrx-cell--loading")) {
-          _setTxRxCellLoading(tr.children[4], false);
+        if (tr.children[RAMA_COL_RX] && tr.children[RAMA_COL_RX].classList.contains("olt-txrx-cell--loading")) {
+          _setTxRxCellLoading(tr.children[RAMA_COL_RX], false);
         }
       });
-      _setRamaPotButtonLoading(btn, false);
+      if (feedbackBtn) _setRamaPotButtonLoading(feedbackBtn, false);
+      if (ctoNode._potCtoFetchPromise === p) {
+        delete ctoNode._potCtoFetchPromise;
+      }
     });
+
+  ctoNode._potCtoFetchPromise = p;
+  return p;
+}
+
+function consultarCtoRama(cto, btn) {
+  const ctoNode = btn ? btn.closest("[data-cto-node]") : null;
+  const card = btn ? btn.closest("[data-rama-card]") : null;
+  const ctoBody = ctoNode ? ctoNode.nextElementSibling : null;
+  if (!cto || !card || !ctoBody) {
+    return;
+  }
+  _ejecutarConsultaPotenciasCto(cto, ctoNode, card, btn, {});
 }
 
 function consultarRama(rama, btn) {
@@ -930,6 +1306,7 @@ window.addEventListener("load", () => {
   const input = document.getElementById("q");
   const pre = new URLSearchParams(window.location.search).get("q");
   restoreRamaDashboardState(pre);
+  _bindRamaDashboardTabCollapse();
   if (input) {
     input.addEventListener("input", () => {
       _lastJumpKey = "";

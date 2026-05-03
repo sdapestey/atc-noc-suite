@@ -4,28 +4,24 @@ from collections import defaultdict
 from config import get_dashboard_rama_cache_seconds, get_dashboard_rama_power_cache_seconds
 from db import db_cursor
 
-from altiplano import obtener_potencias_por_cto
-
 from .dashboard_cache import get_cached_rama, get_cached_rama_inventario, get_cached_rama_potencias
 
 from .domain import (
     SITIO_PRINCIPAL_DEFAULT,
     SITIO_PRINCIPAL_POR_REGION,
-    calcular_ne,
     clasificar_rx_dbm,
     natural_sort_key_str,
-    nombre_operador,
     principal_sort_key,
     region_desde_rama,
 )
+from .inventory import consultar_rama_estructura, consultar_rama_potencias
 
 
 def _compute_dashboard_ramas():
     """Construye el árbol base de dashboard RAMA desde Postgres.
 
     Returns:
-        Lista de bloques por sitio principal con esta estructura:
-        `[{PRINCIPAL, SEARCH_TEXT, RAMAS:[...]}]`.
+        Dict con ``bloques`` (lista por sitio principal) y ``totales`` (RAMAS/CTO/ONT).
 
     Notes:
         No consulta potencias; solo arma inventario estructural para UI y exportación.
@@ -80,12 +76,28 @@ def _compute_dashboard_ramas():
             "SEARCH_TEXT": " ".join(map(str, words)).lower(),
             "RAMAS": group,
         })
-    return hierarchy
+
+    totales = {
+        "RAMAS": len(ramas),
+        "CTO": sum(r["CTO_COUNT"] for r in ramas),
+        "ONT": sum(r["ONT_COUNT"] for r in ramas),
+    }
+    return {"bloques": hierarchy, "totales": totales}
+
+
+def dashboard_rama_bundle():
+    """Árbol + totales en una sola lectura de caché (como mucho una query SQL por TTL)."""
+    return get_cached_rama(get_dashboard_rama_cache_seconds(), _compute_dashboard_ramas)
 
 
 def dashboard_ramas():
     """Árbol principal → rama → CTO (Postgres). Resultados cacheados por TTL."""
-    return get_cached_rama(get_dashboard_rama_cache_seconds(), _compute_dashboard_ramas)
+    return dashboard_rama_bundle()["bloques"]
+
+
+def dashboard_rama_totales():
+    """Totales globales RAMA / CTO / ONT para la barra superior (misma caché que `dashboard_ramas`)."""
+    return dashboard_rama_bundle()["totales"]
 
 
 def inventario_dashboard_rama(rama):
@@ -95,37 +107,7 @@ def inventario_dashboard_rama(rama):
     rama_norm = str(rama).strip()
 
     def _compute():
-        with db_cursor() as cur:
-            cur.execute(
-                """
-                SELECT
-                    f.location_description AS cto,
-                    f.access_id,
-                    o.invocator_system,
-                    REPLACE(COALESCE(s.object_name, ''), ':1-1', '') AS object_name_ui
-                FROM cm.inventory_fat_occupation f
-                JOIN cm.inventory_olt_occupation o
-                  ON o.access_id = f.access_id
-                LEFT JOIN altiplano.serial s
-                  ON s.access_id = f.access_id
-                WHERE f.path_atc = %s
-                  AND f.status = 'IN SERVICE'
-                ORDER BY f.location_description, f.access_id
-                """,
-                (rama_norm,),
-            )
-            rows = cur.fetchall()
-
-        out = defaultdict(list)
-        for cto, aid, op_id, object_name_ui in rows:
-            out[cto].append({
-                "AID": str(aid),
-                "OPERADOR": nombre_operador(op_id),
-                "ONT": (object_name_ui or "").strip() or "—",
-                "TX": None,
-                "RX": None,
-            })
-        return dict(out)
+        return dict(consultar_rama_estructura(rama_norm))
 
     return get_cached_rama_inventario(get_dashboard_rama_cache_seconds(), rama_norm, _compute)
 
@@ -148,50 +130,22 @@ def consultar_dashboard_rama(rama):
     rama_norm = str(rama).strip()
 
     def _compute():
-        with db_cursor() as cur:
-            cur.execute(
-                """
-                SELECT
-                    f.location_description AS cto,
-                    f.access_id,
-                    s.object_name,
-                    o.invocator_system
-                FROM cm.inventory_fat_occupation f
-                JOIN altiplano.serial s ON s.access_id = f.access_id
-                JOIN cm.inventory_olt_occupation o ON o.access_id = f.access_id
-                WHERE f.path_atc = %s
-                  AND f.status = 'IN SERVICE'
-                """,
-                (rama_norm,),
-            )
-            rows = cur.fetchall()
-
-        por_cto = defaultdict(list)
-        for cto, aid, obj_raw, inv in rows:
-            if not obj_raw:
-                continue
-            por_cto[cto].append({
-                "AID": str(aid),
-                "OBJ": obj_raw,
-                "INV": inv,
-            })
+        inv = consultar_rama_estructura(rama_norm)
+        plist = consultar_rama_potencias(rama_norm)
+        pot_by_aid = {p["AID"]: p for p in plist}
 
         resultado = {}
         rojas = 0
         amarillas = 0
         verdes = 0
 
-        for cto, onts in por_cto.items():
-            ne = calcular_ne(onts[0]["OBJ"])
-            potencias = obtener_potencias_por_cto(
-                ne,
-                [(o["AID"], o["OBJ"], o["INV"]) for o in onts],
-            )
-
+        for cto, rows in inv.items():
             resultado[cto] = {}
-            for o in onts:
-                tx, rx = potencias.get(o["AID"], (None, None))
-                resultado[cto][o["AID"]] = {"TX": tx, "RX": rx}
+            for r in rows:
+                aid = r["AID"]
+                tx = pot_by_aid.get(aid, {}).get("TX")
+                rx = pot_by_aid.get(aid, {}).get("RX")
+                resultado[cto][aid] = {"TX": tx, "RX": rx}
                 estado = clasificar_rx_dbm(rx)
                 if estado == "rojo":
                     rojas += 1

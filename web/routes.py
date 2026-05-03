@@ -29,10 +29,11 @@ from services import (
     dashboard_camino_optico_access_id,
     dashboard_camino_optico_cto,
     dashboard_camino_optico_rama,
+    infer_camino_consulta_tipo,
     dashboard_calidad_inventario_hallazgos,
     dashboard_calidad_inventario_resumen,
     dashboard_olts,
-    dashboard_ramas,
+    dashboard_rama_bundle,
     crear_ont_connection_intent,
     estructura_dashboard_lt,
     export_dashboard_olts_csv,
@@ -110,10 +111,8 @@ def _resolve_index_consulta(token: str) -> dict:
         consulta["ruta"]["cto"] = token
         coords = consultar_cto_coordenadas(token)
         if coords:
-            lat_lon = f"{coords['lat']},{coords['lon']}"
-            consulta["cto_maps_url"] = (
-                "https://www.google.com/maps/search/?api=1&query="
-                f"{quote_plus(lat_lon)}"
+            consulta["cto_maps_url"] = _build_google_maps_search_url(
+                coords["lat"], coords["lon"]
             )
 
     elif "RATC" in vu:
@@ -341,8 +340,12 @@ def register(app):
 
     @app.route("/dashboard/rama")
     def dash_rama():
-        ramas = dashboard_ramas()
-        return render_template("dashboard_rama.html", ramas=ramas)
+        data = dashboard_rama_bundle()
+        return render_template(
+            "dashboard_rama.html",
+            ramas=data["bloques"],
+            ram_totales=data["totales"],
+        )
 
     @app.route("/dashboard/rama/consultar", methods=["POST"])
     def dash_rama_consultar():
@@ -359,6 +362,52 @@ def register(app):
             return jsonify({"error": "Parámetro rama requerido"}), 400
         data = inventario_dashboard_rama(rama)
         return jsonify(data)
+
+    @app.route("/dashboard/rama/cto-map")
+    def dash_rama_cto_map():
+        """Coordenadas CTO para mapa embebido (misma regla que consultar_cto_coordenadas)."""
+        cto = (request.args.get("cto") or "").strip()
+        if not cto:
+            return jsonify({"ok": False, "error": "Parámetro cto requerido"}), 400
+        try:
+            coords = consultar_cto_coordenadas(cto)
+        except Exception:
+            return _log_and_internal_error("consultar_cto_coordenadas failed")
+        if not coords:
+            return jsonify({"ok": False, "error": "Sin coordenadas para esta CTO"})
+        return jsonify({"ok": True, "cto": cto, "lat": coords["lat"], "lon": coords["lon"]})
+
+    @app.route("/dashboard/rama/rama-map")
+    def dash_rama_rama_map():
+        """Coordenadas de todas las CTO de una RAMA (consultar_cto_coordenadas por CTO)."""
+        rama = (request.args.get("rama") or "").strip()
+        if not rama:
+            return jsonify({"ok": False, "error": "Parámetro rama requerido"}), 400
+        try:
+            inv = inventario_dashboard_rama(rama)
+        except Exception:
+            return _log_and_internal_error("inventario_dashboard_rama failed")
+        ctos_total = len(inv)
+        markers = []
+        sin_coord = 0
+        for cto in sorted(inv.keys()):
+            try:
+                coords = consultar_cto_coordenadas(cto)
+            except Exception:
+                return _log_and_internal_error("consultar_cto_coordenadas failed")
+            if coords:
+                markers.append({"cto": cto, "lat": coords["lat"], "lon": coords["lon"]})
+            else:
+                sin_coord += 1
+        return jsonify(
+            {
+                "ok": True,
+                "rama": rama,
+                "markers": markers,
+                "ctos_total": ctos_total,
+                "ctos_sin_coordenadas": sin_coord,
+            }
+        )
 
     @app.route("/dashboard/rama/export.csv")
     def export_rama_csv():
@@ -554,14 +603,31 @@ def register(app):
         data = request.get_json(silent=True) or {}
         tipo = (data.get("tipo") or "").strip().lower()
         valor = (data.get("valor") or "").strip()
-        if not tipo:
-            return jsonify({"error": "Parámetro tipo requerido"}), 400
         if not valor:
             return jsonify({"error": "Parámetro valor requerido"}), 400
+        if not tipo or tipo == "auto":
+            tipo = infer_camino_consulta_tipo(valor) or ""
+            if tipo == "access_id":
+                valor = re.sub(r"\s+", "", valor)
+            if not tipo:
+                return (
+                    jsonify(
+                        {
+                            "error": (
+                                "No se reconoce el formato. Usá un identificador con "
+                                "«FATC» (CTO), «RATC» (rama) o solo dígitos (Access ID)."
+                            ),
+                        }
+                    ),
+                    400,
+                )
+        else:
+            if tipo in ("access_id", "aid", "id"):
+                valor = re.sub(r"\s+", "", valor)
         if tipo == "cto":
             return jsonify(dashboard_camino_optico_cto(valor))
         if tipo == "rama":
             return jsonify(dashboard_camino_optico_rama(valor))
         if tipo in ("access_id", "aid", "id"):
             return jsonify(dashboard_camino_optico_access_id(valor))
-        return jsonify({"error": "tipo inválido. Use: cto, rama o access_id"}), 400
+        return jsonify({"error": "tipo inválido. Use: cto, rama, access_id o auto"}), 400

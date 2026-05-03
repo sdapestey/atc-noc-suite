@@ -110,19 +110,28 @@ QUERIES = {
             s.object_name AS object_name_raw,
 
             -- Object name limpio para UI
-            REPLACE(s.object_name, ':1-1', '') AS object_name_ui,
+            REPLACE(COALESCE(s.object_name, ''), ':1-1', '') AS object_name_ui,
 
             -- Serial real de ONT (fuente principal para SN en UI)
             s.serial_number AS serial_number,
 
             o.invocator_system
         FROM cm.inventory_fat_occupation f
-        JOIN altiplano.serial s
+        LEFT JOIN altiplano.serial s
              ON s.access_id = f.access_id
-        JOIN cm.inventory_olt_occupation o
+        LEFT JOIN cm.inventory_olt_occupation o
              ON o.access_id = f.access_id
         WHERE f.location_description = %s
-        ORDER BY f.access_id
+          AND f.status IN ('IN SERVICE', 'RESERVED', 'FREE')
+        -- Orden tipo ConnectMaster (OUT1…OUT8): posición física del splitter en CM viene en
+        -- inventory_fat_occupation.port_number y/o port_name (OUTn). Si en CM tenés fo_out_split_2,
+        -- suele reflejarse en estos campos del FAT; sin match de posición va al final.
+        ORDER BY
+            COALESCE(
+                f.port_number,
+                NULLIF(regexp_replace(COALESCE(f.port_name, ''), '[^0-9]', '', 'g'), '')::bigint
+            ) NULLS LAST,
+            f.access_id
     """,
 
     # ===============================
@@ -135,16 +144,23 @@ QUERIES = {
             f.location_description AS cto,
             f.path_atc AS rama,
             s.object_name AS object_name_raw,
-            REPLACE(s.object_name, ':1-1', '') AS object_name_ui,
+            REPLACE(COALESCE(s.object_name, ''), ':1-1', '') AS object_name_ui,
             s.serial_number AS serial_number,
             o.invocator_system
         FROM cm.inventory_fat_occupation f
-        JOIN altiplano.serial s
+        LEFT JOIN altiplano.serial s
              ON s.access_id = f.access_id
-        JOIN cm.inventory_olt_occupation o
+        LEFT JOIN cm.inventory_olt_occupation o
              ON o.access_id = f.access_id
-        WHERE f.path_atc = %s AND f.status = 'IN SERVICE'
-        ORDER BY f.location_description, f.access_id
+        WHERE f.path_atc = %s
+          AND f.status IN ('IN SERVICE', 'RESERVED', 'FREE')
+        ORDER BY
+            f.location_description,
+            COALESCE(
+                f.port_number,
+                NULLIF(regexp_replace(COALESCE(f.port_name, ''), '[^0-9]', '', 'g'), '')::bigint
+            ) NULLS LAST,
+            f.access_id
     """,
     # ===============================
     # Histórico de potencias por rama (RATC)

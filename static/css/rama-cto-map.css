@@ -1,0 +1,192 @@
+/* Mapa CTO — solo panel RAMA / CTO expandido (sin estilos globales agresivos) */
+.rama-cto-map-shell {
+  margin-bottom: 0.75rem;
+}
+
+.rama-cto-map-msg {
+  margin-bottom: 0.35rem;
+  min-height: 1.25em;
+}
+
+.rama-cto-map-canvas {
+  height: 220px;
+  width: 100%;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border-default, #30363d);
+}
+
+/* Mapa por RAMA (varias CTO) */
+.rama-branch-map-panel {
+  margin-bottom: 0.85rem;
+}
+
+.rama-mapa-kicker {
+  margin-bottom: 0.15rem;
+}
+
+.rama-mapa-rama-label {
+  margin: 0 0 0.4rem;
+  font-size: 0.9rem;
+}
+
+.rama-mapa-msg {
+  margin-bottom: 0.35rem;
+  min-height: 1.25em;
+}
+
+.rama-mapa-footer {
+  margin-top: 0.45rem;
+  margin-bottom: 0;
+  font-size: 0.85rem;
+}
+
+.rama-mapa-canvas {
+  height: 300px;
+  width: 100%;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border-default, #30363d);
+}
+
+/* Consulta índice — mapas embebidos bajo la ruta */
+.consulta-inline-mapa {
+  margin-top: 0.65rem;
+}
+
+/* Consulta por CTO — tarjeta topología (alineada al panel, sin bloque accent suelto) */
+.ubicacion-cto.consulta-ubicacion-card {
+  margin: 12px 16px 0;
+  padding: 16px 18px 14px;
+  border-radius: var(--radius-lg, 12px);
+  border: 1px solid var(--border-default, #30363d);
+  background: var(--canvas-subtle, #161b22);
+  box-shadow: var(--shadow-md, 0 8px 24px rgba(1, 4, 9, 0.55));
+  gap: 14px;
+}
+
+.consulta-ubicacion-grid {
+  display: grid;
+  gap: 12px;
+}
+
+@media (min-width: 640px) {
+  .consulta-ubicacion-grid {
+    grid-template-columns: 1fr 1fr;
+    align-items: start;
+  }
+
+  .consulta-ubicacion-row--full {
+    grid-column: 1 / -1;
+  }
+}
+
+.consulta-ubicacion-actions {
+  padding-top: 12px;
+  margin-top: 2px;
+  border-top: 1px solid var(--border-muted, #21262d);
+}
+
+.ubicacion-cto.consulta-ubicacion-card .label {
+  min-width: 100px;
+}
+
+/* Tarjeta mapa CTO en consulta índice */
+.consulta-mapa-cto-card {
+  margin: 12px 16px 0;
+  padding: 14px 16px 16px;
+  border-radius: var(--radius-lg, 12px);
+  border: 1px solid var(--border-default, #30363d);
+  background: var(--canvas-subtle, #161b22);
+  box-shadow: var(--shadow-md, 0 8px 24px rgba(1, 4, 9, 0.55));
+}
+
+.consulta-mapa-cto-head {
+  margin-bottom: 10px;
+}
+
+.consulta-mapa-cto-title {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--fg-default, #e6edf3);
+}
+
+.consulta-mapa-cto-card .consulta-cto-map-msg {
+  margin: 0 0 10px;
+  min-height: 1.35em;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--fg-muted, #8b949e);
+}
+
+.consulta-mapa-cto-card .consulta-mapa-cto-leaflet.rama-cto-map-canvas {
+  height: 300px;
+  width: 100%;
+  border-radius: var(--radius, 10px);
+  overflow: hidden;
+  border: 1px solid var(--border-muted, #21262d);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+html[data-theme="light"] .consulta-mapa-cto-card .consulta-mapa-cto-leaflet.rama-cto-map-canvas {
+  box-shadow: inset 0 1px 2px rgba(31, 35, 40, 0.06);
+}
+
+/* Mapa CTO bajo detalle AID: ya dentro de .content */
+.content .consulta-mapa-cto-card {
+  margin-left: 0;
+  margin-right: 0;
+}
+
+/* Consulta por RAMA: un solo mapa (tarjeta alineada al resto del panel) */
+.consulta-mapa-rama-card {
+  margin: 8px 16px 18px;
+  padding: 14px 16px 16px;
+  border-radius: var(--radius-lg, 12px);
+  border: 1px solid var(--border-default, #30363d);
+  background: var(--canvas-subtle, #161b22);
+  box-shadow: var(--shadow-md, 0 8px 24px rgba(1, 4, 9, 0.55));
+}
+
+.consulta-mapa-rama-head {
+  margin-bottom: 10px;
+}
+
+.consulta-mapa-rama-title {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--fg-default, #e6edf3);
+}
+
+.consulta-mapa-rama-card .consulta-rama-mapa-msg {
+  margin: 0 0 10px;
+  min-height: 1.35em;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--fg-muted, #8b949e);
+}
+
+.consulta-mapa-rama-card .consulta-rama-mapa-footer {
+  margin: 14px 0 0;
+  padding-top: 2px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--fg-muted, #8b949e);
+}
+
+.consulta-mapa-rama-card .consulta-mapa-rama-leaflet.rama-mapa-canvas {
+  height: 340px;
+  width: 100%;
+  border-radius: var(--radius, 10px);
+  overflow: hidden;
+  border: 1px solid var(--border-muted, #21262d);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+html[data-theme="light"] .consulta-mapa-rama-card .consulta-mapa-rama-leaflet.rama-mapa-canvas {
+  box-shadow: inset 0 1px 2px rgba(31, 35, 40, 0.06);
+}

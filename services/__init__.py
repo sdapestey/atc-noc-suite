@@ -4,6 +4,7 @@ from .camino_optico import (
     dashboard_camino_optico_access_id,
     dashboard_camino_optico_cto,
     dashboard_camino_optico_rama,
+    infer_camino_consulta_tipo,
 )
 from .dashboard_calidad_inventario import (
     dashboard_calidad_inventario_hallazgos,
@@ -11,7 +12,13 @@ from .dashboard_calidad_inventario import (
     export_dashboard_calidad_inventario_csv,
 )
 from .dashboard_olt import dashboard_olts, estructura_dashboard_lt
-from .dashboard_rama import consultar_dashboard_rama, dashboard_ramas, inventario_dashboard_rama
+from .dashboard_rama import (
+    consultar_dashboard_rama,
+    dashboard_rama_bundle,
+    dashboard_rama_totales,
+    dashboard_ramas,
+    inventario_dashboard_rama,
+)
 from .exports import (
     export_dashboard_olts_csv,
     export_dashboard_ramas_csv,
@@ -48,6 +55,8 @@ __all__ = [
     "consultar_rama_estructura",
     "consultar_rama_potencias",
     "dashboard_ramas",
+    "dashboard_rama_bundle",
+    "dashboard_rama_totales",
     "dashboard_calidad_inventario_resumen",
     "dashboard_calidad_inventario_hallazgos",
     "dashboard_olts",
@@ -65,6 +74,7 @@ __all__ = [
     "dashboard_camino_optico_cto",
     "dashboard_camino_optico_rama",
     "dashboard_camino_optico_access_id",
+    "infer_camino_consulta_tipo",
     "cambiar_sn_ont",
     "crear_ont_connection_intent",
 ]

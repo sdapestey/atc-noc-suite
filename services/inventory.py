@@ -19,6 +19,48 @@ from .domain import (
 
 logger = logging.getLogger(__name__)
 
+# Inventario CM: sin lectura Altiplano para estos estados de puerto FAT.
+_SIN_POTENCIAS_STATUS = frozenset({"FREE", "RESERVED"})
+
+
+def _sin_potencias_por_status(status) -> bool:
+    return str(status or "").strip().upper() in _SIN_POTENCIAS_STATUS
+
+
+def _cto_ref_desde_filas_ont(rows) -> str:
+    if not rows:
+        return ""
+    return str(rows[0][2] or "").strip()
+
+
+def _aid_clave_fila(access_id, idx: int, cto_ref: str) -> str:
+    """Clave estable para DOM/API cuando `access_id` puede ser NULL (puertos FREE)."""
+    if access_id is not None:
+        return str(access_id)
+    safe = "".join(
+        ch if ch.isalnum() or ch in "-_" else "_"
+        for ch in (cto_ref or "cto")
+    )
+    return f"nf-{safe}-{idx}"
+
+
+def _ne_para_potencias_desde_filas_ont(rows) -> str:
+    """Primer object_name Altiplano válido para derivar NE (potencias por CTO/rama)."""
+    for r in rows:
+        if _sin_potencias_por_status(r[1]):
+            continue
+        raw = r[4]
+        if raw is None:
+            continue
+        s = str(raw).strip()
+        if not s or "-" not in s:
+            continue
+        try:
+            return calcular_ne(s)
+        except IndexError:
+            continue
+    return ""
+
 
 def _format_fecha_baja_ref(dt) -> str:
     """Formato legible para timestamp de bajada (naive, como viene de aux)."""
@@ -371,16 +413,31 @@ def consultar_access_id_potencias(access_id):
     if not rows:
         return {"AID": access_id, "TX": None, "RX": None}
 
-    ne = calcular_ne(rows[0][4])
-    onts = [(str(r[0]), r[4], r[7]) for r in rows if r[4]]
+    aid_key = str(access_id).strip()
+    for r in rows:
+        if str(r[0]).strip() == aid_key and _sin_potencias_por_status(r[1]):
+            return {"AID": access_id, "TX": None, "RX": None}
+
+    ne = _ne_para_potencias_desde_filas_ont(rows)
+    if not ne:
+        return {"AID": access_id, "TX": None, "RX": None}
+
+    onts = [
+        (str(r[0]), r[4], r[7])
+        for r in rows
+        if r[0] is not None and r[4] and not _sin_potencias_por_status(r[1])
+    ]
+    if not onts:
+        return {"AID": access_id, "TX": None, "RX": None}
+
     potencias = obtener_potencias_por_cto(ne, onts)
 
-    tx, rx = potencias.get(str(access_id), (None, None))
+    tx, rx = potencias.get(str(access_id).strip(), (None, None))
     return {"AID": access_id, "TX": tx, "RX": rx}
 
 
 def consultar_cto_estructura(cto):
-    """Devuelve el inventario en servicio de una CTO.
+    """Devuelve inventario de una CTO (estados IN SERVICE, RESERVED y FREE).
 
     Args:
         cto: Identificador FATC de la CTO.
@@ -392,17 +449,20 @@ def consultar_cto_estructura(cto):
         cur.execute(QUERIES["onts_por_cto"], (cto,))
         rows = cur.fetchall()
 
+    cto_ref = str(cto or "").strip()
     out = []
-    for r in rows:
+    for idx, r in enumerate(rows):
         rama_val = r[3]
         if rama_val:
             reg = region_desde_rama(rama_val)
             principal = SITIO_PRINCIPAL_POR_REGION.get(reg, SITIO_PRINCIPAL_DEFAULT)
         else:
             principal = "—"
+        st_u = str(r[1] or "").strip().upper()
+        aid_key = _aid_clave_fila(r[0], idx, cto_ref)
         out.append({
-            "AID": str(r[0]),
-            "OPERADOR": nombre_operador(r[7]),
+            "AID": aid_key,
+            "OPERADOR": "-" if st_u == "FREE" else nombre_operador(r[7]),
             "RAMA": rama_val,
             "PRINCIPAL": principal,
             "ONT": r[5],
@@ -418,17 +478,29 @@ def _potencias_desde_filas_ont_cto(rows):
     """Filas con la misma forma que `onts_por_cto` / `onts_por_rama`."""
     if not rows:
         return []
-    ne = calcular_ne(rows[0][4])
-    onts = [(str(r[0]), r[4], r[7]) for r in rows if r[4]]
-    potencias = obtener_potencias_por_cto(ne, onts)
-    return [
-        {
-            "AID": str(r[0]),
-            "TX": potencias.get(str(r[0]), (None, None))[0],
-            "RX": potencias.get(str(r[0]), (None, None))[1],
-        }
-        for r in rows
-    ]
+    cto_ref = _cto_ref_desde_filas_ont(rows)
+    ne = _ne_para_potencias_desde_filas_ont(rows)
+    potencias = {}
+    if ne:
+        onts = [
+            (str(r[0]), r[4], r[7])
+            for r in rows
+            if r[0] is not None and r[4] and not _sin_potencias_por_status(r[1])
+        ]
+        if onts:
+            potencias = obtener_potencias_por_cto(ne, onts)
+    out = []
+    for idx, r in enumerate(rows):
+        aid_key = _aid_clave_fila(r[0], idx, cto_ref)
+        raw_id = r[0]
+        if _sin_potencias_por_status(r[1]):
+            tx = rx = None
+        elif raw_id is not None:
+            tx, rx = potencias.get(str(raw_id), (None, None))
+        else:
+            tx = rx = None
+        out.append({"AID": aid_key, "TX": tx, "RX": rx})
+    return out
 
 
 def consultar_cto_potencias(cto):
@@ -469,7 +541,7 @@ def consultar_cto_coordenadas(cto):
             JOIN aux.bajada_inventario b
               ON b.access_id::text = f.access_id::text
             WHERE f.location_description = %s
-              AND f.status = 'IN SERVICE'
+              AND f.status IN ('IN SERVICE', 'RESERVED', 'FREE')
               AND (b.cto = %s OR b.cm_description = %s)
               AND COALESCE(b.splitter_2_lat, b.ont_lat) IS NOT NULL
               AND COALESCE(b.splitter_2_lon, b.ont_lon) IS NOT NULL
@@ -488,7 +560,7 @@ def consultar_cto_coordenadas(cto):
 
 
 def consultar_rama_estructura(rama):
-    """Obtiene ONTs en servicio agrupadas por CTO para una rama dada.
+    """ONTs por CTO para una rama (IN SERVICE, RESERVED y FREE).
 
     Args:
         rama: Identificador RATC.
@@ -501,29 +573,44 @@ def consultar_rama_estructura(rama):
         cur.execute(
             """
             SELECT f.access_id, f.status, f.location_description,
-                   s.object_name, REPLACE(s.object_name,':1-1',''),
+                   s.object_name, REPLACE(COALESCE(s.object_name, ''), ':1-1', ''),
                    s.serial_number,
                    o.invocator_system
             FROM cm.inventory_fat_occupation f
-            JOIN altiplano.serial s ON s.access_id=f.access_id
-            JOIN cm.inventory_olt_occupation o ON o.access_id=f.access_id
-            WHERE f.path_atc=%s AND f.status='IN SERVICE'
+            LEFT JOIN altiplano.serial s ON s.access_id = f.access_id
+            LEFT JOIN cm.inventory_olt_occupation o ON o.access_id = f.access_id
+            WHERE f.path_atc = %s
+              AND f.status IN ('IN SERVICE', 'RESERVED', 'FREE')
             """,
             (rama,),
         )
         rows = cur.fetchall()
 
-    data = defaultdict(list)
+    rama_norm = str(rama or "").strip()
+    reg = region_desde_rama(rama_norm)
+    principal_sitio = SITIO_PRINCIPAL_POR_REGION.get(reg, SITIO_PRINCIPAL_DEFAULT)
+
+    por_cto = defaultdict(list)
     for r in rows:
-        data[r[2]].append({
-            "AID": str(r[0]),
-            "OPERADOR": nombre_operador(r[6]),
-            "ONT": r[4],
-            "SN": (str(r[5]).strip() if r[5] else "") or r[4],
-            "STATUS": r[1],
-            "TX": None,
-            "RX": None,
-        })
+        por_cto[r[2]].append(r)
+
+    data = defaultdict(list)
+    for cto_key, lst in por_cto.items():
+        cto_ref = str(cto_key or "").strip()
+        for idx, r in enumerate(lst):
+            st_u = str(r[1] or "").strip().upper()
+            aid_key = _aid_clave_fila(r[0], idx, cto_ref)
+            data[cto_key].append({
+                "AID": aid_key,
+                "OPERADOR": "-" if st_u == "FREE" else nombre_operador(r[6]),
+                "PRINCIPAL": principal_sitio,
+                "RAMA": rama_norm,
+                "ONT": r[4],
+                "SN": (str(r[5]).strip() if r[5] else "") or r[4],
+                "STATUS": r[1],
+                "TX": None,
+                "RX": None,
+            })
     return data
 
 
@@ -569,16 +656,27 @@ def consultar_rama_potencias_altiplano_por_ont(rama: str) -> list[dict]:
     out: list[dict] = []
     for _cto, group in groupby(rows, key=lambda r: r[2]):
         grp = list(group)
-        ne = calcular_ne(grp[0][4])
-        onts = [(str(r[0]), r[4], r[7]) for r in grp if r[4]]
-        potencias = obtener_potencias_por_cto(ne, onts)
-        for r in grp:
-            aid = str(r[0])
+        ne = _ne_para_potencias_desde_filas_ont(grp)
+        onts = [
+            (str(r[0]), r[4], r[7])
+            for r in grp
+            if r[0] is not None and r[4] and not _sin_potencias_por_status(r[1])
+        ]
+        potencias = obtener_potencias_por_cto(ne, onts) if ne and onts else {}
+        cto_ref = str(grp[0][2] or "").strip()
+        for idx, r in enumerate(grp):
+            aid_key = _aid_clave_fila(r[0], idx, cto_ref)
+            raw_id = r[0]
             obj_raw = r[4]
             ont_key = str(obj_raw).split("-")[-1] if obj_raw else ""
-            tx, rx = potencias.get(aid, (None, None))
+            if _sin_potencias_por_status(r[1]):
+                tx, rx = None, None
+            elif raw_id is not None:
+                tx, rx = potencias.get(str(raw_id), (None, None))
+            else:
+                tx, rx = None, None
             out.append({
-                "aid": aid,
+                "aid": aid_key,
                 "ont_key": ont_key,
                 "rx_dbm": None if rx is None else float(rx),
                 "tx_dbm": None if tx is None else float(tx),

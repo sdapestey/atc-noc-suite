@@ -23,7 +23,14 @@ def _minimal_ramas():
 def test_dashboard_rama_includes_cto_selection_and_no_expand_all(client, monkeypatch):
     import web.routes as routes
 
-    monkeypatch.setattr(routes, "dashboard_ramas", lambda: _minimal_ramas())
+    monkeypatch.setattr(
+        routes,
+        "dashboard_rama_bundle",
+        lambda: {
+            "bloques": _minimal_ramas(),
+            "totales": {"RAMAS": 1, "CTO": 12, "ONT": 34},
+        },
+    )
     r = client.get("/dashboard/rama")
     assert r.status_code == 200
     html = r.get_data(as_text=True)
@@ -34,6 +41,13 @@ def test_dashboard_rama_includes_cto_selection_and_no_expand_all(client, monkeyp
     assert "Expandí la RAMA para cargar CTO/ONT." in html
     assert 'data-rama-detail' in html
     assert "Ver historico" in html
+    assert "noc-map-tiles.js" in html
     assert "noc-tools.js" in html
     assert "dashboard-rama.js" in html
     assert "consultarRama(" in html
+    assert "Ver mapa" in html
+    assert "verMapaRama(" in html
+    assert "rama-cto-map.css" in html
+    assert "leaflet" in html.lower()
+    assert "12 CTO" in html
+    assert "34 ONT" in html

@@ -4,6 +4,10 @@
 <meta charset="UTF-8">
 <title>RAMA / CTO · ATC GPON Inventory</title>
 {% include 'partials/noc_head.html' %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/rama-cto-map.css') }}">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script src="{{ url_for('static', filename='js/noc-map-tiles.js') }}"></script>
 <script src="{{ url_for('static', filename='js/noc-tools.js') }}"></script>
 <script src="{{ url_for('static', filename='js/dashboard-rama.js') }}"></script>
 </head>
@@ -20,7 +24,11 @@
       <small><strong>RAMA / CTO</strong> — expandí nodos y consultá potencias por rama (Altiplano)</small>
     </div>
     <div class="topbar-meta">
-      <span id="visibleCount" class="count">—</span>
+      <div class="topbar-metrics-row" aria-label="Totales inventario y RAMAs visibles">
+        <span id="visibleCount" class="count" title="RAMAs que coinciden con el filtro">—</span>
+        <span class="count count--inventory-total" title="CTO distintas (suma por RAMA, IN SERVICE)">{{ ram_totales.CTO }} CTO</span>
+        <span class="count count--inventory-total" title="ONT en inventario FAT con estado IN SERVICE">{{ ram_totales.ONT }} ONT</span>
+      </div>
       {% include 'partials/noc_topbar.html' %}
     </div>
   </div>
@@ -63,6 +71,13 @@
     <span class="badge green semaforo-dot" title="RX &gt; -25 dBm" data-semaforo="verde">{{ r.VERDES }}</span>
     <span class="rama-row-actions" onclick="event.stopPropagation()">
       <button class="btn" type="button" onclick="consultarRama('{{ r.RAMA }}', this)">Consultar</button>
+      <button
+        class="btn btn-ghost"
+        type="button"
+        onclick="event.stopPropagation(); verMapaRama(this);"
+        title="Mapa con todas las CTO que tengan coordenadas"
+        aria-expanded="false"
+      >Ver mapa</button>
       <a
         class="btn btn-ghost"
         href="/dashboard/potencias-historico?ratc={{ r.RAMA|urlencode }}&days=30"
@@ -72,6 +87,13 @@
   </div>
 
   <div class="hidden indent2">
+    <div class="rama-branch-map-panel hidden" data-rama-map-panel aria-hidden="true">
+      <p class="hint rama-mapa-kicker">Mapa — CTO con ubicación</p>
+      <p class="mono rama-mapa-rama-label" data-rama-mapa-label></p>
+      <p class="hint rama-mapa-msg" aria-live="polite"></p>
+      <div class="rama-mapa-canvas" data-rama-mapa-canvas hidden></div>
+      <p class="hint rama-mapa-footer" aria-live="polite"></p>
+    </div>
     <div data-rama-detail>
       <p class="hint">Expandí la RAMA para cargar CTO/ONT.</p>
     </div>

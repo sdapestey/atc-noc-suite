@@ -1,10 +1,31 @@
 """Dashboard prueba: camino óptico (FAT + cm_report_isp)."""
+import re
 from urllib.parse import quote_plus
 
 from db import db_cursor
 
 from .domain import nombre_operador
 from .inventory import consultar_cto_coordenadas
+
+
+def infer_camino_consulta_tipo(valor: str) -> str | None:
+    """Deduce si el valor es CTO (FATC), rama (RATC) o Access ID (solo dígitos).
+
+    Returns:
+        ``cto``, ``rama``, ``access_id`` o ``None`` si no aplica.
+    """
+    v_raw = (valor or "").strip()
+    if not v_raw:
+        return None
+    u = v_raw.upper()
+    if "FATC" in u:
+        return "cto"
+    if "RATC" in u:
+        return "rama"
+    digits_only = re.sub(r"\s+", "", v_raw)
+    if re.fullmatch(r"\d+", digits_only):
+        return "access_id"
+    return None
 
 
 def _cto_maps_url_for_fatc_location(cto_fat: str) -> str | None:
@@ -116,15 +137,22 @@ def dashboard_camino_optico_cto(cto):
             FROM cm.inventory_fat_occupation f
             LEFT JOIN altiplano.serial s ON s.access_id = f.access_id
             LEFT JOIN cm.inventory_olt_occupation o ON o.access_id = f.access_id
-            WHERE f.location_description = %s AND f.status = 'IN SERVICE'
-            ORDER BY f.access_id
+            WHERE f.location_description = %s
+              AND f.status IN ('IN SERVICE', 'RESERVED', 'FREE')
+            -- Mismo criterio que queries.onts_por_cto (orden OUT/puerto ConnectMaster).
+            ORDER BY
+                COALESCE(
+                    f.port_number,
+                    NULLIF(regexp_replace(COALESCE(f.port_name, ''), '[^0-9]', '', 'g'), '')::bigint
+                ) NULLS LAST,
+                f.access_id
             """,
             (cto,),
         )
         rows = cur.fetchall()
         colnames = [d[0] for d in cur.description]
         if not rows:
-            return {"error": "Sin ONT en servicio para esa CTO", "cto": cto}
+            return {"error": "Sin datos de inventario para esa CTO", "cto": cto}
 
         idx_path = colnames.index("path_atc")
         path_atcs = sorted({r[idx_path] for r in rows if r[idx_path]})

@@ -18,8 +18,8 @@ def test_dashboard_rama_does_not_include_splash_overlay(client, monkeypatch):
 
     monkeypatch.setattr(
         routes,
-        "dashboard_ramas",
-        lambda: [],
+        "dashboard_rama_bundle",
+        lambda: {"bloques": [], "totales": {"RAMAS": 0, "CTO": 0, "ONT": 0}},
     )
     r = client.get("/dashboard/rama")
     assert r.status_code == 200

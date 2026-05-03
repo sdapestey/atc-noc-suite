@@ -1,4 +1,5 @@
 import logging
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests
@@ -10,13 +11,14 @@ from config import (
     get_altiplano_credentials,
     get_altiplano_nbi_target,
     get_altiplano_operator_credentials,
+    get_altiplano_token_cache_max_age_seconds,
 )
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 logger = logging.getLogger(__name__)
 
-# Cache simple de tokens por auth_url
+# Cache de tokens por auth_url: ``auth_url -> (token, monotonic_ts)``
 _token_cache = {}
 _ALTIPLANO_POWER_TARGETS_BY_OPERATOR_ID = {
     1001: ("tasa", "https://10.200.4.101:32443/tasa-altiplano-ac/rest/auth/login"),
@@ -44,8 +46,14 @@ def _obtener_token(auth_url, username=None, password=None, force_refresh=False):
     """
     if force_refresh:
         _token_cache.pop(auth_url, None)
+
     if auth_url in _token_cache:
-        return _token_cache[auth_url]
+        token, ts = _token_cache[auth_url]
+        max_age = get_altiplano_token_cache_max_age_seconds()
+        if max_age > 0 and (time.monotonic() - ts) > max_age:
+            _token_cache.pop(auth_url, None)
+        else:
+            return token
 
     user = username
     pwd = password
@@ -63,7 +71,7 @@ def _obtener_token(auth_url, username=None, password=None, force_refresh=False):
 
     token = auth.json().get("accessToken")
     if token:
-        _token_cache[auth_url] = token
+        _token_cache[auth_url] = (token, time.monotonic())
     return token
 
 
@@ -392,7 +400,35 @@ def obtener_potencias_por_cto(NE, onts_cto):
             r = requests.get(power_url, headers=headers, verify=False, timeout=60)
         except requests.RequestException:
             return access_id, None
+
+        if r.status_code in (401, 403):
+            token_new = _obtener_token(auth_url, force_refresh=True)
+            if not token_new:
+                logger.warning(
+                    "Altiplano potencias: sin token tras HTTP %s (access_id=%s NE=%s)",
+                    r.status_code,
+                    access_id,
+                    NE,
+                )
+                return access_id, None
+            headers["Authorization"] = f"Bearer {token_new}"
+            try:
+                r = requests.get(power_url, headers=headers, verify=False, timeout=60)
+            except requests.RequestException:
+                logger.warning(
+                    "Altiplano potencias: error de red tras refrescar token (access_id=%s NE=%s)",
+                    access_id,
+                    NE,
+                )
+                return access_id, None
+
         if r.status_code != 200:
+            logger.warning(
+                "Altiplano potencias: GET diagnostics HTTP %s access_id=%s NE=%s",
+                r.status_code,
+                access_id,
+                NE,
+            )
             return access_id, None
 
         try:

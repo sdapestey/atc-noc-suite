@@ -9,6 +9,60 @@ const _oltStateStore = window.createNocPageStateStore
   ? window.createNocPageStateStore(_OLT_STATE_KEY, { debounceMs: 120 })
   : null;
 
+/** Sin columna SN ni botón TX/RX por fila (alineado con dashboard RAMA / CTO). */
+const OLT_COL_TX = 7;
+const OLT_COL_RX = 8;
+const OLT_COL_EST = 9;
+
+function _oltFatSkipPotencias(tr) {
+  const st = (tr.getAttribute("data-fat-status") || "").trim().toUpperCase();
+  return st === "FREE" || st === "RESERVED";
+}
+
+function _hasPowerOlt(v) {
+  return !(v === null || v === undefined || String(v).trim() === "" || String(v).trim() === "-");
+}
+
+function _oltRowCellsHtml(o, rama, cto, outNum) {
+  const st = String(o.STATUS || "").trim().toUpperCase();
+  const aidDisp = st === "FREE" ? "-" : _esc(o.AID);
+  const opDisp = st === "FREE" ? "-" : _esc(o.OPERADOR);
+  const principal = _esc(o.PRINCIPAL || "—");
+  const ramaDisp = _esc(o.RAMA || rama || "—");
+  const ontRaw = (o.ONT || "").trim();
+  const ontDisp = st === "FREE" ? "" : _esc(ontRaw || "—");
+  const statusDisp = _esc(o.STATUS || "");
+  const spin =
+    '<span class="olt-txrx-loading-wrap" title="Cargando potencias…"><span class="olt-txrx-cell-spin" aria-hidden="true"></span></span>';
+  let txCell;
+  let rxCell;
+  let estCell;
+  if (st === "FREE") {
+    txCell = '<td class="mono">-</td>';
+    rxCell = '<td class="mono">-</td>';
+    estCell = '<td class="mono">-</td>';
+  } else if (st === "RESERVED") {
+    txCell = '<td class="mono">-</td>';
+    rxCell = '<td class="mono">-</td>';
+    estCell = '<td class="mono status-down">DOWN</td>';
+  } else {
+    txCell = `<td class="mono olt-txrx-cell--loading" aria-busy="true" aria-label="Cargando">${spin}</td>`;
+    rxCell = `<td class="mono olt-txrx-cell--loading" aria-busy="true" aria-label="Cargando">${spin}</td>`;
+    estCell = '<td class="mono status-pending">Cargando...</td>';
+  }
+  return `
+                      <td class="mono">${outNum}</td>
+                      <td class="mono">${aidDisp}</td>
+                      <td>${opDisp}</td>
+                      <td>${principal}</td>
+                      <td class="mono">${ramaDisp}</td>
+                      <td class="mono">${ontDisp}</td>
+                      <td>${statusDisp}</td>
+                      ${txCell}
+                      ${rxCell}
+                      ${estCell}`;
+}
+
 function toastOlt(msg) {
   const el = document.getElementById("toast-olt");
   if (!el) return;
@@ -385,7 +439,41 @@ function toggleNode(id) {
   childrenByParent(id).forEach((el) => {
     el.classList.remove("hidden");
   });
+  _autoPotenciaCtoOltAlExpandir(id);
   _saveOltStateSoon();
+}
+
+function _oltTableTieneFilasPendientesPotencias(table) {
+  if (!table) return false;
+  for (const tr of table.querySelectorAll("tr[data-aid]")) {
+    if (_oltFatSkipPotencias(tr)) continue;
+    const tx = tr.children[OLT_COL_TX];
+    if (tx && tx.classList.contains("olt-txrx-cell--loading")) return true;
+  }
+  return false;
+}
+
+function _autoPotenciaCtoOltAlExpandir(nodeId) {
+  const ctoNode = document.querySelector("[data-node-id=\"" + String(nodeId).replace(/\\/g, "\\\\").replace(/"/g, '\\"') + "\"]");
+  if (!ctoNode) return;
+  if ((ctoNode.getAttribute("data-olt-tree-kind") || "").trim().toUpperCase() !== "CTO") return;
+  const children = childrenByParent(nodeId);
+  const shell = children.find((el) => el.classList.contains("olt-tree-table-shell"));
+  const table = shell
+    ? shell.querySelector("table.olt-tree-table")
+    : children.find((el) => el.tagName === "TABLE" && el.classList.contains("olt-tree-table"));
+  if (!table || !_oltTableTieneFilasPendientesPotencias(table)) return;
+  const firstTr = table.querySelector("tr[data-aid]");
+  const cto = decodeURIComponent((firstTr && firstTr.getAttribute("data-cto")) || "").trim();
+  if (!cto) return;
+  const wrap = ctoNode.closest("td");
+  const detailTr = ctoNode.closest("tr");
+  const uid =
+    detailTr && detailTr.id && detailTr.id.indexOf("detail-") === 0 ? detailTr.id.slice("detail-".length) : "";
+  const ltRow = uid ? document.getElementById("lt-row-" + uid) : null;
+  if (wrap && ltRow) {
+    potenciaCto(cto, wrap, ltRow, null);
+  }
 }
 
 function ensureNodeOpen(id) {
@@ -400,6 +488,7 @@ function ensureNodeOpen(id) {
   childrenByParent(id).forEach((el) => {
     el.classList.remove("hidden");
   });
+  _autoPotenciaCtoOltAlExpandir(id);
   _saveOltStateSoon();
 }
 
@@ -492,7 +581,7 @@ function _addSemFromRx(row, rx) {
 function _recomputePeor(wrap, row) {
   let min = null;
   wrap.querySelectorAll("tr[data-aid]").forEach(tr => {
-    const rxCell = tr.children[4];
+    const rxCell = tr.children[OLT_COL_RX];
     if (!rxCell) return;
     const t = rxCell.textContent.trim();
     if (t === "-" || t === "") return;
@@ -546,22 +635,18 @@ function buildRamaBlockHtml(uid, rama, block, parentRamaId, depth) {
                     <button type="button" class="btn-mini pot-cto" data-pot-cto="${encodeURIComponent(cto)}">Consultar</button>
                 </div>
 
-                <table class="hidden olt-tree-table olt-tree-depth-${tblDepth}" data-parent="${ctoId}">
-                <tr><th>AID</th><th>Operador</th><th>ONT</th><th>TX (dBm)</th><th>RX (dBm)</th><th></th></tr>`;
+                <div class="table-wrap olt-tree-table-shell olt-tree-depth-${tblDepth} hidden" data-parent="${ctoId}">
+                <table class="olt-tree-table">
+                <tr><th>OUT</th><th>AID</th><th>Operador</th><th>Sitio</th><th>RAMA</th><th>ONT</th><th>Status</th><th>TX (dBm)</th><th>RX (dBm)</th><th>Estado</th></tr>`;
 
-    (ctos[cto] || []).forEach((o) => {
+    (ctos[cto] || []).forEach((o, oix) => {
       html += `
-                    <tr data-aid="${_esc(o.AID)}" data-rama="${encodeURIComponent(rama)}" data-cto="${encodeURIComponent(cto)}">
-                      <td>${_esc(o.AID)}</td>
-                      <td>${_esc(o.OPERADOR)}</td>
-                      <td>${_esc(o.ONT || "—")}</td>
-                      <td>-</td>
-                      <td>-</td>
-                      <td><button type="button" class="btn-mini pot-aid" data-pot-aid="${encodeURIComponent(o.AID)}">TX / RX</button></td>
+                    <tr data-aid="${_esc(o.AID)}" data-rama="${encodeURIComponent(rama)}" data-cto="${encodeURIComponent(cto)}" data-fat-status="${_esc(o.STATUS || "")}">
+                      ${_oltRowCellsHtml(o, rama, cto, oix + 1)}
                     </tr>`;
     });
 
-    html += `</table>`;
+    html += `</table></div>`;
   }
 
   const subs = block.SUBRAMAS || {};
@@ -699,7 +784,7 @@ function cargarInventarioLT(lt, uid, row) {
       if (ponCell) ponCell.textContent = String(ponCount);
 
       let html =
-        '<p class="hint">Inventario cargado. Expandí cada <strong>PON</strong> para ver RAMA (RATC) → FATC → CTO → ONT. <span class="muted">Las mismas ramas FATC se listan bajo cada RATC (sin vínculo padre/hijo en BD).</span> <strong>Consultar</strong> / <strong>ID</strong> para potencias en Altiplano.</p>';
+        '<p class="hint">Inventario cargado. Expandí cada <strong>PON</strong> para ver RAMA (RATC) → FATC → CTO → ONT. <span class="muted">Las mismas ramas FATC se listan bajo cada RATC (sin vínculo padre/hijo en BD).</span> Al expandir una <strong>CTO</strong> o con <strong>Consultar</strong> se cargan las potencias (Altiplano).</p>';
       html += `<p class="hint"><strong>Impacto LT:</strong> PON ${ponCount} · RAMAs ${ramasCount} · CTO ${ctoCount} · ONT ${ontCount}</p>`;
       html += `<p class="hint"><label><input type="checkbox" class="pon-select-all" data-uid="${uid}"> Seleccionar todos los PON de este LT</label></p>`;
 
@@ -719,8 +804,20 @@ function cargarInventarioLT(lt, uid, row) {
 }
 
 function findTrByAid(wrap, aid) {
-  const s = String(aid);
-  return Array.from(wrap.querySelectorAll("tr[data-aid]")).find((tr) => tr.getAttribute("data-aid") === s);
+  const s = String(aid ?? "");
+  return Array.from(wrap.querySelectorAll("tr[data-aid]")).find((tr) => String(tr.getAttribute("data-aid") || "") === s);
+}
+
+function _findOltTableForCto(wrap, cto) {
+  const c = String(cto || "").trim();
+  if (!c || !wrap) return null;
+  for (const tb of wrap.querySelectorAll("table.olt-tree-table")) {
+    const tr = tb.querySelector("tr[data-aid]");
+    if (tr && decodeURIComponent(tr.getAttribute("data-cto") || "").trim() === c) {
+      return tb;
+    }
+  }
+  return null;
 }
 
 function bindPotenciaButtons(wrap, row) {
@@ -745,13 +842,6 @@ function bindPotenciaButtons(wrap, row) {
         _expandOnlyTargetCto(ctoNode.getAttribute("data-node-id"));
       }
       potenciaCto(decodeURIComponent(bc.getAttribute("data-pot-cto") || ""), wrap, row, bc);
-    });
-  });
-  wrap.querySelectorAll("button.pot-aid").forEach((ba) => {
-    ba.addEventListener("click", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      potenciaAid(decodeURIComponent(ba.getAttribute("data-pot-aid") || ""), wrap, row, ba);
     });
   });
 }
@@ -788,7 +878,8 @@ function _setCtoOltTxRxCellsLoading(wrap, cto) {
     if (decodeURIComponent(tr.getAttribute("data-cto") || "") !== cto) {
       return;
     }
-    [3, 4].forEach((idx) => {
+    if (_oltFatSkipPotencias(tr)) return;
+    [OLT_COL_TX, OLT_COL_RX].forEach((idx) => {
       const td = tr.children[idx];
       if (!td) {
         return;
@@ -807,7 +898,7 @@ function _oltTxRxCellsStuckToDashForCto(wrap, cto) {
     if (decodeURIComponent(tr.getAttribute("data-cto") || "") !== cto) {
       return;
     }
-    [3, 4].forEach((idx) => {
+    [OLT_COL_TX, OLT_COL_RX].forEach((idx) => {
       const td = tr.children[idx];
       if (td && td.classList && td.classList.contains("olt-txrx-cell--loading")) {
         td.classList.remove("olt-txrx-cell--loading");
@@ -824,7 +915,8 @@ function _setOltTxRxCellsLoadingForRama(wrap, rama) {
     if (decodeURIComponent(tr.getAttribute("data-rama") || "") !== rama) {
       return;
     }
-    [3, 4].forEach((idx) => {
+    if (_oltFatSkipPotencias(tr)) return;
+    [OLT_COL_TX, OLT_COL_RX].forEach((idx) => {
       const td = tr.children[idx];
       if (!td) {
         return;
@@ -843,7 +935,7 @@ function _oltTxRxCellsStuckToDashForRama(wrap, rama) {
     if (decodeURIComponent(tr.getAttribute("data-rama") || "") !== rama) {
       return;
     }
-    [3, 4].forEach((idx) => {
+    [OLT_COL_TX, OLT_COL_RX].forEach((idx) => {
       const td = tr.children[idx];
       if (td && td.classList && td.classList.contains("olt-txrx-cell--loading")) {
         td.classList.remove("olt-txrx-cell--loading");
@@ -876,18 +968,29 @@ function potenciaRama(rama, wrap, row, btnEl) {
         const byAid = data[k];
         Object.keys(byAid).forEach((aid) => {
           const cell = byAid[aid];
-          const tr = findTrByAid(wrap, aid);
+          const tr = findTrByAid(wrap, String(aid));
           if (!tr) return;
           if (decodeURIComponent(tr.getAttribute("data-rama") || "") !== rama) return;
-          if (tr.children[3] && tr.children[4]) {
-            tr.children[3].classList.remove("olt-txrx-cell--loading");
-            tr.children[3].removeAttribute("aria-busy");
-            tr.children[3].removeAttribute("aria-label");
-            tr.children[4].classList.remove("olt-txrx-cell--loading");
-            tr.children[4].removeAttribute("aria-busy");
-            tr.children[4].removeAttribute("aria-label");
-            tr.children[3].textContent = _formatPowerDbm(cell.TX);
-            tr.children[4].textContent = _formatPowerDbm(cell.RX);
+          if (_oltFatSkipPotencias(tr)) return;
+          const tdTx = tr.children[OLT_COL_TX];
+          const tdRx = tr.children[OLT_COL_RX];
+          const tdEst = tr.children[OLT_COL_EST];
+          if (tdTx && tdRx) {
+            tdTx.classList.remove("olt-txrx-cell--loading");
+            tdTx.removeAttribute("aria-busy");
+            tdTx.removeAttribute("aria-label");
+            tdRx.classList.remove("olt-txrx-cell--loading");
+            tdRx.removeAttribute("aria-busy");
+            tdRx.removeAttribute("aria-label");
+            tdTx.textContent = _formatPowerDbm(cell.TX);
+            tdRx.textContent = _formatPowerDbm(cell.RX);
+            if (tdEst) {
+              tdEst.classList.remove("status-pending");
+              const up = _hasPowerOlt(cell.TX) || _hasPowerOlt(cell.RX);
+              tdEst.textContent = up ? "UP" : "DOWN";
+              tdEst.classList.remove("status-up", "status-down");
+              tdEst.classList.add(up ? "status-up" : "status-down");
+            }
           }
         });
       });
@@ -904,12 +1007,21 @@ function potenciaRama(rama, wrap, row, btnEl) {
 }
 
 function potenciaCto(cto, wrap, row, btnEl) {
-  _setPotButtonLoading(btnEl, true);
-  _setCtoOltTxRxCellsLoading(wrap, cto);
-  fetch("/dashboard/cto/consultar", {
+  const ctoKey = String(cto || "").trim();
+  const table = _findOltTableForCto(wrap, ctoKey);
+  if (table && table._oltCtoPotFetchPromise) {
+    if (btnEl) {
+      _setPotButtonLoading(btnEl, true);
+      table._oltCtoPotFetchPromise.finally(() => _setPotButtonLoading(btnEl, false));
+    }
+    return table._oltCtoPotFetchPromise;
+  }
+  if (btnEl) _setPotButtonLoading(btnEl, true);
+  _setCtoOltTxRxCellsLoading(wrap, ctoKey);
+  const p = fetch("/dashboard/cto/consultar", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: "cto=" + encodeURIComponent(cto),
+    body: "cto=" + encodeURIComponent(ctoKey),
   })
     .then((r) => {
       if (!r.ok) throw new Error("HTTP " + r.status);
@@ -921,55 +1033,47 @@ function potenciaCto(cto, wrap, row, btnEl) {
       }
       arr.forEach((rec) => {
         const tr = findTrByAid(wrap, rec.AID);
-        if (!tr || decodeURIComponent(tr.getAttribute("data-cto") || "") !== cto) {
+        if (!tr || decodeURIComponent(tr.getAttribute("data-cto") || "") !== ctoKey) {
           return;
         }
-        if (tr.children[3] && tr.children[4]) {
-          tr.children[3].classList.remove("olt-txrx-cell--loading");
-          tr.children[3].removeAttribute("aria-busy");
-          tr.children[3].removeAttribute("aria-label");
-          tr.children[4].classList.remove("olt-txrx-cell--loading");
-          tr.children[4].removeAttribute("aria-busy");
-          tr.children[4].removeAttribute("aria-label");
-          tr.children[3].textContent = _formatPowerDbm(rec.TX);
-          tr.children[4].textContent = _formatPowerDbm(rec.RX);
+        if (_oltFatSkipPotencias(tr)) return;
+        const tdTx = tr.children[OLT_COL_TX];
+        const tdRx = tr.children[OLT_COL_RX];
+        const tdEst = tr.children[OLT_COL_EST];
+        if (tdTx && tdRx) {
+          tdTx.classList.remove("olt-txrx-cell--loading");
+          tdTx.removeAttribute("aria-busy");
+          tdTx.removeAttribute("aria-label");
+          tdRx.classList.remove("olt-txrx-cell--loading");
+          tdRx.removeAttribute("aria-busy");
+          tdRx.removeAttribute("aria-label");
+          tdTx.textContent = _formatPowerDbm(rec.TX);
+          tdRx.textContent = _formatPowerDbm(rec.RX);
           _addSemFromRx(row, rec.RX);
+          if (tdEst) {
+            tdEst.classList.remove("status-pending");
+            const up = _hasPowerOlt(rec.TX) || _hasPowerOlt(rec.RX);
+            tdEst.textContent = up ? "UP" : "DOWN";
+            tdEst.classList.remove("status-up", "status-down");
+            tdEst.classList.add(up ? "status-up" : "status-down");
+          }
         }
       });
       _recomputePeor(wrap, row);
     })
     .catch(() => {
       toastOlt("Error al consultar potencias (CTO)");
-      _oltTxRxCellsStuckToDashForCto(wrap, cto);
+      _oltTxRxCellsStuckToDashForCto(wrap, ctoKey);
     })
     .finally(() => {
-      _oltTxRxCellsStuckToDashForCto(wrap, cto);
-      _setPotButtonLoading(btnEl, false);
+      _oltTxRxCellsStuckToDashForCto(wrap, ctoKey);
+      if (btnEl) _setPotButtonLoading(btnEl, false);
+      if (table && table._oltCtoPotFetchPromise === p) {
+        delete table._oltCtoPotFetchPromise;
+      }
     });
-}
-
-function potenciaAid(aid, wrap, row, btnEl) {
-  _setPotButtonLoading(btnEl, true);
-  fetch("/potencias", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: "value=" + encodeURIComponent(aid),
-  })
-    .then((r) => {
-      if (!r.ok) throw new Error("HTTP " + r.status);
-      return r.json();
-    })
-    .then((data) => {
-      if (!data || data.AID == null) return;
-      const tr = findTrByAid(wrap, data.AID);
-      if (!tr || tr.children[3] == null) return;
-      tr.children[3].textContent = _formatPowerDbm(data.TX);
-      tr.children[4].textContent = _formatPowerDbm(data.RX);
-      _addSemFromRx(row, data.RX);
-      _recomputePeor(wrap, row);
-    })
-    .catch(() => toastOlt("Error al consultar potencias (ID)"))
-    .finally(() => _setPotButtonLoading(btnEl, false));
+  if (table) table._oltCtoPotFetchPromise = p;
+  return p;
 }
 
 function aplicarBusquedaOlt() {
@@ -1028,10 +1132,11 @@ window.addEventListener("load", () => {
   }
 
   document.body.addEventListener("click", (e) => {
-    const td = e.target.closest("td.lt-row-toggle");
+    const tr = e.target.closest("tr.ltrow");
+    if (!tr) return;
+    const td = tr.querySelector("td.lt-row-toggle");
     if (!td) return;
     e.preventDefault();
-    e.stopPropagation();
     const uid = td.dataset.uid;
     const lt = ltFromToggleCell(td);
     if (lt == null || uid == null) return;
@@ -1040,8 +1145,10 @@ window.addEventListener("load", () => {
 
   document.body.addEventListener("keydown", (e) => {
     if (e.key !== "Enter" && e.key !== " ") return;
-    const td = e.target.closest("td.lt-row-toggle");
-    if (!td || document.activeElement !== td) return;
+    const tr = e.target.closest("tr.ltrow");
+    if (!tr || document.activeElement !== tr) return;
+    const td = tr.querySelector("td.lt-row-toggle");
+    if (!td) return;
     e.preventDefault();
     const uid = td.dataset.uid;
     const lt = ltFromToggleCell(td);
