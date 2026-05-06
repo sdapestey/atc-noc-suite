@@ -451,7 +451,11 @@ function ensureCtoMapForCtoNode(ctoNode) {
       canvas.hidden = false;
 
       if (!shell._leafletMap) {
-        const map = window.L.map(canvas, { attributionControl: true, zoomControl: true }).setView([lat, lon], 17);
+        const mapOpts =
+          window.NocLeafletMap && window.NocLeafletMap.baseMapOptions
+            ? window.NocLeafletMap.baseMapOptions()
+            : { attributionControl: true, zoomControl: true, scrollWheelZoom: false };
+        const map = window.L.map(canvas, mapOpts).setView([lat, lon], 17);
         if (window.NocMapTiles && window.NocMapTiles.addBasemapLayer) {
           shell._nocMapBasemap = window.NocMapTiles.addBasemapLayer(map, window.L);
         } else {
@@ -462,6 +466,9 @@ function ensureCtoMapForCtoNode(ctoNode) {
         }
         window.L.marker([lat, lon]).addTo(map);
         shell._leafletMap = map;
+        if (window.NocLeafletMap && window.NocLeafletMap.attachScrollActivation) {
+          window.NocLeafletMap.attachScrollActivation(map, canvas);
+        }
         requestAnimationFrame(() => {
           map.invalidateSize();
         });
@@ -575,7 +582,11 @@ function _loadRamaMapPanel(card, rama, panel) {
 
       let map = panel._ramaLeafletMap;
       if (!map) {
-        map = window.L.map(canvas, { attributionControl: true, zoomControl: true });
+        const mapOpts =
+          window.NocLeafletMap && window.NocLeafletMap.baseMapOptions
+            ? window.NocLeafletMap.baseMapOptions()
+            : { attributionControl: true, zoomControl: true, scrollWheelZoom: false };
+        map = window.L.map(canvas, mapOpts);
         if (window.NocMapTiles && window.NocMapTiles.addBasemapLayer) {
           panel._nocMapBasemap = window.NocMapTiles.addBasemapLayer(map, window.L);
         } else {
@@ -585,6 +596,9 @@ function _loadRamaMapPanel(card, rama, panel) {
           }).addTo(map);
         }
         panel._ramaLeafletMap = map;
+        if (window.NocLeafletMap && window.NocLeafletMap.attachScrollActivation) {
+          window.NocLeafletMap.attachScrollActivation(map, canvas);
+        }
       }
 
       if (panel._ramaMarkerLayer) {

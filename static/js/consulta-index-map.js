@@ -55,7 +55,11 @@
 
         var map = shell._leafletMap;
         if (!map) {
-          map = window.L.map(canvas, { attributionControl: true, zoomControl: true }).setView([lat, lon], 17);
+          var mapOpts =
+            window.NocLeafletMap && window.NocLeafletMap.baseMapOptions
+              ? window.NocLeafletMap.baseMapOptions()
+              : { attributionControl: true, zoomControl: true, scrollWheelZoom: false };
+          map = window.L.map(canvas, mapOpts).setView([lat, lon], 17);
           if (window.NocMapTiles && window.NocMapTiles.addBasemapLayer) {
             shell._nocMapBasemap = window.NocMapTiles.addBasemapLayer(map, window.L);
           } else {
@@ -66,6 +70,9 @@
           }
           window.L.marker([lat, lon]).addTo(map);
           shell._leafletMap = map;
+          if (window.NocLeafletMap && window.NocLeafletMap.attachScrollActivation) {
+            window.NocLeafletMap.attachScrollActivation(map, canvas);
+          }
           requestAnimationFrame(function () {
             map.invalidateSize();
           });
@@ -131,7 +138,11 @@
 
         var map = panel._ramaLeafletMap;
         if (!map) {
-          map = window.L.map(canvas, { attributionControl: true, zoomControl: true });
+          var mapOptsRama =
+            window.NocLeafletMap && window.NocLeafletMap.baseMapOptions
+              ? window.NocLeafletMap.baseMapOptions()
+              : { attributionControl: true, zoomControl: true, scrollWheelZoom: false };
+          map = window.L.map(canvas, mapOptsRama);
           if (window.NocMapTiles && window.NocMapTiles.addBasemapLayer) {
             panel._nocMapBasemap = window.NocMapTiles.addBasemapLayer(map, window.L);
           } else {
@@ -141,6 +152,9 @@
             }).addTo(map);
           }
           panel._ramaLeafletMap = map;
+          if (window.NocLeafletMap && window.NocLeafletMap.attachScrollActivation) {
+            window.NocLeafletMap.attachScrollActivation(map, canvas);
+          }
         }
 
         if (panel._ramaMarkerLayer) {
