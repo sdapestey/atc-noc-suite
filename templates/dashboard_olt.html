@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<title>OLT / LT · ATC GPON Inventory</title>
+<title>OLT / LT · ATC NOC Suite</title>
 {% include 'partials/noc_head.html' %}
 
 <script src="{{ url_for('static', filename='js/noc-tools.js') }}"></script>
@@ -16,7 +16,7 @@
     <div class="brand">
       <div class="brand-row">
         {% include 'partials/brand_logo.html' %}
-        <h1>ATC GPON Inventory</h1>
+        <h1>ATC NOC Suite</h1>
       </div>
       <p class="page-lead page-lead--one-line"><strong>OLT / LT</strong> — <strong>Sitio principal</strong> → sitio (código) → OLT → LT → RAMA → CTO → AID. Expandí un <strong>LT</strong> para inventario; al abrir una <strong>CTO</strong> o con <strong>Consultar</strong> se cargan potencias (como en RAMA&nbsp;/&nbsp;CTO).</p>
     </div>
@@ -28,6 +28,12 @@
   <div class="controls-olt">
     <input type="search" id="bus-olt" placeholder="Buscar sitio, OLT, LT, código (ej. MR01, Moreno, BA_OLTA)…" autocomplete="off" aria-label="Filtrar árbol OLT">
     <div class="toolbar-actions" role="toolbar" aria-label="Exportar y copiar">
+      <div class="olt-export-operator-field">
+        <label for="olt-export-operador" class="olt-export-operator-label">Operador</label>
+        <select id="olt-export-operador" class="olt-export-operador-select" title="Filtra copiar / CSV por operador (solo filas IN SERVICE); ‘Todos’ incluye todos los operadores de la selección">
+          <option value="">Todos los operadores</option>
+        </select>
+      </div>
       <button type="button" class="btn" onclick="copiarPonesSeleccionados()" title="Copiar filas IN SERVICE (TSV): solo Access ID en estado IN SERVICE">Copiar PON seleccionados</button>
       <button type="button" class="btn" onclick="exportarPonesSeleccionadosCsv()" title="CSV local UTF-8: solo Access ID en estado IN SERVICE">Exportar PON seleccionados CSV</button>
       <button type="button" class="btn btn-ghost" onclick="colapsarTodoOlt()">Colapsar todo</button>

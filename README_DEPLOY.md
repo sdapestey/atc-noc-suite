@@ -1,4 +1,4 @@
-# Deploy Runbook (ATC GPON Inventory)
+# Deploy Runbook (ATC NOC Suite)
 
 Guía breve para desplegar y operar la app sin tocar código.
 
@@ -38,7 +38,7 @@ Parámetros de pool/timeouts recomendados (hasta ~10 concurrentes):
 - `DB_CONNECT_TIMEOUT_SECS=5`
 - `DB_STATEMENT_TIMEOUT_MS=30000`
 - `DB_IDLE_IN_TXN_TIMEOUT_MS=15000`
-- `DB_APP_NAME=gpon-inventory`
+- `DB_APP_NAME=atc-noc-suite`
 
 ### Altiplano (según operador/entorno)
 

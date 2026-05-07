@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<title>Historico Potencias · ATC GPON Inventory</title>
+<title>Historico Potencias · ATC NOC Suite</title>
 {% include 'partials/noc_head.html' %}
 <script src="{{ url_for('static', filename='js/noc-tools.js') }}"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -14,7 +14,7 @@
     <div class="brand">
       <div class="brand-row">
         {% include 'partials/brand_logo.html' %}
-        <h1>ATC GPON Inventory</h1>
+        <h1>ATC NOC Suite</h1>
       </div>
       <small><strong>Historico Potencias</strong> — tendencia Rx por rama RATC (ultimos 24h, 7, 15 o 30 dias)</small>
     </div>
@@ -77,6 +77,27 @@
       </div>
       <div class="historico-legend-wrap" id="legend-wrap" style="display:none;">
         <div class="historico-legend" id="legend-container"></div>
+      </div>
+      <!-- Tabla tras Consultar RX: una fila por cada entrada en payload.samples -->
+      <div class="historico-snapshot-compare" id="rx-snapshot-compare-wrap" hidden>
+        <div class="section-title historico-snapshot-compare__title">
+          <h2>Comparación · último histórico vs Consultar RX</h2>
+        </div>
+        <div class="table-wrap historico-snapshot-compare__table-wrap">
+          <table id="rx-snapshot-compare-table" aria-label="Último valor histórico en el gráfico frente a lectura manual Altiplano">
+            <thead>
+              <tr>
+                <th>ONT</th>
+                <th>Último Rx histórico (dBm)</th>
+                <th>Fecha/hora último histórico</th>
+                <th>Rx manual (dBm)</th>
+                <th>Δ (dBm)</th>
+              </tr>
+            </thead>
+            <tbody id="rx-snapshot-compare-tbody"></tbody>
+          </table>
+        </div>
+        <p class="muted-caption historico-snapshot-compare__note" id="rx-snapshot-compare-caption"></p>
       </div>
     </div>
   </div>
@@ -257,12 +278,107 @@ function _median(numbers) {
   return (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
+function _clearRxSnapshotCompareTable() {
+  var wrap = document.getElementById("rx-snapshot-compare-wrap");
+  var tbody = document.getElementById("rx-snapshot-compare-tbody");
+  var cap = document.getElementById("rx-snapshot-compare-caption");
+  if (tbody) tbody.innerHTML = "";
+  if (cap) cap.textContent = "";
+  if (wrap) wrap.hidden = true;
+}
+
+function _findOntDataset(labelOntKey) {
+  var want = "ONT " + String(labelOntKey || "").trim();
+  if (!powerChart || !powerChart.data || !powerChart.data.datasets) return null;
+  for (var i = 0; i < powerChart.data.datasets.length; i++) {
+    if (String(powerChart.data.datasets[i].label || "") === want) return powerChart.data.datasets[i];
+  }
+  return null;
+}
+
+function _findLastHistoricRxBefore(dataset, beforeIdx) {
+  if (!dataset || !Array.isArray(dataset.data) || !powerChart) {
+    return { value: null, tsLabel: null };
+  }
+  var labels = powerChart.data.labels || [];
+  var start = Math.min(beforeIdx - 1, dataset.data.length - 1);
+  for (var j = start; j >= 0; j--) {
+    var v = dataset.data[j];
+    if (v !== null && v !== undefined && Number.isFinite(Number(v))) {
+      return { value: Number(v), tsLabel: labels[j] != null ? String(labels[j]) : null };
+    }
+  }
+  return { value: null, tsLabel: null };
+}
+
+function _renderRxSnapshotCompareTable(payload, snapshotIdx) {
+  var wrap = document.getElementById("rx-snapshot-compare-wrap");
+  var tbody = document.getElementById("rx-snapshot-compare-tbody");
+  var cap = document.getElementById("rx-snapshot-compare-caption");
+  if (!wrap || !tbody || !payload || !powerChart) return;
+
+  var samples = (Array.isArray(payload.samples) ? payload.samples : []).filter(function (s) {
+    return String(s && s.ont_key != null ? s.ont_key : "").trim() !== "";
+  });
+  samples = samples.slice();
+  samples.sort(function (a, b) {
+    var ka = String(a && a.ont_key != null ? a.ont_key : "");
+    var kb = String(b && b.ont_key != null ? b.ont_key : "");
+    var na = parseInt(ka, 10);
+    var nb = parseInt(kb, 10);
+    if (String(na) === ka && String(nb) === kb) return na - nb;
+    return ka.localeCompare(kb);
+  });
+
+  tbody.innerHTML = "";
+  samples.forEach(function (s) {
+    var key = String(s && s.ont_key != null ? s.ont_key : "").trim();
+    var ds = key ? _findOntDataset(key) : null;
+    var lastH = ds ? _findLastHistoricRxBefore(ds, snapshotIdx) : { value: null, tsLabel: null };
+    var manualRaw = s ? s.rx_dbm : null;
+    var manualNum = manualRaw !== null && manualRaw !== undefined && Number.isFinite(Number(manualRaw)) ? Number(manualRaw) : null;
+
+    var tr = document.createElement("tr");
+    function td(text) {
+      var cell = document.createElement("td");
+      cell.textContent = text != null ? String(text) : "—";
+      tr.appendChild(cell);
+    }
+
+    td(key || "—");
+    td(lastH.value != null ? String(_roundToSingleDecimal(lastH.value)) : "sin dato en rango");
+    td(lastH.tsLabel || "—");
+    td(manualNum != null ? String(_roundToSingleDecimal(manualNum)) : "—");
+
+    var deltaCell = document.createElement("td");
+    if (manualNum != null && lastH.value != null) {
+      var d = _roundToSingleDecimal(manualNum - lastH.value);
+      deltaCell.textContent = (d >= 0 ? "+" : "") + String(d);
+    } else {
+      deltaCell.textContent = "—";
+    }
+    tr.appendChild(deltaCell);
+
+    tbody.appendChild(tr);
+  });
+
+  if (cap) {
+    cap.textContent =
+      "Una fila por cada ONT con identificador en la respuesta de Consultar RX; Δ = Rx manual − último Rx histórico (punto anterior al marcador en el eje temporal).";
+  }
+  wrap.hidden = samples.length === 0;
+}
+
 function mergeSnapshot(payload) {
   if (!payload || !payload.ok || !powerChart) return { validCount: 0, totalCount: 0, medianValue: null };
   const ts = payload.timestamp;
+  const sampleRows = (payload.samples || []).filter(function (s) {
+    return String(s && s.ont_key != null ? s.ont_key : "").trim() !== "";
+  });
   const sampleMap = {};
-  (payload.samples || []).forEach(function (s) {
-    sampleMap[String(s.ont_key)] = s.rx_dbm;
+  sampleRows.forEach(function (s) {
+    const k = String(s.ont_key).trim();
+    sampleMap[k] = s.rx_dbm;
   });
   const idx = _upsertLabelAtTimestamp(ts);
   const validValues = [];
@@ -300,9 +416,10 @@ function mergeSnapshot(payload) {
 
   powerChart.update();
   buildLegend(plotDatasetsFromChart());
+  _renderRxSnapshotCompareTable(payload, idx);
   return {
     validCount: validValues.length,
-    totalCount: (payload.samples || []).length,
+    totalCount: sampleRows.length,
     medianValue: _median(validValues),
     timestamp: ts,
   };
@@ -355,6 +472,7 @@ function updateDeepLink() {
 function resetDashboard() {
   document.getElementById("ratc-input").value = "";
   lastRATC = "";
+  _clearRxSnapshotCompareTable();
   setKPIs({pon: "-", total_onts: 0, median: "-", status: "Sin datos"});
   _setSnapshotKpiHint("sin snapshot manual RX");
   noDataEl.innerText = "Ingresa una rama RATC para visualizar el historico de potencia Rx.";
@@ -375,6 +493,7 @@ function resetDashboard() {
 }
 
 function renderChart(data) {
+  _clearRxSnapshotCompareTable();
   if (powerChart) powerChart.destroy();
   const palette = _themePalette();
   const datasets = (data.datasets || []).map((d, idx) => ({
@@ -542,6 +661,7 @@ async function consultarAhora() {
     if (!powerChart || lastRATC !== ratc) {
       const loaded = await fetchData();
       if (!loaded || !powerChart) {
+        _clearRxSnapshotCompareTable();
         return;
       }
     }
@@ -552,6 +672,7 @@ async function consultarAhora() {
     );
     const payload = await resp.json();
     if (!resp.ok) {
+      _clearRxSnapshotCompareTable();
       noDataEl.innerText = String(payload.error || "No se pudo consultar Altiplano.");
       noDataEl.style.display = "block";
       return;
@@ -577,6 +698,7 @@ async function consultarAhora() {
       }
     }, 4500);
   } catch (_err) {
+    _clearRxSnapshotCompareTable();
     noDataEl.innerText = "Error al consultar Altiplano.";
     noDataEl.style.display = "block";
   } finally {

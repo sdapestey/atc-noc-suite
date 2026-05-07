@@ -1,4 +1,5 @@
-/* Splash índice: pantalla completa + fade in / fade out por opacidad */
+/* Splash índice: pantalla completa + fade in / fade out por opacidad.
+   Fondo dark/light alineado con body.theme-devops en devops-dashboard.css */
 .noc-splash {
   position: fixed;
   inset: 0;
@@ -12,23 +13,59 @@
   align-items: stretch;
   justify-content: center;
   overflow: hidden;
-  /* Capa sólida pantalla completa (tema oscuro por defecto) */
-  background: radial-gradient(
-      120% 100% at 50% 0%,
-      rgba(56, 139, 253, 0.12) 0%,
-      transparent 55%
+  color: var(--fg-default);
+  background-color: var(--canvas-default);
+  background-image:
+    radial-gradient(
+      900px 430px at 50% 42%,
+      rgba(51, 112, 255, 0.28),
+      rgba(26, 73, 199, 0.16) 36%,
+      transparent 72%
     ),
-    linear-gradient(165deg, #0a0e14 0%, #121a24 45%, #0c1018 100%);
+    radial-gradient(
+      1200px 760px at 50% 52%,
+      rgba(10, 18, 38, 0.56),
+      transparent 70%
+    ),
+    radial-gradient(
+      2200px 1200px at 50% 56%,
+      rgba(0, 0, 0, 0.7),
+      transparent 76%
+    );
+  background-attachment: fixed;
+  background-repeat: no-repeat;
   transition: opacity 0.55s ease;
 }
 
 html[data-theme="light"] .noc-splash {
-  background: radial-gradient(
-      120% 100% at 50% 0%,
-      rgba(9, 105, 218, 0.08) 0%,
-      transparent 50%
+  color: var(--fg-default);
+  background-color: #e8edf5;
+  background-image:
+    radial-gradient(
+      980px 520px at 50% 34%,
+      rgba(88, 166, 255, 0.22),
+      rgba(160, 200, 255, 0.09) 40%,
+      transparent 72%
     ),
-    linear-gradient(165deg, #f0f4fa 0%, #e8eef7 50%, #f6f8fc 100%);
+    radial-gradient(
+      1350px 840px at 50% 48%,
+      rgba(255, 255, 255, 0.94),
+      rgba(236, 243, 252, 0.52) 54%,
+      transparent 74%
+    ),
+    radial-gradient(
+      2100px 1180px at 50% 62%,
+      rgba(130, 155, 198, 0.26),
+      transparent 76%
+    );
+  background-attachment: fixed;
+  background-repeat: no-repeat;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-theme="light"] .noc-splash {
+    background-attachment: scroll;
+  }
 }
 
 .noc-splash[hidden] {
@@ -74,7 +111,7 @@ html[data-theme="light"] .noc-splash {
   box-sizing: border-box;
 }
 
-/* Ancho acorde al título (~anchura de “ATC GPON Inventory”); el SVG/PNG es ancho → manda el width */
+/* Ancho acorde al título (~anchura de “ATC NOC Suite”); el SVG/PNG es ancho → manda el width */
 .noc-splash-logo {
   display: block;
   width: min(36ch, 92vw);
@@ -96,6 +133,7 @@ html[data-theme="light"] .noc-splash-logo {
   font-size: var(--splash-title-size);
   font-weight: 800;
   letter-spacing: -0.02em;
+  color: var(--fg-default);
 }
 
 .noc-splash-lead {
@@ -104,6 +142,7 @@ html[data-theme="light"] .noc-splash-logo {
   max-width: 36em;
   margin-left: auto;
   margin-right: auto;
+  color: var(--fg-muted);
 }
 
 body.noc-splash-open {

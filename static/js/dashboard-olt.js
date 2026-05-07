@@ -93,7 +93,79 @@ function copyTextToClipboardOlt(text) {
   }
 }
 
-function _rowsPonesSeleccionados() {
+function _normExportOp(raw) {
+  return String(raw || "").trim().toUpperCase();
+}
+
+/** Valores basura (BD / serialización) que no deben aparecer en el selector de operador */
+function _shouldListExportOperator(norm) {
+  return !!norm && norm !== "NONE" && norm !== "NULL";
+}
+
+function _oltExportFilterFromUi() {
+  const sel = document.getElementById("olt-export-operador");
+  return sel ? String(sel.value || "").trim() : "";
+}
+
+function _collectOperatorsFromPonSelection() {
+  /** Map: operador normalizado (UPPERCASE) → etiqueta visible (primera vista) */
+  const byNorm = new Map();
+  const selected = Array.from(document.querySelectorAll(".pon-select:checked"));
+  selected.forEach((cb) => {
+    const uid = cb.getAttribute("data-uid") || "";
+    const pon = cb.getAttribute("data-pon-label") || "";
+    const data = ltInventarioData[uid] || {};
+    const ponBlock = (data.PONES || {})[pon];
+    if (!ponBlock) return;
+    const ramas = ponBlock.RAMAS || {};
+    Object.keys(ramas).forEach((rama) => {
+      const ctos = (ramas[rama] || {}).CTOS || {};
+      Object.keys(ctos).forEach((cto) => {
+        (ctos[cto] || []).forEach((o) => {
+          const st = String(o.STATUS || "").trim().toUpperCase();
+          if (st !== "IN SERVICE") return;
+          const disp = String(o.OPERADOR || "").trim();
+          const norm = _normExportOp(disp);
+          if (!_shouldListExportOperator(norm)) return;
+          if (!byNorm.has(norm)) byNorm.set(norm, disp);
+        });
+      });
+    });
+  });
+  return byNorm;
+}
+
+function _syncOltExportOperatorSelect() {
+  const sel = document.getElementById("olt-export-operador");
+  if (!sel) return;
+  const prev = String(sel.value || "").trim();
+  const map = _collectOperatorsFromPonSelection();
+  const keys = Array.from(map.keys()).sort((a, b) => a.localeCompare(b));
+  sel.innerHTML = "";
+  const optAll = document.createElement("option");
+  optAll.value = "";
+  optAll.textContent = "Todos los operadores";
+  sel.appendChild(optAll);
+  keys.forEach((k) => {
+    const o = document.createElement("option");
+    o.value = k;
+    o.textContent = map.get(k) || k;
+    sel.appendChild(o);
+  });
+  if (prev && keys.includes(prev)) sel.value = prev;
+  else sel.value = "";
+}
+
+function _sanitizeExportBasename(s) {
+  const t = String(s || "").replace(/[^A-Za-z0-9_-]/g, "");
+  return t || "export";
+}
+
+function _buildPonExportLines(opts) {
+  const raw = opts && opts.filterOperator != null ? opts.filterOperator : "";
+  const filterNorm = _normExportOp(raw);
+  const applyFilter = filterNorm.length > 0;
+
   const selected = Array.from(document.querySelectorAll(".pon-select:checked"));
   if (selected.length === 0) {
     return { error: "Seleccioná al menos un PON", lines: [], count: 0 };
@@ -119,6 +191,8 @@ function _rowsPonesSeleccionados() {
         (ctos[cto] || []).forEach((o) => {
           const st = String(o.STATUS || "").trim().toUpperCase();
           if (st !== "IN SERVICE") return;
+          const opNorm = _normExportOp(o.OPERADOR);
+          if (applyFilter && opNorm !== filterNorm) return;
           selectedRamas.add(rama);
           selectedCtos.add(rama + "||" + cto);
           selectedOnts += 1;
@@ -137,8 +211,17 @@ function _rowsPonesSeleccionados() {
   });
 
   if (n === 0) {
+    if (applyFilter) {
+      return {
+        error:
+          "No hay Access ID IN SERVICE para ese operador con la selección actual",
+        lines: [],
+        count: 0,
+      };
+    }
     return {
-      error: "No hay Access ID en estado IN SERVICE para exportar con esa selección",
+      error:
+        "No hay Access ID en estado IN SERVICE para exportar con esa selección",
       lines: [],
       count: 0,
     };
@@ -159,6 +242,10 @@ function _rowsPonesSeleccionados() {
       onts: selectedOnts,
     },
   };
+}
+
+function _rowsPonesSeleccionados() {
+  return _buildPonExportLines({ filterOperator: _oltExportFilterFromUi() });
 }
 
 function copiarPonesSeleccionados() {
@@ -192,12 +279,16 @@ function descargarCsv(filename, lines, delimiter) {
 }
 
 function exportarPonesSeleccionadosCsv() {
-  const res = _rowsPonesSeleccionados();
+  const filt = _oltExportFilterFromUi();
+  const res = _buildPonExportLines({ filterOperator: filt });
   if (res.error) {
     toastOlt(res.error);
     return;
   }
-  descargarCsv("pones_seleccionados.csv", res.lines, ",");
+  const fname = filt
+    ? "pones_seleccionados_" + _sanitizeExportBasename(filt) + ".csv"
+    : "pones_seleccionados.csv";
+  descargarCsv(fname, res.lines, ",");
   toastOlt("CSV exportado");
 }
 
@@ -275,12 +366,13 @@ function _oltPonSummaryHtml(pon, ramas, cto, ont) {
 function updatePonesSelectionSummary() {
   const el = document.getElementById("pon-selection-summary");
   if (!el) return;
+  _syncOltExportOperatorSelect();
   const selectedPones = document.querySelectorAll(".pon-select:checked").length;
   if (!selectedPones) {
     el.innerHTML = _oltPonSummaryHtml(0, 0, 0, 0);
     return;
   }
-  const res = _rowsPonesSeleccionados();
+  const res = _buildPonExportLines({ filterOperator: "" });
   if (res.error || !res.resumen) {
     el.innerHTML = _oltPonSummaryHtml(selectedPones, 0, 0, 0);
     return;
@@ -823,6 +915,7 @@ function cargarInventarioLT(lt, uid, row) {
 
       const wrap = detailRow.querySelector("td");
       bindPotenciaButtons(wrap, row);
+      updatePonesSelectionSummary();
       _saveOltStateSoon();
       return wrap;
     });
@@ -1101,6 +1194,87 @@ function potenciaCto(cto, wrap, row, btnEl) {
   return p;
 }
 
+function _oltRowIsSearchVisible(tr) {
+  const pb = tr.closest(".principal-block");
+  if (!pb || pb.classList.contains("search-hide")) return false;
+  const sec = tr.closest(".olt-section");
+  if (!sec || sec.classList.contains("search-hide")) return false;
+  const table = tr.closest("table");
+  if (table && table.classList.contains("hidden")) return false;
+  return true;
+}
+
+function _ltTextFromLtRow(tr) {
+  const td = tr.querySelector("td.lt-row-toggle");
+  if (td) {
+    const fromData = (td.dataset.lt || "").trim();
+    if (fromData) return fromData;
+    const j = td.dataset.ltJson;
+    if (j != null && j !== "") {
+      try {
+        const parsed = JSON.parse(j);
+        if (parsed != null) return String(parsed);
+      } catch (_) {
+        /* ignorar JSON inválido */
+      }
+    }
+  }
+  const cell = tr.querySelector("td:nth-child(2)");
+  return (cell && cell.textContent.trim()) || "";
+}
+
+function _oltQueryRankLt(ltL, q) {
+  if (!ltL || !q) return -1;
+  if (ltL === q) return 100;
+  if (ltL.endsWith(q)) {
+    const i = ltL.length - q.length;
+    if (i === 0) return 100;
+    const prev = ltL.charCodeAt(i - 1);
+    const sep = prev === ".".charCodeAt(0) || prev === "_".charCodeAt(0) || prev === "-".charCodeAt(0);
+    if (sep) return 92;
+  }
+  if (ltL.startsWith(q)) return 82;
+  if (!ltL.includes(q)) return -1;
+  if (q.length >= 10) return 55;
+  if (q.length >= 7) return 45;
+  if (q.length >= 5) return 32;
+  if (q.length >= 3) return 22;
+  return -1;
+}
+
+function enfocarFilaLtCoincidente(raw) {
+  const q = raw.trim().toLowerCase();
+  document.querySelectorAll("tr.ltrow.olt-lt-search-hit").forEach((tr) => {
+    tr.classList.remove("olt-lt-search-hit");
+  });
+  if (!q) return;
+
+  const rows = Array.from(document.querySelectorAll("tr.ltrow")).filter(_oltRowIsSearchVisible);
+  let bestTr = null;
+  let bestRank = -1;
+
+  for (const tr of rows) {
+    const ltL = _ltTextFromLtRow(tr).toLowerCase();
+    const rank = _oltQueryRankLt(ltL, q);
+    if (rank > bestRank) {
+      bestRank = rank;
+      bestTr = tr;
+    }
+  }
+
+  if (!bestTr || bestRank < 22) return;
+
+  bestTr.classList.add("olt-lt-search-hit");
+  window.requestAnimationFrame(() => {
+    bestTr.scrollIntoView({ block: "center", behavior: "smooth" });
+    try {
+      bestTr.focus({ preventScroll: true });
+    } catch (_) {
+      /* ignore */
+    }
+  });
+}
+
 function aplicarBusquedaOlt() {
   const raw = (document.getElementById("bus-olt")?.value || "").trim();
   const q = raw.toLowerCase();
@@ -1135,6 +1309,9 @@ function aplicarBusquedaOlt() {
         if (oid) ensureNodeOpen(oid);
       });
     }
+  });
+  window.requestAnimationFrame(() => {
+    enfocarFilaLtCoincidente(raw);
   });
   _saveOltStateSoon();
 }
@@ -1198,6 +1375,7 @@ window.addEventListener("load", () => {
       updatePonesSelectionSummary();
     }
   });
+
 
   if (window.initNocPage) {
     initNocPage({

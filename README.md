@@ -1,6 +1,6 @@
-# ATC GPON Inventory
+# ATC NOC Suite
 
-Panel web en Flask para consultas de inventario GPON con datos de Postgres y operaciones específicas sobre Altiplano.
+Suite web en Flask para consultas de inventario GPON con datos de Postgres y operaciones específicas sobre Altiplano.
 El foco del proyecto es búsqueda por AID/CTO/RAMA, dashboards operativos y exportación CSV.
 Este README está orientado a onboarding rápido de desarrollo local.
 
@@ -49,7 +49,7 @@ Hardening DB recomendado (hasta ~10 concurrentes):
 - `DB_CONNECT_TIMEOUT_SECS=5`
 - `DB_STATEMENT_TIMEOUT_MS=30000`
 - `DB_IDLE_IN_TXN_TIMEOUT_MS=15000`
-- `DB_APP_NAME=gpon-inventory`
+- `DB_APP_NAME=atc-noc-suite`
 
 Variables útiles de caché dashboards:
 

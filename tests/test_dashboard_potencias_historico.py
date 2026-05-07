@@ -5,6 +5,11 @@ def test_dashboard_potencias_historico_get_renders(client):
     assert r.status_code == 200
     html = r.get_data(as_text=True)
     assert "Historico Potencias" in html
+    assert 'id="rx-snapshot-compare-wrap"' in html
+    assert 'id="rx-snapshot-compare-table"' in html
+    assert 'id="rx-snapshot-compare-tbody"' in html
+    assert "Último Rx histórico (dBm)" in html
+    assert "Comparación · último histórico vs Consultar RX" in html
     assert 'id="ratc-input"' in html
     assert 'id="power-chart"' in html
     assert "/api/potencias-historico/" in html
@@ -166,6 +171,26 @@ def test_api_potencias_historico_internal_error_includes_request_id(client, monk
     payload = r.get_json()
     assert "error" in payload
     assert "request_id" in payload
+
+
+def test_service_consultar_ahora_excludes_empty_ont_key(monkeypatch):
+    import services.historico_potencias as historico
+
+    monkeypatch.setattr(historico, "_resolver_pon_desde_rama", lambda _ratc: "BA_OLTA_X-1-1")
+    monkeypatch.setattr(
+        historico,
+        "consultar_rama_potencias_altiplano_por_ont",
+        lambda _ratc: [
+            {"ont_key": "", "rx_dbm": None},
+            {"ont_key": "   ", "rx_dbm": -19.0},
+            {"ont_key": "1", "rx_dbm": -20.0},
+        ],
+    )
+    payload = historico.consultar_potencias_altiplano_ahora_rama("MR01-RATC-0-000200")
+    assert payload["ok"] is True
+    assert len(payload["samples"]) == 1
+    assert payload["samples"][0]["ont_key"] == "1"
+    assert payload["samples"][0]["rx_dbm"] == -20.0
 
 
 def test_service_consultar_ahora_uses_seconds_timestamp(monkeypatch):

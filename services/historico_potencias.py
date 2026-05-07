@@ -150,6 +150,7 @@ def consultar_potencias_altiplano_ahora_rama(ratc: str) -> dict:
 
     Valida RAMA vía `_resolver_pon_desde_rama` como el histórico. Timestamp `YYYY-MM-DD HH:MM:SS`.
     Las ONT sin operador soportado en Altiplano van con `rx_dbm: null` en `samples`.
+    Se omiten entradas sin `ont_key` (p. ej. filas de inventario sin `object_name`).
 
     Los KPIs del formulario siguen mostrando solo el histórico en Postgres; el gráfico
     incorpora el punto en el cliente.
@@ -168,9 +169,12 @@ def consultar_potencias_altiplano_ahora_rama(ratc: str) -> dict:
 
     rows = consultar_rama_potencias_altiplano_por_ont(rama)
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    # Filas de inventario sin object_name dejan `ont_key` vacío: no son ONT identificable;
+    # no deben ir al cliente (evita filas basura en tabla comparación / sampleMap).
     samples = [
-        {"ont_key": r["ont_key"], "rx_dbm": r["rx_dbm"]}
+        {"ont_key": str(r["ont_key"]).strip(), "rx_dbm": r["rx_dbm"]}
         for r in rows
+        if str(r.get("ont_key") or "").strip()
     ]
 
     return {

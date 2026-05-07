@@ -219,7 +219,7 @@ class Config:
     DB_CONNECT_TIMEOUT_SECS = _int_env_at_least("DB_CONNECT_TIMEOUT_SECS", 5, 1)
     DB_STATEMENT_TIMEOUT_MS = _int_env_positive_or_zero("DB_STATEMENT_TIMEOUT_MS", 30000)
     DB_IDLE_IN_TXN_TIMEOUT_MS = _int_env_positive_or_zero("DB_IDLE_IN_TXN_TIMEOUT_MS", 15000)
-    DB_APP_NAME = (os.environ.get("DB_APP_NAME", "gpon-inventory").strip() or "gpon-inventory")
+    DB_APP_NAME = (os.environ.get("DB_APP_NAME", "atc-noc-suite").strip() or "atc-noc-suite")
     # Ruta bajo `static/` para el logo del splash (índice): pictograma sin texto (PNG RGBA por defecto).
     SPLASH_LOGO_STATIC = (
         os.environ.get("SPLASH_LOGO_PATH", "img/splash-mark.png").strip() or "img/splash-mark.png"
