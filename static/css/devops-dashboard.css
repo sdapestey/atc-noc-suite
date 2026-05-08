@@ -110,23 +110,29 @@ body.theme-devops {
 
 /* Light: misma estructura que dark — centro luminoso (acento), halo claro, viñeta suave */
 html[data-theme="light"] body.theme-devops {
-  background-color: #e8edf5;
+  background-color: #eceff3;
   background-image:
     radial-gradient(
       980px 520px at 50% 34%,
-      rgba(88, 166, 255, 0.22),
-      rgba(160, 200, 255, 0.09) 40%,
+      rgba(255, 255, 255, 0.95),
+      rgba(247, 249, 252, 0.85) 42%,
       transparent 72%
     ),
     radial-gradient(
-      1350px 840px at 50% 48%,
-      rgba(255, 255, 255, 0.94),
-      rgba(236, 243, 252, 0.52) 54%,
-      transparent 74%
+      1500px 920px at 50% 50%,
+      rgba(243, 246, 250, 0.9),
+      rgba(233, 238, 245, 0.72) 54%,
+      transparent 80%
     ),
     radial-gradient(
-      2100px 1180px at 50% 62%,
-      rgba(130, 155, 198, 0.26),
+      2100px 1180px at 50% 66%,
+      rgba(176, 186, 201, 0.3),
+      rgba(198, 206, 218, 0.16) 44%,
+      transparent 70%
+    ),
+    radial-gradient(
+      1850px 1020px at 50% 86%,
+      rgba(156, 167, 183, 0.18),
       transparent 76%
     );
   background-attachment: fixed;
@@ -142,38 +148,39 @@ html[data-theme="light"] body.theme-devops {
 /* Superficies tipo “glass” en light (paneles / tarjetas alineados al fondo radial) */
 html[data-theme="light"] .card,
 html[data-theme="light"] .panel {
-  background: rgba(255, 255, 255, 0.62);
+  background: rgba(255, 255, 255, 0.78);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
-  border-color: rgba(208, 215, 222, 0.92);
+  border-color: rgba(198, 206, 216, 0.95);
   box-shadow:
-    0 12px 42px rgba(31, 35, 40, 0.07),
-    0 1px 0 rgba(255, 255, 255, 0.78) inset;
+    0 12px 36px rgba(31, 35, 40, 0.08),
+    0 1px 0 rgba(255, 255, 255, 0.9) inset,
+    0 0 0 1px rgba(255, 255, 255, 0.36);
 }
 
 html[data-theme="light"] .principal-block > .card,
 html[data-theme="light"] .principal-block .card.indent1,
 html[data-theme="light"] [data-rama-card].card {
-  background: rgba(255, 255, 255, 0.48);
+  background: rgba(250, 252, 255, 0.76);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
-  border-color: rgba(208, 215, 222, 0.85);
+  border-color: rgba(200, 208, 219, 0.9);
 }
 
 html[data-theme="light"] .card .search .field,
 html[data-theme="light"] .panel .search .field,
 html[data-theme="light"] .panel > .controls .field {
-  background: rgba(243, 246, 250, 0.82);
+  background: rgba(245, 248, 252, 0.92);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  border-color: rgba(208, 215, 222, 0.88);
+  border-color: rgba(197, 205, 216, 0.9);
 }
 
 html[data-theme="light"] .controls-olt {
-  background: rgba(255, 255, 255, 0.58);
+  background: rgba(255, 255, 255, 0.76);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  border-color: rgba(208, 215, 222, 0.88);
+  border-color: rgba(197, 205, 216, 0.9);
 }
 
 @media (prefers-reduced-motion: reduce) {
