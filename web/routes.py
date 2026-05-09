@@ -7,9 +7,10 @@ from datetime import datetime, timezone
 import re
 from uuid import uuid4
 
-from flask import Response, current_app, g, jsonify, redirect, render_template, request, url_for
+from flask import Response, current_app, g, jsonify, redirect, render_template, request, session, url_for
 from urllib.parse import quote_plus
 
+from altiplano import obtener_token_entorno_nbi
 from db import ensure_db_connection_ready, healthcheck_db
 from services.domain import split_index_query_tokens
 from services import (
@@ -20,12 +21,14 @@ from services import (
     consultar_access_id_detalle_desde_bajada_inventario,
     consultar_access_id_potencias,
     consultar_cto_coordenadas,
+    consultar_cto_direccion_postal,
     consultar_cto_estructura,
     consultar_cto_potencias,
     consultar_dashboard_rama,
     inventario_dashboard_rama,
     consultar_rama_estructura,
     consultar_rama_potencias,
+    consultar_ci_op_por_rama,
     dashboard_camino_optico_access_id,
     dashboard_camino_optico_cto,
     dashboard_camino_optico_rama,
@@ -44,12 +47,29 @@ from services import (
     consultar_potencias_altiplano_ahora_rama,
     consultar_potencias_historico_rama,
 )
+from services.camino_gis import consultar_cto_coordenadas_desde_sfat
 
 
 def _build_google_maps_search_url(lat: float, lon: float) -> str:
     """Construye una URL de Google Maps a partir de lat/lon."""
     lat_lon = f"{lat},{lon}"
     return "https://www.google.com/maps/search/?api=1&query=" f"{quote_plus(lat_lon)}"
+
+
+def _consultar_cto_coords_con_fallback(cto: str) -> dict | None:
+    """Coordenadas CTO con fallback: inventario -> cm.ci_sfat_mfat_bfat."""
+    coords = consultar_cto_coordenadas(cto)
+    if coords:
+        return coords
+    try:
+        return consultar_cto_coordenadas_desde_sfat(cto)
+    except Exception:
+        current_app.logger.warning(
+            "Fallback CTO coords desde sfat falló",
+            extra={"cto": cto, **_request_context_for_log()},
+            exc_info=True,
+        )
+        return None
 
 
 def _update_route_and_maps_from_result(resultado: dict, ruta: dict) -> str | None:
@@ -67,7 +87,7 @@ def _update_route_and_maps_from_result(resultado: dict, ruta: dict) -> str | Non
     ruta["rama"] = resultado.get("RAMA")
     if not resultado.get("CTO") or resultado["CTO"] == "—":
         return None
-    coords = consultar_cto_coordenadas(resultado["CTO"])
+    coords = _consultar_cto_coords_con_fallback(resultado["CTO"])
     if not coords:
         return None
     return _build_google_maps_search_url(coords["lat"], coords["lon"])
@@ -93,6 +113,7 @@ def _resolve_index_consulta(token: str) -> dict:
         "es_rama": False,
         "ruta": {"aid": None, "cto": None, "rama": None},
         "cto_maps_url": None,
+        "cto_postal_address": None,
         "busqueda_aid": None,
     }
     if not token:
@@ -109,7 +130,7 @@ def _resolve_index_consulta(token: str) -> dict:
     elif "FATC" in vu:
         consulta["tabla_cto"] = consultar_cto_estructura(token)
         consulta["ruta"]["cto"] = token
-        coords = consultar_cto_coordenadas(token)
+        coords = _consultar_cto_coords_con_fallback(token)
         if coords:
             consulta["cto_maps_url"] = _build_google_maps_search_url(
                 coords["lat"], coords["lon"]
@@ -127,6 +148,9 @@ def _resolve_index_consulta(token: str) -> dict:
             consulta["cto_maps_url"] = _update_route_and_maps_from_result(resultado, consulta["ruta"])
         else:
             consulta["busqueda_aid"] = {"tipo": "no_existe", "AID": token}
+
+    if consulta["ruta"].get("cto"):
+        consulta["cto_postal_address"] = consultar_cto_direccion_postal(consulta["ruta"]["cto"])
 
     return consulta
 
@@ -370,12 +394,26 @@ def register(app):
         if not cto:
             return jsonify({"ok": False, "error": "Parámetro cto requerido"}), 400
         try:
-            coords = consultar_cto_coordenadas(cto)
+            coords = _consultar_cto_coords_con_fallback(cto)
         except Exception:
             return _log_and_internal_error("consultar_cto_coordenadas failed")
         if not coords:
             return jsonify({"ok": False, "error": "Sin coordenadas para esta CTO"})
         return jsonify({"ok": True, "cto": cto, "lat": coords["lat"], "lon": coords["lon"]})
+
+    @app.route("/dashboard/rama/cto-address")
+    def dash_rama_cto_address():
+        """Dirección postal de CTO (si existe en cm.ci_sfat_mfat_bfat)."""
+        cto = (request.args.get("cto") or "").strip()
+        if not cto:
+            return jsonify({"ok": False, "error": "Parámetro cto requerido"}), 400
+        try:
+            addr = consultar_cto_direccion_postal(cto)
+        except Exception:
+            return _log_and_internal_error("consultar_cto_direccion_postal failed")
+        if not addr:
+            return jsonify({"ok": False, "cto": cto, "error": "Sin dirección postal para esta CTO"})
+        return jsonify({"ok": True, "cto": cto, "address": addr})
 
     @app.route("/dashboard/rama/rama-map")
     def dash_rama_rama_map():
@@ -440,9 +478,60 @@ def register(app):
     def dash_camino_optico():
         return render_template("dashboard_camino_optico.html")
 
+    def _orquestador_session_token():
+        if session.get("orquestador_ok") and session.get("orquestador_inp_token"):
+            return session.get("orquestador_inp_token")
+        return None
+
     @app.route("/dashboard/altiplano")
     def dash_altiplano():
-        return render_template("dashboard_altiplano.html")
+        if not _orquestador_session_token():
+            return render_template("dashboard_altiplano_login.html")
+        return render_template(
+            "dashboard_altiplano.html",
+            orquestador_user=(session.get("orquestador_user") or "").strip() or "—",
+        )
+
+    @app.route("/dashboard/altiplano/login", methods=["POST"])
+    def dash_altiplano_login():
+        """Valida usuario/contraseña contra Altiplano INP y abre sesión Orquestador."""
+        data = request.get_json(silent=True) or {}
+        user = (data.get("username") or data.get("altiplano_user") or "").strip()
+        pwd = data.get("password")
+        if pwd is None:
+            pwd = data.get("altiplano_password")
+        if pwd is not None and not isinstance(pwd, str):
+            pwd = str(pwd)
+        pwd = pwd or ""
+        if not user or pwd == "":
+            return jsonify({"ok": False, "message": "Usuario y contraseña requeridos"}), 400
+
+        token = obtener_token_entorno_nbi("INP", user, pwd, force_refresh=True)
+        if not token:
+            return (
+                jsonify(
+                    {
+                        "ok": False,
+                        "message": (
+                            "No se pudo iniciar sesión en Altiplano. "
+                            "Verificá usuario y contraseña o la conectividad de red."
+                        ),
+                    }
+                ),
+                401,
+            )
+
+        session["orquestador_ok"] = True
+        session["orquestador_user"] = user
+        session["orquestador_inp_token"] = token
+        return jsonify({"ok": True, "message": "Sesión iniciada"})
+
+    @app.route("/dashboard/altiplano/logout", methods=["POST"])
+    def dash_altiplano_logout():
+        session.pop("orquestador_ok", None)
+        session.pop("orquestador_user", None)
+        session.pop("orquestador_inp_token", None)
+        return jsonify({"ok": True})
 
     @app.route("/dashboard/potencias-historico")
     def dash_potencias_historico():
@@ -561,6 +650,10 @@ def register(app):
         vno = (data.get("vno") or "").strip()
         fiber_name = (data.get("fiber_name") or "").strip()
         access_id = (data.get("access_id") or "").strip()
+        altiplano_user = (data.get("altiplano_user") or data.get("nbi_user") or "").strip()
+        altiplano_password = data.get("altiplano_password")
+        if altiplano_password is not None and not isinstance(altiplano_password, str):
+            altiplano_password = str(altiplano_password)
         if sitio:
             device_name = f"BA_OLTA_{sitio}"
         if device_name and lt and pon:
@@ -581,19 +674,55 @@ def register(app):
             if not val:
                 return jsonify({"ok": False, "message": f"Parámetro {key} requerido"}), 400
 
-        out = crear_ont_connection_intent(
-            operador=operador,
-            entorno_nbi=entorno_nbi or "INP",
-            device_name=device_name,
-            lt=lt,
-            pon=pon,
-            ont=ont,
-            vno=vno,
-            fiber_name=fiber_name,
-            access_id=access_id,
-            pir=ONT_CONNECTION_PIR_FIXED,
-            cir=ONT_CONNECTION_CIR_FIXED,
+        sess_token = _orquestador_session_token()
+        has_body_creds = bool(altiplano_user) and (
+            altiplano_password is not None and str(altiplano_password) != ""
         )
+
+        if sess_token:
+            out = crear_ont_connection_intent(
+                operador=operador,
+                entorno_nbi=entorno_nbi or "INP",
+                device_name=device_name,
+                lt=lt,
+                pon=pon,
+                ont=ont,
+                vno=vno,
+                fiber_name=fiber_name,
+                access_id=access_id,
+                pir=ONT_CONNECTION_PIR_FIXED,
+                cir=ONT_CONNECTION_CIR_FIXED,
+                nbi_bearer_token=sess_token,
+            )
+        elif has_body_creds:
+            out = crear_ont_connection_intent(
+                operador=operador,
+                entorno_nbi=entorno_nbi or "INP",
+                device_name=device_name,
+                lt=lt,
+                pon=pon,
+                ont=ont,
+                vno=vno,
+                fiber_name=fiber_name,
+                access_id=access_id,
+                pir=ONT_CONNECTION_PIR_FIXED,
+                cir=ONT_CONNECTION_CIR_FIXED,
+                nbi_username=altiplano_user or None,
+                nbi_password=altiplano_password,
+            )
+        else:
+            return (
+                jsonify(
+                    {
+                        "ok": False,
+                        "message": (
+                            "Sesión Orquestador no iniciada. "
+                            "Ingresá con tu usuario Altiplano (INP) desde la pantalla de login."
+                        ),
+                    }
+                ),
+                401,
+            )
         code = 201 if out.get("ok") else 502
         return jsonify(out), code
 
@@ -631,3 +760,18 @@ def register(app):
         if tipo in ("access_id", "aid", "id"):
             return jsonify(dashboard_camino_optico_access_id(valor))
         return jsonify({"error": "tipo inválido. Use: cto, rama, access_id o auto"}), 400
+
+    @app.route("/dashboard/camino-optico/gis", methods=["POST"])
+    def dash_camino_optico_gis():
+        """GeoJSON del camino óptico por rama (`cm.ci_op` o tabla configurada)."""
+        data = request.get_json(silent=True) or {}
+        valor = (data.get("valor") or data.get("rama") or "").strip()
+        if not valor:
+            return jsonify({"ok": False, "error": "Parámetro valor (rama) requerido"}), 400
+        try:
+            out = consultar_ci_op_por_rama(valor)
+        except Exception:
+            return _log_and_internal_error("Error interno consultando GIS Camino óptico")
+        if not out.get("ok"):
+            return jsonify(out), 400
+        return jsonify(out)

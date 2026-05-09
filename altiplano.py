@@ -18,7 +18,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 logger = logging.getLogger(__name__)
 
-# Cache de tokens por auth_url: ``auth_url -> (token, monotonic_ts)``
+# Cache de tokens: ``(auth_url, usuario) -> (token, monotonic_ts)``
 _token_cache = {}
 _ALTIPLANO_POWER_TARGETS_BY_OPERATOR_ID = {
     1001: ("tasa", "https://10.200.4.101:32443/tasa-altiplano-ac/rest/auth/login"),
@@ -43,25 +43,36 @@ def _obtener_token(auth_url, username=None, password=None, force_refresh=False):
     """
     Devuelve un token cacheado para Altiplano.
     Si no existe, autentica y lo guarda.
+
+    La caché es por (auth_url, usuario) para no mezclar tokens entre credenciales distintas.
     """
-    if force_refresh:
-        _token_cache.pop(auth_url, None)
+    user_in = (username or "").strip() if username else ""
+    pwd_in = password if isinstance(password, str) else (password or "")
+    pwd_in = pwd_in if isinstance(pwd_in, str) else str(pwd_in)
 
-    if auth_url in _token_cache:
-        token, ts = _token_cache[auth_url]
-        max_age = get_altiplano_token_cache_max_age_seconds()
-        if max_age > 0 and (time.monotonic() - ts) > max_age:
-            _token_cache.pop(auth_url, None)
-        else:
-            return token
-
-    user = username
-    pwd = password
-    if not user or not pwd:
+    if user_in and pwd_in != "":
+        user = user_in
+        pwd = pwd_in
+    else:
         user, pwd = get_altiplano_credentials()
+        user = (user or "").strip()
+        pwd = pwd or ""
+
     if not user or not pwd:
         logger.warning("ALTIPLANO_USER / ALTIPLANO_PASSWORD no configurados")
         return None
+
+    cache_key = (auth_url, user)
+    if force_refresh:
+        _token_cache.pop(cache_key, None)
+
+    if cache_key in _token_cache:
+        token, ts = _token_cache[cache_key]
+        max_age = get_altiplano_token_cache_max_age_seconds()
+        if max_age > 0 and (time.monotonic() - ts) > max_age:
+            _token_cache.pop(cache_key, None)
+        else:
+            return token
 
     auth = requests.post(
         auth_url, auth=(user, pwd), verify=False, timeout=60
@@ -71,8 +82,38 @@ def _obtener_token(auth_url, username=None, password=None, force_refresh=False):
 
     token = auth.json().get("accessToken")
     if token:
-        _token_cache[auth_url] = (token, time.monotonic())
+        _token_cache[cache_key] = (token, time.monotonic())
     return token
+
+
+def obtener_token_entorno_nbi(entorno_nbi: str, username: str, password, *, force_refresh: bool = False):
+    """
+    Obtiene un Bearer token desde el endpoint de login REST del entorno NBI (ej. INP).
+
+    Args:
+        entorno_nbi: Clave de entorno compatible con `get_altiplano_nbi_target` (INP, TASA, …).
+        username: Usuario Altiplano.
+        password: Contraseña (se envía tal cual al POST de login).
+        force_refresh: Si True, ignora la entrada en caché para ese usuario/auth_url.
+
+    Returns:
+        Token string o None si falla login o configuración.
+    """
+    op = str(entorno_nbi or "").strip().upper()
+    if not op:
+        return None
+    host, port, base_url = get_altiplano_nbi_target(op)
+    if not host or not port or not base_url:
+        return None
+    u = (username or "").strip()
+    if not u:
+        return None
+    pwd = password if isinstance(password, str) else (password or "")
+    pwd = pwd if isinstance(pwd, str) else str(pwd)
+    if pwd == "":
+        return None
+    auth_url = f"https://{host}:{port}/{base_url}/rest/auth/login"
+    return _obtener_token(auth_url, username=u, password=pwd, force_refresh=force_refresh)
 
 
 def cambiar_sn_ont(access_id, operador, ont_target, new_sn):
@@ -180,12 +221,18 @@ def crear_ont_connection_intent(
     pir=1000,
     cir=35,
     intent_type_version="11",
+    nbi_username=None,
+    nbi_password=None,
+    nbi_bearer_token=None,
 ):
     """
     Crea un intent `ont-connection` en Altiplano.
 
     Args:
-        operador: Operador de negocio (credenciales por operador).
+        operador: Operador de negocio (credenciales por operador si no hay UI).
+        nbi_username / nbi_password: opcional; si ambos vienen informados, autentican
+            contra el NBI en lugar de variables de entorno por operador.
+        nbi_bearer_token: opcional; si viene informado, se usa como Bearer y no se llama al login.
         entorno_nbi: Entorno de destino NBI (por ejemplo INP).
         device_name: Equipo OLT lógico.
         lt: LT de la ONT.
@@ -240,14 +287,32 @@ def crear_ont_connection_intent(
     if not host or not port or not base_url:
         return {"ok": False, "message": f"Entorno NBI no soportado: {nbi_env}"}
 
-    username, pwd = get_altiplano_operator_credentials(op)
-    if not username or not pwd:
-        return {"ok": False, "message": f"Credenciales no configuradas para operador {op}"}
-
     auth_url = f"https://{host}:{port}/{base_url}/rest/auth/login"
-    token = _obtener_token(auth_url, username=username, password=pwd)
-    if not token:
-        return {"ok": False, "message": "No se pudo autenticar contra Altiplano"}
+
+    bearer_in = (nbi_bearer_token or "").strip() if nbi_bearer_token else ""
+    username_for_refresh = None
+    pwd_for_refresh = None
+    token = None
+
+    if bearer_in:
+        token = bearer_in
+    else:
+        ui_user = (nbi_username or "").strip() if nbi_username else ""
+        ui_pwd = nbi_password if isinstance(nbi_password, str) else (nbi_password or "")
+        ui_pwd = ui_pwd if isinstance(ui_pwd, str) else str(ui_pwd)
+
+        if ui_user and ui_pwd != "":
+            username_for_refresh, pwd_for_refresh = ui_user, ui_pwd
+        else:
+            username_for_refresh, pwd_for_refresh = get_altiplano_operator_credentials(op)
+            if not username_for_refresh or not pwd_for_refresh:
+                return {"ok": False, "message": f"Credenciales no configuradas para operador {op}"}
+
+        token = _obtener_token(
+            auth_url, username=username_for_refresh, password=pwd_for_refresh
+        )
+        if not token:
+            return {"ok": False, "message": "No se pudo autenticar contra Altiplano"}
 
     target = f"{device}-{lt_s}-{pon_s}-{ont_s}#{vno_s}#gpon"
     url = (
@@ -288,10 +353,15 @@ def crear_ont_connection_intent(
         return {"ok": False, "message": f"Error de red hacia Altiplano: {ex}"}
 
     if res.status_code == 401:
+        if bearer_in:
+            return {
+                "ok": False,
+                "message": "Sesión Altiplano expirada; cerrá sesión en Orquestador y volvé a ingresar.",
+            }
         token = _obtener_token(
             auth_url,
-            username=username,
-            password=pwd,
+            username=username_for_refresh,
+            password=pwd_for_refresh,
             force_refresh=True,
         )
         if not token:

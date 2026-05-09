@@ -788,6 +788,26 @@ a.global-nav-dd-link.global-nav-dd-link--current {
   padding: 12px;
 }
 
+.page-historico-potencias .historico-dashboard-footer {
+  margin-top: 8px;
+  padding: 16px 18px 14px;
+  border-top: 1px solid var(--border-muted);
+}
+
+.page-historico-potencias .historico-dashboard-credits {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.45;
+  text-align: right;
+  opacity: 0.92;
+}
+
+@media (max-width: 560px) {
+  .page-historico-potencias .historico-dashboard-credits {
+    text-align: center;
+  }
+}
+
 .page-historico-potencias .historico-chart-toolbar {
   display: flex;
   justify-content: flex-end;
@@ -2428,7 +2448,7 @@ button.pot-btn-loading .pot-txrx-label {
   margin-bottom: 20px;
 }
 
-/* ----- Dashboard Altiplano ----- */
+/* ----- Dashboard Orquestador ----- */
 .altiplano-subtabs-shell {
   border-bottom: 1px solid var(--border-default);
   margin-bottom: 12px;
@@ -2500,7 +2520,53 @@ button.pot-btn-loading .pot-txrx-label {
 }
 
 .altiplano-panel-inner {
-  padding: 16px 18px;
+  padding: 18px 20px 20px;
+}
+
+/* Formulario INP: 5 columnas coherentes + fila de acciones separada */
+.altiplano-form-grid {
+  display: grid;
+  grid-template-columns:
+    minmax(148px, 1.4fr)
+    minmax(148px, 1.4fr)
+    minmax(92px, 1fr)
+    minmax(92px, 1fr)
+    minmax(92px, 1fr);
+  gap: 18px 16px;
+  align-items: end;
+}
+
+.altiplano-form-grid > .altiplano-field {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.altiplano-form-grid label.t {
+  margin-bottom: 0;
+}
+
+.altiplano-form-grid .altiplano-field-sm {
+  max-width: none;
+}
+
+.altiplano-form-grid .altiplano-field-vno {
+  max-width: none;
+}
+
+.altiplano-field-access--span {
+  grid-column: 3 / span 3;
+}
+
+.altiplano-form-footer {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
+  align-items: flex-end;
+  padding-top: 20px;
+  margin-top: 10px;
+  border-top: 1px solid var(--border-muted);
 }
 
 .altiplano-row {
@@ -2529,6 +2595,12 @@ button.pot-btn-loading .pot-txrx-label {
   min-width: 240px;
 }
 
+.altiplano-form-grid .altiplano-field-device,
+.altiplano-form-grid .altiplano-field-fiber,
+.altiplano-form-grid .altiplano-field-access {
+  min-width: 0;
+}
+
 .altiplano-field-sm {
   min-width: 110px;
   max-width: 140px;
@@ -2544,7 +2616,72 @@ button.pot-btn-loading .pot-txrx-label {
   align-items: flex-end;
 }
 
+.altiplano-actions--stacked {
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12px;
+  flex: 0 1 auto;
+}
+
+.altiplano-form-footer .altiplano-actions--stacked {
+  padding: 4px 2px 0;
+}
+
+.altiplano-actions-btns {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.altiplano-credits {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.45;
+  text-align: right;
+  white-space: nowrap;
+  opacity: 0.92;
+}
+
+@media (max-width: 960px) {
+  .altiplano-form-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .altiplano-field-access--span {
+    grid-column: 1;
+  }
+
+  .altiplano-form-footer {
+    justify-content: stretch;
+    padding-top: 18px;
+    margin-top: 8px;
+  }
+
+  .altiplano-form-footer .altiplano-actions--stacked {
+    align-items: stretch;
+    width: 100%;
+  }
+
+  .altiplano-form-footer .altiplano-actions-btns {
+    justify-content: stretch;
+    flex-direction: column;
+  }
+
+  .altiplano-form-footer .altiplano-actions-btns .btn {
+    width: 100%;
+  }
+
+  .altiplano-credits {
+    text-align: center;
+    white-space: normal;
+  }
+}
+
 .altiplano-panel input[type="text"],
+.altiplano-panel input[type="password"],
 .altiplano-panel select {
   width: 100%;
   padding: 10px 12px;
@@ -2555,9 +2692,15 @@ button.pot-btn-loading .pot-txrx-label {
   color: var(--fg-default);
   font-size: 14px;
   font-family: inherit;
+  box-sizing: border-box;
+}
+
+.altiplano-panel input[type="password"] {
+  padding-right: 12px;
 }
 
 .altiplano-panel input[type="text"]:focus,
+.altiplano-panel input[type="password"]:focus,
 .altiplano-panel select:focus {
   outline: none;
   border-color: var(--accent);
@@ -2571,6 +2714,108 @@ button.pot-btn-loading .pot-txrx-label {
 .altiplano-result {
   margin-top: 12px;
   padding: 14px 16px;
+}
+
+.orquestador-session-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+}
+
+.orquestador-session-user strong {
+  font-weight: 600;
+}
+
+/* Mismo ancho que Consulta / otros dashboards: ocupa todo el .container */
+.orquestador-login-shell {
+  box-sizing: border-box;
+  width: 100%;
+  margin: 12px 0 32px;
+  padding: 0;
+}
+
+.orquestador-login-panel {
+  padding: 0;
+  overflow: hidden;
+}
+
+.orquestador-login-head {
+  padding: 16px 18px 14px;
+  border-bottom: 1px solid var(--border-muted);
+  background: linear-gradient(
+    180deg,
+    var(--canvas-default) 0%,
+    var(--canvas-subtle) 100%
+  );
+}
+
+.orquestador-login-title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--fg-default);
+}
+
+.orquestador-login-subtitle {
+  margin: 6px 0 0;
+  font-size: 0.88rem;
+  line-height: 1.4;
+}
+
+.orquestador-login-hint.controls-hint {
+  margin: 0;
+  padding: 10px 18px 12px;
+  border-bottom: 1px solid var(--border-muted);
+}
+
+.orquestador-login-body.altiplano-panel-inner {
+  padding-top: 18px;
+  padding-bottom: 18px;
+}
+
+.orquestador-login-fields {
+  align-items: stretch;
+}
+
+.orquestador-login-fields .altiplano-field-site {
+  flex: 1 1 260px;
+  min-width: min(100%, 260px);
+  max-width: none;
+}
+
+.orquestador-login-actions {
+  margin-top: 18px;
+  padding-top: 4px;
+  display: flex;
+  justify-content: flex-start;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.orquestador-login-actions .btn-primary {
+  min-width: 140px;
+  padding: 10px 20px;
+  font-weight: 600;
+}
+
+.orquestador-login-feedback {
+  margin-top: 16px;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-muted);
+  background: var(--canvas-inset);
+  font-size: 0.9rem;
+  line-height: 1.45;
+  min-height: 2.75em;
+}
+
+.orquestador-login-feedback:empty {
+  display: none;
 }
 
 .camino-panel-inner {
@@ -2613,6 +2858,21 @@ button.pot-btn-loading .pot-txrx-label {
   min-width: 220px;
 }
 
+/* Columna principal mapa + resultados: mismo gutter que el panel de búsqueda */
+.page-camino .camino-gis-panel {
+  padding: 16px 18px 18px;
+  box-sizing: border-box;
+}
+
+.page-camino .camino-gis-head {
+  margin-bottom: 12px;
+}
+
+.page-camino .camino-out {
+  box-sizing: border-box;
+  width: 100%;
+}
+
 .camino-result {
   padding: 16px 18px;
   margin-bottom: 16px;
@@ -2624,6 +2884,58 @@ button.pot-btn-loading .pot-txrx-label {
   align-items: baseline;
   gap: 10px 14px;
   margin: 0 0 12px;
+}
+
+/* Rama: título y métricas en una fila que reparte el ancho (chips a la derecha en desktop) */
+.camino-result-head--rama {
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px 20px;
+  margin: 0 0 18px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border-muted);
+}
+
+.camino-result-head--rama .camino-result-title {
+  margin: 0;
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.camino-stat-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: stretch;
+  justify-content: flex-end;
+  flex: 1 1 auto;
+}
+
+.camino-stat-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: var(--radius);
+  background: var(--canvas-inset);
+  border: 1px solid var(--border-default);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.02) inset;
+}
+
+.camino-stat-chip__val {
+  font-size: 1.25rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--success);
+  line-height: 1.1;
+}
+
+.camino-stat-chip__lbl {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--fg-muted);
 }
 
 .camino-result-head .camino-result-title {
@@ -2777,39 +3089,149 @@ button.btn-camino:disabled {
   font-weight: 600;
 }
 
-.path-block {
-  margin: 10px 0 14px;
-  padding: 14px 16px;
+.path-block-empty {
+  margin: 4px 0 16px;
+}
+
+.path-block.path-block--collapsible {
+  margin: 12px 0 18px;
+  padding: 16px 18px 18px;
   border-radius: var(--radius);
   background: var(--accent-muted);
   border: 1px solid var(--accent-border);
   border-left: 3px solid var(--accent);
 }
 
-.path-block h3 {
-  margin: 0 0 10px;
+.path-block__summary {
+  cursor: pointer;
+  list-style: none;
+  position: relative;
+  padding: 2px 1.35rem 2px 0;
+}
+
+.path-block__summary::-webkit-details-marker {
+  display: none;
+}
+
+.path-block__summary::marker {
+  content: "";
+}
+
+.path-block.path-block--collapsible .path-block__summary::after {
+  content: "";
+  position: absolute;
+  right: 2px;
+  top: 0.55em;
+  width: 0.4em;
+  height: 0.4em;
+  border-right: 2px solid var(--accent);
+  border-bottom: 2px solid var(--accent);
+  transform: rotate(45deg);
+  transition: transform 0.15s ease, top 0.15s ease;
+  opacity: 0.85;
+}
+
+.path-block.path-block--collapsible[open] .path-block__summary::after {
+  top: 0.72em;
+  transform: rotate(-135deg);
+}
+
+.path-block.path-block--collapsible:not([open]) .path-block__summary {
+  margin-bottom: 0;
+}
+
+.path-block__summary-title {
+  display: block;
+  margin: 0;
   font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--accent);
+  line-height: 1.35;
+}
+
+.path-block__summary-meta {
+  display: block;
+  margin: 6px 0 0;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.45;
+  color: var(--fg-muted);
+}
+
+.path-block__summary-meta .inline-code {
+  font-size: 0.92em;
+}
+
+.path-block__body {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--accent-border);
 }
 
 .path-steps {
   margin: 0;
-  padding-left: 18px;
-  line-height: 1.65;
+  padding-left: 1.35em;
+  line-height: 1.5;
   color: var(--fg-default);
   font-size: 13px;
 }
 
 .path-steps li {
-  margin-bottom: 4px;
+  display: grid;
+  grid-template-columns: minmax(108px, min(34%, 220px)) minmax(0, 1fr);
+  gap: 6px 16px;
+  align-items: start;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-muted);
 }
 
-.path-steps strong {
+.path-steps li:last-child {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.path-step-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
   color: var(--fg-muted);
-  font-weight: 600;
+  line-height: 1.4;
+}
+
+.path-step-value {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--fg-default);
+  line-height: 1.55;
+  word-break: break-word;
+}
+
+@media (max-width: 560px) {
+  .path-steps li {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+
+  .camino-stat-chips {
+    justify-content: flex-start;
+    width: 100%;
+  }
+
+  .camino-result-head--rama {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+/* Tabla CTO/ONT y bloques superiores: mismo ancho útil dentro del panel */
+.page-camino .camino-result .table-wrap {
+  width: 100%;
+  margin-top: 6px;
 }
 
 .small {
@@ -2852,6 +3274,81 @@ details.det summary {
   animation: devops-spin 0.7s linear infinite;
   vertical-align: -2px;
   margin-left: 6px;
+}
+
+/* Camino óptico — mapa GIS (cm / PostGIS) */
+.camino-gis-panel {
+  margin-top: 16px;
+  scroll-margin-top: 72px;
+}
+
+.camino-gis-head {
+  margin-bottom: 10px;
+}
+
+.camino-gis-head h2 {
+  margin: 0 0 6px;
+  font-size: 1.05rem;
+}
+
+.camino-gis-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px 14px;
+  margin-bottom: 10px;
+}
+
+.camino-gis-field-grow {
+  flex: 1 1 220px;
+  min-width: 180px;
+}
+
+.camino-gis-field-wrap label.t {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.camino-gis-map-wrap {
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg-elevated, #1a1d23);
+  min-height: 280px;
+}
+
+#camino-gis-map {
+  height: min(52vh, 420px);
+  width: 100%;
+}
+
+/* Evitar artefactos (líneas entre tiles) en algunos navegadores / temas oscuros */
+.camino-gis-map-wrap .leaflet-container {
+  background: #0c0e12;
+}
+.camino-gis-map-wrap .leaflet-tile-container img {
+  outline: none;
+  box-shadow: none;
+}
+
+.camino-gis-kv-wrap {
+  margin-top: 12px;
+}
+
+.camino-gis-kv-wrap h3 {
+  margin: 0 0 8px;
+  font-size: 0.95rem;
+}
+
+.camino-gis-meta {
+  font-size: 12px;
+  color: var(--fg-muted);
+  margin-bottom: 8px;
+}
+
+.camino-gis-map-notes {
+  margin: 0 0 10px;
+  line-height: 1.45;
 }
 
 /* ----- Consulta: varios resultados ----- */

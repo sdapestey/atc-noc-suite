@@ -22,6 +22,20 @@ logger = logging.getLogger(__name__)
 # Inventario CM: sin lectura Altiplano para estos estados de puerto FAT.
 _SIN_POTENCIAS_STATUS = frozenset({"FREE", "RESERVED"})
 
+_PARTIDO_DISPLAY_MAP = {
+    "BA SAFE": "BA San Fernando",
+    "BA ESCO": "BA Escobar",
+    "BA SISI": "BA San Isidro",
+    "BA VILO": "BA Vicente Lopez",
+    "BA TIGR": "BA Tigre",
+    "BA MORO": "BA Moreno",
+    "BA MORE": "BA Moreno",
+    # Se deja por completitud aunque hoy no aparezca en la muestra.
+    "BA SMAR": "BA San Martin",
+    "BA SAMA": "BA San Martin",
+    "BA SANM": "BA San Martin",
+}
+
 
 def _sin_potencias_por_status(status) -> bool:
     return str(status or "").strip().upper() in _SIN_POTENCIAS_STATUS
@@ -557,6 +571,51 @@ def consultar_cto_coordenadas(cto):
 
     lat, lon = row
     return {"lat": float(lat), "lon": float(lon)}
+
+
+def consultar_cto_direccion_postal(cto: str) -> str | None:
+    """Devuelve dirección postal estimada de la CTO desde `cm.ci_sfat_mfat_bfat`.
+
+    Prioriza match por `nombre_cliente` (más consistente con `location_description`)
+    y luego `nombre_atc`.
+    """
+    cto_norm = (cto or "").strip()
+    if not cto_norm:
+        return None
+
+    with db_cursor() as cur:
+        cur.execute(
+            """
+            SELECT
+                NULLIF(btrim(s.direccion), '') AS direccion,
+                NULLIF(btrim(s.partido_despliegue), '') AS partido,
+                CASE
+                    WHEN s.nombre_cliente = %s THEN 0
+                    WHEN s.nombre_atc = %s THEN 1
+                    ELSE 9
+                END AS prio
+            FROM cm.ci_sfat_mfat_bfat s
+            WHERE (s.nombre_cliente = %s OR s.nombre_atc = %s)
+              AND NULLIF(btrim(s.direccion), '') IS NOT NULL
+            ORDER BY prio ASC
+            LIMIT 1
+            """,
+            (cto_norm, cto_norm, cto_norm, cto_norm),
+        )
+        row = cur.fetchone()
+
+    if not row:
+        return None
+    direccion, partido, _prio = row
+    if not direccion:
+        return None
+    dir_norm = " ".join(str(direccion).replace(",", " ").split())
+
+    partido_norm = str(partido or "").strip()
+    if partido_norm:
+        partido_norm = _PARTIDO_DISPLAY_MAP.get(partido_norm.upper(), partido_norm)
+        return f"{dir_norm} ({partido_norm})"
+    return dir_norm
 
 
 def consultar_rama_estructura(rama):

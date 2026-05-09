@@ -3,6 +3,41 @@
   margin-bottom: 0.75rem;
 }
 
+.rama-cto-address {
+  margin: 0 0 0.45rem;
+  min-height: 1.4em;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border-muted, #21262d);
+  background: var(--canvas-inset, #0f141b);
+}
+
+.rama-cto-address__label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent, #58a6ff);
+}
+
+.rama-cto-address__value {
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg-default, #e6edf3);
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.rama-cto-address__loading {
+  font-size: 12px;
+  color: var(--fg-muted, #8b949e);
+}
+
 .rama-cto-map-msg {
   margin-bottom: 0.35rem;
   min-height: 1.25em;

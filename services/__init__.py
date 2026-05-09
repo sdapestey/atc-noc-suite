@@ -6,6 +6,7 @@ from .camino_optico import (
     dashboard_camino_optico_rama,
     infer_camino_consulta_tipo,
 )
+from .camino_gis import consultar_ci_op_por_rama
 from .dashboard_calidad_inventario import (
     dashboard_calidad_inventario_hallazgos,
     dashboard_calidad_inventario_resumen,
@@ -36,6 +37,7 @@ from .inventory import (
     consultar_access_id_detalle_desde_bajada_inventario,
     consultar_access_id_estructura,
     consultar_cto_coordenadas,
+    consultar_cto_direccion_postal,
     consultar_access_id_potencias,
     consultar_cto_estructura,
     consultar_cto_potencias,
@@ -50,6 +52,7 @@ __all__ = [
     "consultar_access_id_estructura",
     "consultar_access_id_potencias",
     "consultar_cto_coordenadas",
+    "consultar_cto_direccion_postal",
     "consultar_cto_estructura",
     "consultar_cto_potencias",
     "consultar_rama_estructura",
@@ -75,6 +78,7 @@ __all__ = [
     "dashboard_camino_optico_rama",
     "dashboard_camino_optico_access_id",
     "infer_camino_consulta_tipo",
+    "consultar_ci_op_por_rama",
     "cambiar_sn_ont",
     "crear_ont_connection_intent",
 ]

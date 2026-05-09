@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<title>Altiplano · ATC NOC Suite</title>
+<title>Orquestador · ATC NOC Suite</title>
 {% include 'partials/noc_head.html' %}
 <script src="{{ url_for('static', filename='js/noc-tools.js') }}"></script>
 </head>
@@ -15,17 +15,21 @@
         <h1>ATC NOC Suite</h1>
       </div>
       <p class="page-lead">
-        <strong>Altiplano</strong> — creación de intent <code class="inline-code">ont-connection</code>.
+        <strong>Orquestador</strong> — creación de intent <code class="inline-code">ont-connection</code>.
       </p>
-      <small class="muted">Créditos: Lucas Gimenez · Mgr. NOC.</small>
     </div>
     {% include 'partials/noc_topbar.html' %}
   </div>
 
   {% include 'partials/nav_dashboard.html' %}
 
+  <div class="orquestador-session-bar panel" role="region" aria-label="Sesión Orquestador">
+    <span class="orquestador-session-user"><span class="muted">Usuario:</span> {{ orquestador_user }}</span>
+    <button type="button" id="btn-orquestador-logout" class="btn btn-ghost">Cerrar sesión</button>
+  </div>
+
   <div class="altiplano-subtabs-shell">
-    <div class="altiplano-subtabs" role="tablist" aria-label="Secciones Altiplano">
+    <div class="altiplano-subtabs" role="tablist" aria-label="Secciones Orquestador">
       <button id="alt-tab-inp" class="altiplano-subtab is-active" type="button" role="tab" aria-selected="true" aria-controls="altiplano-panel-inp">INP</button>
       <button id="alt-tab-vno" class="altiplano-subtab" type="button" role="tab" aria-selected="false" aria-controls="altiplano-panel-vno">VNO</button>
     </div>
@@ -34,7 +38,7 @@
   <div id="altiplano-panel-inp" role="tabpanel" aria-labelledby="alt-tab-inp">
     <div class="panel altiplano-panel">
       <div class="altiplano-panel-inner">
-      <div class="row altiplano-row">
+      <div class="altiplano-form-grid" aria-label="Formulario ONT Connection INP">
         <div class="altiplano-field altiplano-field-site">
           <label class="t" for="sitio">Sitio</label>
           <select id="sitio">
@@ -119,8 +123,7 @@
           <label class="t" for="ont">ONT</label>
           <input id="ont" type="text" autocomplete="off">
         </div>
-      </div>
-      <div class="row altiplano-row altiplano-row-gap-top">
+
         <div class="altiplano-field altiplano-field-vno">
           <label class="t" for="vno">VNO</label>
           <select id="vno">
@@ -141,13 +144,19 @@
           <label class="t" for="fiber_name">Fiber Name</label>
           <input id="fiber_name" type="text" readonly>
         </div>
-        <div class="altiplano-field altiplano-field-access">
+        <div class="altiplano-field altiplano-field-access altiplano-field-access--span">
           <label class="t" for="access_id">Access ID</label>
           <input id="access_id" type="text" placeholder="1051234567" autocomplete="off">
         </div>
-        <div class="altiplano-actions">
-          <button id="btn-clear" type="button" class="btn btn-ghost">Limpiar campos</button>
-          <button id="btn-create" type="button" class="btn btn-primary">Crear ONT Connection</button>
+
+        <div class="altiplano-form-footer">
+          <div class="altiplano-actions altiplano-actions--stacked">
+            <div class="altiplano-actions-btns">
+              <button id="btn-clear" type="button" class="btn btn-ghost">Limpiar campos</button>
+              <button id="btn-create" type="button" class="btn btn-primary">Crear ONT Connection</button>
+            </div>
+            <p class="altiplano-credits muted">Desarrollo e implementacion por Mgr. NOC Lucas Gimenez</p>
+          </div>
         </div>
       </div>
       </div>
@@ -186,7 +195,7 @@
       <p class="muted">Próximamente.</p>
     </div>
     <div id="alt-vno-panel-cambio-cto" class="panel altiplano-result" role="tabpanel" aria-labelledby="alt-vno-tab-cambio-cto" hidden>
-      <p class="muted">TODO.</p>
+      <p class="muted">Próximamente.</p>
     </div>
   </div>
 </div>
@@ -195,6 +204,7 @@
 (function () {
   const btn = document.getElementById("btn-create");
   const btnClear = document.getElementById("btn-clear");
+  const btnLogout = document.getElementById("btn-orquestador-logout");
   const out = document.getElementById("altiplano-result");
   const topTabs = [
     { tab: "alt-tab-inp", panel: "altiplano-panel-inp" },
@@ -296,12 +306,19 @@
     fetch("/dashboard/altiplano/ont-connection", {
       method: "POST",
       headers: { "Content-Type": "application/json", "Accept": "application/json" },
+      credentials: "same-origin",
       body: JSON.stringify(body),
     })
       .then(function (res) {
-        return res.json().then(function (j) { return { ok: res.ok, payload: j || {} }; });
+        return res.json().then(function (j) {
+          return { ok: res.ok, status: res.status, payload: j || {} };
+        });
       })
       .then(function (r) {
+        if (r.status === 401) {
+          window.location.reload();
+          return;
+        }
         renderResult(r.payload, r.ok);
       })
       .catch(function () {
@@ -345,6 +362,19 @@
   refreshDerivedFields();
   btn.addEventListener("click", submitIntent);
   if (btnClear) btnClear.addEventListener("click", clearFields);
+  if (btnLogout) {
+    btnLogout.addEventListener("click", function () {
+      btnLogout.disabled = true;
+      fetch("/dashboard/altiplano/logout", {
+        method: "POST",
+        headers: { "Accept": "application/json" },
+        credentials: "same-origin",
+      })
+        .finally(function () {
+          window.location.href = "/dashboard/altiplano";
+        });
+    });
+  }
 })();
 </script>
 <script>

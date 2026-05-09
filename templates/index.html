@@ -520,6 +520,9 @@ window.addEventListener("load", () => {
         <div class="consulta-mapa-cto-head">
           <span class="consulta-mapa-cto-title">Ubicación (CTO)</span>
         </div>
+        {% if c.cto_postal_address %}
+        <p class="muted">Dirección: {{ c.cto_postal_address }}</p>
+        {% endif %}
         <p class="consulta-cto-map-msg" aria-live="polite"></p>
         <div class="rama-cto-map-canvas consulta-mapa-cto-leaflet" data-consulta-cto-mapa-canvas hidden></div>
       </div>
@@ -535,6 +538,9 @@ window.addEventListener("load", () => {
         <div class="consulta-mapa-cto-head">
           <span class="consulta-mapa-cto-title">Ubicación (CTO)</span>
         </div>
+        {% if c.cto_postal_address %}
+        <p class="muted">Dirección: {{ c.cto_postal_address }}</p>
+        {% endif %}
         <p class="consulta-cto-map-msg" aria-live="polite"></p>
         <div class="rama-cto-map-canvas consulta-mapa-cto-leaflet" data-consulta-cto-mapa-canvas hidden></div>
       </div>
@@ -605,6 +611,9 @@ window.addEventListener("load", () => {
           <div class="consulta-mapa-cto-head">
             <span class="consulta-mapa-cto-title">Ubicación (CTO)</span>
           </div>
+          {% if c.cto_postal_address %}
+          <p class="muted">Dirección: {{ c.cto_postal_address }}</p>
+          {% endif %}
           <p class="consulta-cto-map-msg" aria-live="polite"></p>
           <div class="rama-cto-map-canvas consulta-mapa-cto-leaflet" data-consulta-cto-mapa-canvas hidden></div>
         </div>

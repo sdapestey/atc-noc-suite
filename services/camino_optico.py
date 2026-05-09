@@ -1,11 +1,15 @@
 """Dashboard prueba: camino óptico (FAT + cm_report_isp)."""
+import logging
 import re
 from urllib.parse import quote_plus
 
 from db import db_cursor
 
+from .camino_gis import consultar_ci_op_por_rama, consultar_cto_coordenadas_desde_sfat
 from .domain import nombre_operador
 from .inventory import consultar_cto_coordenadas
+
+logger = logging.getLogger(__name__)
 
 
 def infer_camino_consulta_tipo(valor: str) -> str | None:
@@ -94,6 +98,85 @@ def _report_isp_por_rama(cur, path_atc):
     return {k: (v if v is not None else "") for k, v in zip(keys, row)}
 
 
+def _cto_markers_para_ramas(cur, ramas: list[str], focal_cto: str) -> list[dict]:
+    """Marcadores Leaflet: CTOs en servicio en las ramas dadas; marca la CTO buscada."""
+    ramas = [r for r in ramas if r]
+    focal_u = (focal_cto or "").strip().upper()
+    if not ramas:
+        return []
+    cur.execute(
+        """
+        SELECT f.location_description, COUNT(*)::bigint
+        FROM cm.inventory_fat_occupation f
+        WHERE f.path_atc = ANY(%s) AND f.status = 'IN SERVICE'
+        GROUP BY f.location_description
+        ORDER BY f.location_description
+        """,
+        (ramas,),
+    )
+    markers: list[dict] = []
+    for row in cur.fetchall():
+        cto_id = row[0]
+        if not cto_id:
+            continue
+        coords = consultar_cto_coordenadas(cto_id)
+        source = "bajada_inventario"
+        if not coords:
+            coords = consultar_cto_coordenadas_desde_sfat(cto_id)
+            source = "cm_sfat"
+        if not coords:
+            continue
+        markers.append(
+            {
+                "cto": cto_id,
+                "lat": coords["lat"],
+                "lon": coords["lon"],
+                "onts": int(row[1] or 0),
+                "source": source,
+                "focal": (str(cto_id).strip().upper() == focal_u),
+            }
+        )
+    return markers
+
+
+def _gis_merge_para_ramas(ramas: list[str]) -> dict:
+    """Une geometrías `ci_op` de varias ramas en un único FeatureCollection."""
+    ramas = [r for r in ramas if (r or "").strip()]
+    if not ramas:
+        return {"ok": False, "error": "Sin ramas para trazado GIS."}
+    all_features: list[dict] = []
+    meta: dict = {}
+    last_error: str | None = None
+    for rama in ramas:
+        try:
+            gis = consultar_ci_op_por_rama(rama)
+        except Exception:
+            logger.exception("GIS rama falló para %s", rama)
+            gis = {"ok": False, "error": "Error interno consultando geometría (ci_op)."}
+        if gis.get("ok") and gis.get("geojson"):
+            feats = gis["geojson"].get("features") or []
+            all_features.extend(feats)
+            if not meta:
+                meta = {
+                    k: v
+                    for k, v in gis.items()
+                    if k not in ("ok", "geojson", "error")
+                }
+        elif isinstance(gis, dict):
+            last_error = gis.get("error") or last_error
+    if not all_features:
+        return {
+            "ok": False,
+            "error": last_error or "Sin geometría en ci_op para las ramas de esta CTO.",
+        }
+    out: dict = {
+        "ok": True,
+        "geojson": {"type": "FeatureCollection", "features": all_features},
+    }
+    out.update(meta)
+    return out
+
+
 def dashboard_camino_optico_cto(cto):
     """Consulta detalle de una CTO para el dashboard Camino Óptico.
 
@@ -168,6 +251,14 @@ def dashboard_camino_optico_cto(cto):
             d["camino_isp"] = isp_por_rama.get(p)
             onts.append(d)
 
+        cto_markers = _cto_markers_para_ramas(cur, path_atcs, cto)
+
+    try:
+        gis = _gis_merge_para_ramas(path_atcs)
+    except Exception:
+        logger.exception("GIS CTO (ramas %s) falló", path_atcs)
+        gis = {"ok": False, "error": "Error interno consultando geometría (ci_op)."}
+
     cto_maps_url = _cto_maps_url_for_fatc_location(cto)
 
     return {
@@ -181,6 +272,8 @@ def dashboard_camino_optico_cto(cto):
         },
         "caminos_isp_por_rama": isp_por_rama,
         "onts": onts,
+        "cto_markers": cto_markers,
+        "gis": gis,
     }
 
 
@@ -220,6 +313,30 @@ def dashboard_camino_optico_rama(rama):
         ctos = [{"cto": r[0], "onts": int(r[1])} for r in cur.fetchall()]
         isp = _report_isp_por_rama(cur, rama)
 
+    cto_markers = []
+    for c in ctos:
+        coords = consultar_cto_coordenadas(c["cto"])
+        source = "bajada_inventario"
+        if not coords:
+            coords = consultar_cto_coordenadas_desde_sfat(c["cto"])
+            source = "cm_sfat"
+        if coords:
+            cto_markers.append(
+                {
+                    "cto": c["cto"],
+                    "lat": coords["lat"],
+                    "lon": coords["lon"],
+                    "onts": c["onts"],
+                    "source": source,
+                }
+            )
+
+    try:
+        gis = consultar_ci_op_por_rama(rama)
+    except Exception:
+        logger.exception("GIS rama falló para %s", rama)
+        gis = {"ok": False, "error": "Error interno consultando geometría (ci_op)."}
+
     return {
         "tipo": "rama",
         "rama": rama,
@@ -229,6 +346,8 @@ def dashboard_camino_optico_rama(rama):
         },
         "ctos": ctos,
         "camino_isp": isp,
+        "cto_markers": cto_markers,
+        "gis": gis,
     }
 
 
@@ -290,6 +409,18 @@ def dashboard_camino_optico_access_id(access_id):
         d["OPERADOR"] = nombre_operador(inv)
         path = d.get("path_atc")
         d["camino_isp"] = _report_isp_por_rama(cur, path)
+        ramas = [path] if path else []
+        cto_markers = _cto_markers_para_ramas(
+            cur,
+            ramas,
+            d.get("location_description") or "",
+        )
+
+    try:
+        gis = _gis_merge_para_ramas(ramas)
+    except Exception:
+        logger.exception("GIS Access ID (rama %s) falló", ramas)
+        gis = {"ok": False, "error": "Error interno consultando geometría (ci_op)."}
 
     cto_maps_url = _cto_maps_url_for_fatc_location(d.get("location_description") or "")
 
@@ -297,4 +428,6 @@ def dashboard_camino_optico_access_id(access_id):
         "tipo": "access_id",
         "detalle": d,
         "cto_maps_url": cto_maps_url,
+        "cto_markers": cto_markers,
+        "gis": gis,
     }

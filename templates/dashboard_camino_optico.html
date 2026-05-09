@@ -4,6 +4,10 @@
 <meta charset="UTF-8">
 <title>Camino óptico · ATC NOC Suite</title>
 {% include 'partials/noc_head.html' %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script src="{{ url_for('static', filename='js/noc-map-tiles.js') }}"></script>
+<script src="{{ url_for('static', filename='js/leaflet-scroll-guard.js') }}"></script>
 <script src="{{ url_for('static', filename='js/noc-tools.js') }}"></script>
 </head>
 <body class="theme-devops page-camino">
@@ -30,7 +34,7 @@
     <div class="row camino-row">
       <div class="camino-field-wrap">
         <label class="t" for="q">Valor</label>
-        <input type="text" id="q" placeholder="Ej: TG01-FATC-8-110066  ·  TG01-RATC-0-000808  ·  1052404324" autocomplete="off">
+        <input type="text" id="q" placeholder="Ej: ES01-RATC-0-000001  ·  TG01-FATC-8-110066  ·  1052404324" autocomplete="off">
       </div>
       <button type="button" class="btn btn-primary" id="btn">Buscar</button>
       <button type="button" class="btn btn-ghost" onclick="limpiarBusquedaCamino()">Limpiar</button>
@@ -38,11 +42,25 @@
     </div>
     <p class="muted camino-leyenda" role="note">
       Ingresá un identificador con <span class="kbd">FATC</span> (CTO), <span class="kbd">RATC</span> (RAMA) o solo dígitos (Access ID) y tocá <strong>Buscar</strong>. El sistema detecta el tipo automáticamente.
+      Para <span class="kbd">RAMA</span>, <span class="kbd">CTO</span> o <span class="kbd">Access ID</span>: tocá <strong>Buscar</strong> y se abre el mapa (trazado <code class="inline-code">ci_op</code> de la rama) arriba del resumen; en búsqueda por CTO/Access ID la FATC asociada se resalta respecto del resto. Coordenadas de CTO desde inventario o capa <code class="inline-code">ci_sfat_mfat_bfat</code> en <code class="inline-code">cm</code>.
     </p>
     </div>
   </div>
 
-  <div id="out"></div>
+  <div class="panel camino-gis-panel" id="camino-rama-map-panel" hidden>
+    <div class="camino-gis-head">
+      <h2 id="camino-gis-map-title">Mapa · rama</h2>
+      <p id="camino-gis-map-lead" class="muted">
+        Línea verde: trazado <code class="inline-code">ci_op</code> (PostGIS). Puntos naranja: CTO (FATC) con coordenadas.
+      </p>
+    </div>
+    <div class="camino-gis-map-wrap">
+      <div id="camino-gis-map" role="application" aria-label="Mapa camino óptico por rama"></div>
+    </div>
+    <div id="camino-gis-side" class="camino-gis-kv-wrap" aria-live="polite"></div>
+  </div>
+
+  <div id="out" class="camino-out"></div>
 </div>
 
 <script>
@@ -73,16 +91,30 @@
 
   function renderIspBlock(isp, title){
     if (!isp) {
-      return '<p class="muted">Sin fila en <code>cm_report_isp</code> para esta rama (nombre exacto de <code>path_atc</code>).</p>';
+      return '<p class="muted path-block-empty">Sin fila en <code>cm_report_isp</code> para esta rama (nombre exacto de <code>path_atc</code>).</p>';
     }
     const steps = stepsFromIsp(isp);
-    let html = '<div class="path-block"><h3>' + esc(title || "Tramo hacia el sitio (report ISP)") + '</h3><ol class="path-steps">';
+    const head = esc(title || "Tramo hacia el sitio (report ISP)");
+    let html =
+      '<details class="path-block path-block--collapsible" open>' +
+      '<summary class="path-block__summary">' +
+      '<span class="path-block__summary-title">' +
+      head +
+      "</span>" +
+      '<span class="path-block__summary-meta">Detalle técnico · <code class="inline-code">cm_report_isp</code></span>' +
+      "</summary>" +
+      '<div class="path-block__body"><ol class="path-steps">';
     steps.forEach(function(s){
       const stepLabel = s[0];
       const valText = s[1];
-      html += "<li><strong>" + esc(stepLabel) + ":</strong> " + esc(valText) + "</li>";
+      html +=
+        "<li><span class=\"path-step-label\">" +
+        esc(stepLabel) +
+        '</span><span class="path-step-value">' +
+        esc(valText) +
+        "</span></li>";
     });
-    html += "</ol></div>";
+    html += "</ol></div></details>";
     return html;
   }
 
@@ -101,15 +133,23 @@
   function render(data){
     if (data.error) {
       out.innerHTML = '<div class="err">' + esc(data.error) + "</div>";
+      if (window.clearCaminoRamaMap) window.clearCaminoRamaMap();
       return;
     }
     if (data.tipo === "rama") {
       const r = data.resumen || {};
-      let html = '<div class="panel camino-result"><h2 class="camino-result-title">Rama ' + esc(data.rama) + "</h2>";
-      html += '<div class="stats">';
-      html += '<div class="stat"><b>' + esc(String(r.cto_count)) + '</b><span>CTOs</span></div>';
-      html += '<div class="stat"><b>' + esc(String(r.ont_count)) + '</b><span>ONT</span></div>';
-      html += "</div>";
+      let html = '<div class="panel camino-result"><div class="camino-result-head camino-result-head--rama">';
+      html += '<h2 class="camino-result-title">Rama ' + esc(data.rama) + "</h2>";
+      html += '<div class="camino-stat-chips" role="list">';
+      html +=
+        '<div class="camino-stat-chip" role="listitem"><span class="camino-stat-chip__val">' +
+        esc(String(r.cto_count)) +
+        '</span><span class="camino-stat-chip__lbl">CTOs</span></div>';
+      html +=
+        '<div class="camino-stat-chip" role="listitem"><span class="camino-stat-chip__val">' +
+        esc(String(r.ont_count)) +
+        '</span><span class="camino-stat-chip__lbl">ONT</span></div>';
+      html += "</div></div>";
       html += renderIspBlock(data.camino_isp, "Camino hacia cabecera (una rama representativa)");
       html += "<p class=\"muted\">CTOs que cuelgan de esta rama (inventario en servicio):</p>";
       html += '<div class="table-wrap"><table><thead><tr><th>CTO</th><th>ONT</th></tr></thead><tbody>';
@@ -118,6 +158,7 @@
       });
       html += "</tbody></table></div></div>";
       out.innerHTML = html;
+      if (window.loadCaminoRamaMap) window.loadCaminoRamaMap(data);
       return;
     }
     if (data.tipo === "cto") {
@@ -155,6 +196,7 @@
       (data.onts || []).forEach(function(o){ html += renderFatOntRow(o); });
       html += "</tbody></table></div></div>";
       out.innerHTML = html;
+      if (window.loadCaminoRamaMap) window.loadCaminoRamaMap(data);
       return;
     }
     if (data.tipo === "access_id") {
@@ -195,14 +237,18 @@
       });
       html += "</div></details></div>";
       out.innerHTML = html;
+      if (window.loadCaminoRamaMap) window.loadCaminoRamaMap(data);
       return;
     }
+    if (window.clearCaminoRamaMap) window.clearCaminoRamaMap();
     out.innerHTML = '<div class="err">Respuesta no reconocida</div>';
+    if (window.clearCaminoRamaMap) window.clearCaminoRamaMap();
   }
 
   function limpiarBusquedaCamino(){
     q.value = "";
     q.focus();
+    if (window.clearCaminoRamaMap) window.clearCaminoRamaMap();
   }
   window.limpiarBusquedaCamino = limpiarBusquedaCamino;
 
@@ -227,6 +273,7 @@
         }
         if (!x.ok) {
           out.innerHTML = '<div class="err">Error HTTP</div>';
+          if (window.clearCaminoRamaMap) window.clearCaminoRamaMap();
           return;
         }
         render(x.j);
@@ -239,6 +286,324 @@
 
   btn.addEventListener("click", buscar);
   q.addEventListener("keydown", function(e){ if (e.key === "Enter") buscar(); });
+})();
+</script>
+<script>
+(function(){
+  var mapPanel = document.getElementById("camino-rama-map-panel");
+  var gisSide = document.getElementById("camino-gis-side");
+  var mapEl = document.getElementById("camino-gis-map");
+  var mapTitleEl = document.getElementById("camino-gis-map-title");
+  var mapLeadEl = document.getElementById("camino-gis-map-lead");
+  var gisMap = null;
+  var gisPathLayer = null;
+  var gisCtoLayer = null;
+
+  var GIS_HEAD_RAMA = {
+    title: "Mapa · rama",
+    lead:
+      "Línea verde: trazado <code class=\"inline-code\">ci_op</code> (PostGIS). Puntos naranja: CTO (FATC) con coordenadas.",
+  };
+  var GIS_HEAD_CTO = {
+    title: "Mapa · CTO y rama",
+    lead:
+      "Línea verde: trazado <code class=\"inline-code\">ci_op</code> de la(s) rama(s) de esta CTO. Punto <strong>cyan</strong>: CTO buscada; <strong>naranja</strong>: otras CTO de la rama.",
+  };
+  var GIS_HEAD_ACCESS = {
+    title: "Mapa · Access ID y rama",
+    lead:
+      "Línea verde: trazado <code class=\"inline-code\">ci_op</code> de la rama del Access ID. Punto <strong>cyan</strong>: CTO del Access ID; <strong>naranja</strong>: otras CTO de la rama.",
+  };
+
+  function esc(s){
+    if (s === null || s === undefined) return "";
+    return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  }
+
+  function pathStyle(feature){
+    var t = feature && feature.geometry && feature.geometry.type;
+    if (t === "Point" || t === "MultiPoint") {
+      return { radius: 6, fillColor: "#22c55e", color: "#fff", weight: 1, opacity: 1, fillOpacity: 0.9 };
+    }
+    return {
+      color: "#22c55e",
+      weight: 6,
+      opacity: 1,
+      lineCap: "round",
+      lineJoin: "round",
+    };
+  }
+
+  /** Misma heurística que el backend: columnas lat/lon invertidas en inventario. */
+  function normalizeCtoLatLon(lat, lon){
+    var la = Number(lat);
+    var lo = Number(lon);
+    if (la >= -74 && la <= -40 && lo >= -56 && lo <= -20) {
+      return { lat: lo, lon: la };
+    }
+    return { lat: la, lon: lo };
+  }
+
+  var ctoMarkerOpts = {
+    radius: 9,
+    fillColor: "#f97316",
+    color: "#fff",
+    weight: 2,
+    opacity: 1,
+    fillOpacity: 0.95,
+  };
+
+  var ctoMarkerFocalOpts = {
+    radius: 12,
+    fillColor: "#22d3ee",
+    color: "#f8fafc",
+    weight: 3,
+    opacity: 1,
+    fillOpacity: 0.98,
+  };
+
+  function ensureMap(){
+    if (gisMap || !mapEl || !window.L) return gisMap;
+    var opt = window.NocLeafletMap && window.NocLeafletMap.baseMapOptions
+      ? window.NocLeafletMap.baseMapOptions()
+      : { attributionControl: true, zoomControl: true, scrollWheelZoom: false };
+    gisMap = L.map(mapEl, opt);
+    if (window.NocMapTiles && window.NocMapTiles.addBasemapLayer) {
+      window.NocMapTiles.addBasemapLayer(gisMap, L);
+    } else {
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 19,
+        attribution: "&copy; OpenStreetMap",
+      }).addTo(gisMap);
+    }
+    if (window.NocLeafletMap && window.NocLeafletMap.attachScrollActivation) {
+      window.NocLeafletMap.attachScrollActivation(gisMap, mapEl);
+    }
+    return gisMap;
+  }
+
+  /** Recorre GeoJSON (orden [lon, lat]) y arma bounds Leaflet [lat, lon]. */
+  function extendBoundsFromGeoJSON(bounds, gj){
+    var depthByType = {
+      Point: 0,
+      MultiPoint: 1,
+      LineString: 1,
+      MultiLineString: 2,
+      Polygon: 2,
+      MultiPolygon: 3,
+    };
+    function scanPair(lon, lat){
+      if (typeof lon !== "number" || typeof lat !== "number") return;
+      if (isNaN(lon) || isNaN(lat)) return;
+      if (Math.abs(lat) > 90 || Math.abs(lon) > 180) return;
+      bounds.extend(L.latLng(lat, lon));
+    }
+    function scan(coords, depth){
+      if (depth === 0) {
+        scanPair(coords[0], coords[1]);
+        return;
+      }
+      if (Array.isArray(coords)) coords.forEach(function(c){ scan(c, depth - 1); });
+    }
+    (gj && gj.features ? gj.features : []).forEach(function(f){
+      var g = f && f.geometry;
+      if (!g || !g.coordinates) return;
+      var d = depthByType[g.type];
+      if (d != null) scan(g.coordinates, d);
+    });
+  }
+
+  function fitMapToRamaData(map, gj, markers){
+    var b = L.latLngBounds([]);
+    if (gj) extendBoundsFromGeoJSON(b, gj);
+    (markers || []).forEach(function(m){
+      if (m.lat == null || m.lon == null) return;
+      var ll = normalizeCtoLatLon(m.lat, m.lon);
+      b.extend(L.latLng(ll.lat, ll.lon));
+    });
+    if (!b.isValid()) return false;
+    try {
+      map.fitBounds(b, { padding: [48, 48], maxZoom: 17, animate: false });
+      return true;
+    } catch (_e) {
+      return false;
+    }
+  }
+
+  window.clearCaminoRamaMap = function(){
+    if (mapPanel) mapPanel.hidden = true;
+    if (gisMap && gisPathLayer) {
+      gisMap.removeLayer(gisPathLayer);
+      gisPathLayer = null;
+    }
+    if (gisMap && gisCtoLayer) {
+      gisMap.removeLayer(gisCtoLayer);
+      gisCtoLayer = null;
+    }
+    if (gisSide) gisSide.innerHTML = "";
+  };
+
+  function setCaminoGisHead(copy){
+    if (mapTitleEl) mapTitleEl.textContent = copy.title;
+    if (mapLeadEl) mapLeadEl.innerHTML = copy.lead;
+  }
+
+  window.loadCaminoRamaMap = function(data){
+    if (!data || (data.tipo !== "rama" && data.tipo !== "cto" && data.tipo !== "access_id")) return;
+    if (data.tipo === "rama") {
+      setCaminoGisHead(GIS_HEAD_RAMA);
+    } else if (data.tipo === "access_id") {
+      setCaminoGisHead(GIS_HEAD_ACCESS);
+    } else {
+      setCaminoGisHead(GIS_HEAD_CTO);
+    }
+    if (mapPanel) {
+      mapPanel.hidden = false;
+      mapPanel.removeAttribute("hidden");
+    }
+    if (!gisSide) return;
+    if (!window.L) {
+      gisSide.innerHTML = '<div class="err">Leaflet no cargó.</div>';
+      return;
+    }
+
+    var gis = data.gis || {};
+    var markers = data.cto_markers || [];
+    var gj = gis.ok ? gis.geojson : null;
+    var hasPath = gj && gj.features && gj.features.length > 0;
+    var hasCto = markers.length > 0;
+
+    function finishSidePanel(){
+      var warnings = [];
+      if (!hasPath) {
+        warnings.push(
+          gis && gis.error
+            ? "Trazado PostGIS: " + gis.error
+            : "Trazado PostGIS: sin geometría para esta rama en ci_op."
+        );
+      }
+      if (!hasCto) warnings.push("Sin coordenadas de CTO para marcar puntos.");
+      if (warnings.length) {
+        gisSide.innerHTML =
+          '<p class="muted camino-gis-map-notes">' +
+          warnings.map(function(w){ return esc(w); }).join(" ") +
+          "</p>";
+      } else if (gisSide) {
+        gisSide.innerHTML = "";
+      }
+    }
+
+    function drawOnMap(map){
+      if (!map) {
+        gisSide.innerHTML = '<div class="err">No se pudo inicializar el mapa.</div>';
+        return;
+      }
+
+      if (gisPathLayer) {
+        map.removeLayer(gisPathLayer);
+        gisPathLayer = null;
+      }
+      if (gisCtoLayer) {
+        map.removeLayer(gisCtoLayer);
+        gisCtoLayer = null;
+      }
+
+      if (hasPath) {
+        try {
+          gisPathLayer = L.geoJSON(gj, {
+            style: pathStyle,
+            filter: function(feature){
+              return !!(feature && feature.geometry);
+            },
+            pointToLayer: function(feature, latlng){
+              return L.circleMarker(latlng, pathStyle(feature));
+            },
+          }).addTo(map);
+        } catch (e) {
+          gisPathLayer = null;
+        }
+      }
+
+      gisCtoLayer = L.layerGroup();
+      markers.forEach(function(m){
+        if (m.lat == null || m.lon == null) return;
+        var ll = normalizeCtoLatLon(m.lat, m.lon);
+        var focal = !!m.focal;
+        var opts = focal ? ctoMarkerFocalOpts : ctoMarkerOpts;
+        var cm = L.circleMarker([ll.lat, ll.lon], opts);
+        var pop =
+          "<strong>" +
+          esc(m.cto) +
+          "</strong>" +
+          (focal ? " <span style=\"opacity:.85\">(buscada)</span>" : "") +
+          "<br>" +
+          esc(String(m.onts)) +
+          " ONT";
+        cm.bindPopup(pop);
+        cm.addTo(gisCtoLayer);
+      });
+      gisCtoLayer.addTo(map);
+
+      var fitted = false;
+      if (hasPath || hasCto) {
+        fitted = fitMapToRamaData(map, gj, markers);
+        if (!fitted && gisPathLayer) {
+          try {
+            var fb = gisPathLayer.getBounds();
+            if (fb && fb.isValid()) {
+              map.fitBounds(fb, { padding: [48, 48], maxZoom: 17, animate: false });
+              fitted = true;
+            }
+          } catch (_e0) {}
+        }
+      }
+      if (!fitted && (hasPath || hasCto)) {
+        map.setView([-34.39, -58.78], 14);
+      }
+      if (!hasPath && !hasCto) {
+        map.setView([-34.6, -58.38], 11);
+      }
+
+      function afterLayout(){
+        map.invalidateSize();
+        if (hasPath || hasCto) {
+          if (!fitMapToRamaData(map, gj, markers) && gisPathLayer) {
+            try {
+              var fb2 = gisPathLayer.getBounds();
+              if (fb2 && fb2.isValid()) map.fitBounds(fb2, { padding: [48, 48], maxZoom: 17, animate: false });
+            } catch (_e1) {}
+          }
+        }
+      }
+      setTimeout(afterLayout, 50);
+      setTimeout(afterLayout, 250);
+      setTimeout(afterLayout, 600);
+
+      if (mapPanel) {
+        try {
+          mapPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+        } catch (_e3) {}
+      }
+      finishSidePanel();
+    }
+
+    if (mapPanel) {
+      try {
+        void mapPanel.offsetHeight;
+      } catch (_r) {}
+    }
+
+    if (!gisMap) {
+      requestAnimationFrame(function(){
+        requestAnimationFrame(function(){
+          if (mapPanel) void mapPanel.offsetHeight;
+          drawOnMap(ensureMap());
+        });
+      });
+    } else {
+      drawOnMap(gisMap);
+    }
+  };
 })();
 </script>
 <script>

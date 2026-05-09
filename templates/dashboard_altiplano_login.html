@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Orquestador · Ingreso · ATC NOC Suite</title>
+{% include 'partials/noc_head.html' %}
+<script src="{{ url_for('static', filename='js/noc-tools.js') }}"></script>
+</head>
+<body class="theme-devops page-altiplano page-orquestador-login">
+<div class="container">
+  <div class="topbar">
+    <div class="brand">
+      <div class="brand-row">
+        {% include 'partials/brand_logo.html' %}
+        <h1>ATC NOC Suite</h1>
+      </div>
+      <small><strong>Orquestador</strong> — ingreso con usuario Altiplano (entorno INP)</small>
+    </div>
+    {% include 'partials/noc_topbar.html' %}
+  </div>
+
+  {% include 'partials/nav_dashboard.html' %}
+
+  <div class="orquestador-login-shell">
+    <div class="panel altiplano-panel orquestador-login-panel">
+      <header class="orquestador-login-head">
+        <h2 class="orquestador-login-title">Acceso Orquestador</h2>
+        <p class="orquestador-login-subtitle muted">Las credenciales se validan contra Altiplano antes de abrir el panel.</p>
+      </header>
+      <div class="controls-hint orquestador-login-hint">
+        Utilice el mismo usuario y contraseña que en Altiplano
+      </div>
+      <div class="altiplano-panel-inner orquestador-login-body">
+        <form id="orquestador-login-form" class="orquestador-login-form" autocomplete="on">
+          <div class="row altiplano-row orquestador-login-fields">
+            <div class="altiplano-field altiplano-field-site">
+              <label class="t" for="login_username">Usuario</label>
+              <input id="login_username" name="username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="Ej. usuario Altiplano" required>
+            </div>
+            <div class="altiplano-field altiplano-field-site">
+              <label class="t" for="login_password">Contraseña</label>
+              <input id="login_password" name="password" type="password" autocomplete="current-password" placeholder="••••••••" required>
+            </div>
+          </div>
+          <div class="orquestador-login-actions">
+            <button id="login_submit" type="submit" class="btn btn-primary">Ingresar</button>
+          </div>
+        </form>
+        <div id="orquestador-login-msg" class="orquestador-login-feedback muted" role="status" aria-live="polite"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const form = document.getElementById("orquestador-login-form");
+  const msg = document.getElementById("orquestador-login-msg");
+  const btn = document.getElementById("login_submit");
+  if (!form || !btn) return;
+
+  form.addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    const userEl = document.getElementById("login_username");
+    const pwdEl = document.getElementById("login_password");
+    const username = userEl ? String(userEl.value || "").trim() : "";
+    const password = pwdEl ? String(pwdEl.value || "") : "";
+    if (!username || !password) {
+      msg.textContent = "Completá usuario y contraseña.";
+      return;
+    }
+    btn.disabled = true;
+    msg.textContent = "Validando con Altiplano…";
+    fetch("{{ url_for('dash_altiplano_login') }}", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Accept": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ username: username, password: password }),
+    })
+      .then(function (res) {
+        return res.json().then(function (j) {
+          return { ok: res.ok, status: res.status, body: j || {} };
+        });
+      })
+      .then(function (r) {
+        if (r.ok && r.body && r.body.ok) {
+          msg.textContent = "";
+          window.location.href = "{{ url_for('dash_altiplano') }}";
+          return;
+        }
+        var m = (r.body && r.body.message) ? r.body.message : "No se pudo ingresar.";
+        msg.textContent = m;
+      })
+      .catch(function () {
+        msg.textContent = "Error de red o servidor.";
+      })
+      .finally(function () {
+        btn.disabled = false;
+      });
+  });
+})();
+</script>
+<script>
+window.addEventListener("load", function () {
+  if (window.initNocPage) initNocPage({ page: "altiplano" });
+});
+</script>
+</body>
+</html>

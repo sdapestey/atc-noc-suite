@@ -394,7 +394,57 @@ async function restoreRamaDashboardState(preQ) {
 }
 
 const _RAMA_CTO_MAP_URL = "/dashboard/rama/cto-map";
+const _RAMA_CTO_ADDRESS_URL = "/dashboard/rama/cto-address";
 const _RAMA_MAP_URL = "/dashboard/rama/rama-map";
+const _RAMA_CAMINO_GIS_URL = "/dashboard/camino-optico/gis";
+
+function _extendBoundsFromGeoJSON(bounds, gj) {
+  const depthByType = {
+    Point: 0,
+    MultiPoint: 1,
+    LineString: 1,
+    MultiLineString: 2,
+    Polygon: 2,
+    MultiPolygon: 3,
+  };
+  function scanPair(lon, lat) {
+    if (typeof lon !== "number" || typeof lat !== "number") return;
+    if (Number.isNaN(lon) || Number.isNaN(lat)) return;
+    if (Math.abs(lat) > 90 || Math.abs(lon) > 180) return;
+    bounds.extend(window.L.latLng(lat, lon));
+  }
+  function scan(coords, depth) {
+    if (depth === 0) {
+      scanPair(coords[0], coords[1]);
+      return;
+    }
+    if (Array.isArray(coords)) coords.forEach((c) => scan(c, depth - 1));
+  }
+  (gj && gj.features ? gj.features : []).forEach((f) => {
+    const g = f && f.geometry;
+    if (!g || !g.coordinates) return;
+    const d = depthByType[g.type];
+    if (d != null) scan(g.coordinates, d);
+  });
+}
+
+function _fitRamaMapToData(map, gj, markers) {
+  const b = window.L.latLngBounds([]);
+  if (gj) _extendBoundsFromGeoJSON(b, gj);
+  (markers || []).forEach((m) => {
+    const lat = Number(m.lat);
+    const lon = Number(m.lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+    b.extend(window.L.latLng(lat, lon));
+  });
+  if (!b.isValid()) return false;
+  try {
+    map.fitBounds(b, { padding: [28, 28], maxZoom: 17 });
+    return true;
+  } catch (_e) {
+    return false;
+  }
+}
 
 function _scheduleCtoMapIfExpanded(ctoNode) {
   if (!ctoNode) return;
@@ -482,6 +532,46 @@ function ensureCtoMapForCtoNode(ctoNode) {
     });
 }
 
+function ensureCtoAddressForCtoNode(ctoNode) {
+  if (!ctoNode || !ctoNode.hasAttribute("data-cto-node")) return;
+  const body = ctoNode.nextElementSibling;
+  if (!body || body.classList.contains("hidden")) return;
+  const shell = body.querySelector("[data-cto-map-shell]");
+  const addrEl = body.querySelector("[data-cto-postal-address]");
+  if (!shell || !addrEl) return;
+
+  const status = shell.dataset.addrReady;
+  if (status === "done" || status === "noaddr" || status === "loading") return;
+
+  const cto = (ctoNode.getAttribute("data-cto") || "").trim();
+  if (!cto) return;
+
+  shell.dataset.addrReady = "loading";
+  addrEl.innerHTML = '<span class="rama-cto-address__loading">Buscando dirección…</span>';
+
+  fetch(_RAMA_CTO_ADDRESS_URL + "?cto=" + encodeURIComponent(cto))
+    .then((r) => {
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    })
+    .then((data) => {
+      if (!data || !data.ok || !data.address) {
+        addrEl.textContent = "";
+        shell.dataset.addrReady = "noaddr";
+        return;
+      }
+      const addr = _escHtml(String(data.address || "").trim());
+      addrEl.innerHTML =
+        '<span class="rama-cto-address__label">Dirección</span>' +
+        '<span class="rama-cto-address__value">' + addr + "</span>";
+      shell.dataset.addrReady = "done";
+    })
+    .catch(() => {
+      addrEl.textContent = "";
+      delete shell.dataset.addrReady;
+    });
+}
+
 function verMapaRama(btn) {
   if (!btn) return;
   const card = btn.closest("[data-rama-card]");
@@ -537,12 +627,20 @@ function _loadRamaMapPanel(card, rama, panel) {
   if (footer) footer.textContent = "";
   canvas.hidden = true;
 
-  fetch(_RAMA_MAP_URL + "?rama=" + encodeURIComponent(rama))
-    .then((r) => {
+  Promise.all([
+    fetch(_RAMA_MAP_URL + "?rama=" + encodeURIComponent(rama)).then((r) => {
       if (!r.ok) throw new Error("HTTP " + r.status);
       return r.json();
+    }),
+    fetch(_RAMA_CAMINO_GIS_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ rama: rama }),
     })
-    .then((data) => {
+      .then((r) => (r.ok ? r.json() : { ok: false, error: "Error HTTP GIS" }))
+      .catch(() => ({ ok: false, error: "Error GIS" })),
+  ])
+    .then(([data, gis]) => {
       if (!data || !data.ok) {
         msg.textContent = (data && data.error) || "No se pudo cargar el mapa de la RAMA.";
         canvas.hidden = true;
@@ -552,13 +650,16 @@ function _loadRamaMapPanel(card, rama, panel) {
       const sinCoord =
         data.ctos_sin_coordenadas != null ? Number(data.ctos_sin_coordenadas) : 0;
       const ctosTotal = data.ctos_total != null ? Number(data.ctos_total) : 0;
+      const gj = gis && gis.ok && gis.geojson ? gis.geojson : null;
+      const hasPath = !!(gj && Array.isArray(gj.features) && gj.features.length > 0);
 
-      if (markers.length === 0) {
+      if (markers.length === 0 && !hasPath) {
         if (ctosTotal === 0) {
           msg.textContent = "No hay CTO en inventario para esta RAMA.";
         } else {
           msg.textContent = "Ninguna CTO de esta RAMA tiene coordenadas cargadas.";
         }
+        if (gis && gis.error) msg.textContent += " " + gis.error;
         canvas.hidden = true;
         if (footer) {
           footer.textContent = sinCoord > 0 ? `${sinCoord} CTO sin coordenadas.` : "";
@@ -571,6 +672,7 @@ function _loadRamaMapPanel(card, rama, panel) {
       if (footer) {
         let foot = `${markers.length} CTO en el mapa`;
         if (sinCoord > 0) foot += ` · ${sinCoord} sin coordenadas`;
+        if (hasPath) foot += " · trazado ci_op visible";
         footer.textContent = foot + ".";
       }
 
@@ -605,6 +707,31 @@ function _loadRamaMapPanel(card, rama, panel) {
         map.removeLayer(panel._ramaMarkerLayer);
         panel._ramaMarkerLayer = null;
       }
+      if (panel._ramaPathLayer) {
+        map.removeLayer(panel._ramaPathLayer);
+        panel._ramaPathLayer = null;
+      }
+
+      if (hasPath) {
+        try {
+          panel._ramaPathLayer = window.L.geoJSON(gj, {
+            style: function (_feature) {
+              return {
+                color: "#22c55e",
+                weight: 6,
+                opacity: 1,
+                lineCap: "round",
+                lineJoin: "round",
+              };
+            },
+            filter: function (feature) {
+              return !!(feature && feature.geometry);
+            },
+          }).addTo(map);
+        } catch (_ePath) {
+          panel._ramaPathLayer = null;
+        }
+      }
 
       const fg = window.L.featureGroup();
       markers.forEach((mk) => {
@@ -615,23 +742,15 @@ function _loadRamaMapPanel(card, rama, panel) {
         marker.bindPopup('<span class="mono">' + _escHtml(mk.cto || "") + "</span>", { maxWidth: 320 });
         fg.addLayer(marker);
       });
-
-      if (fg.getLayers().length === 0) {
-        msg.textContent = "Coordenadas inválidas en la respuesta.";
-        canvas.hidden = true;
-        return;
+      if (fg.getLayers().length > 0) {
+        fg.addTo(map);
+        panel._ramaMarkerLayer = fg;
       }
-
-      fg.addTo(map);
-      panel._ramaMarkerLayer = fg;
 
       requestAnimationFrame(() => {
         map.invalidateSize();
-        const bounds = fg.getBounds();
-        if (markers.length === 1) {
-          map.setView(bounds.getCenter(), 17);
-        } else {
-          map.fitBounds(bounds, { padding: [28, 28], maxZoom: 17 });
+        if (!_fitRamaMapToData(map, gj, markers)) {
+          map.setView([-34.6, -58.38], 11);
         }
       });
     })
@@ -662,6 +781,7 @@ function toggle(el) {
   next.classList.toggle("hidden");
   setExpanded(el, willExpand);
   if (willExpand && el.hasAttribute("data-cto-node") && !isRamaRow) {
+    ensureCtoAddressForCtoNode(el);
     _scheduleCtoMapIfExpanded(el);
     _autoConsultarCtoPotenciasAlExpandir(el);
   }
@@ -921,6 +1041,7 @@ function renderInventarioRama(rama, inv, container) {
       </div>
       <div class="hidden indent3">
         <div class="rama-cto-map-shell" data-cto-map-shell data-cto="${_escHtml(cto)}">
+          <p class="hint rama-cto-address" data-cto-postal-address aria-live="polite"></p>
           <p class="hint rama-cto-map-msg" aria-live="polite"></p>
           <div class="rama-cto-map-canvas" hidden></div>
         </div>
@@ -1026,6 +1147,7 @@ function _expandAllCtosInRamaCard(card) {
     if (!ctoBody) return;
     ctoBody.classList.remove("hidden");
     setExpanded(ctoNode, true);
+    ensureCtoAddressForCtoNode(ctoNode);
     _scheduleCtoMapIfExpanded(ctoNode);
   });
 }
@@ -1039,6 +1161,7 @@ function _expandOnlyTargetCtoInCard(card, targetNode) {
     ctoBody.classList.toggle("hidden", !isTarget);
     setExpanded(ctoNode, isTarget);
     if (isTarget) {
+      ensureCtoAddressForCtoNode(ctoNode);
       _scheduleCtoMapIfExpanded(ctoNode);
     }
   });

@@ -70,7 +70,7 @@ def create_app() -> Flask:
             "camino": "Camino Optico",
             "historico": "Historico Potencias",
             "calidad": "Calidad Inventario",
-            "altiplano": "Altiplano",
+            "altiplano": "Orquestador",
         }
         return {"nav_tab": tab, "nav_tab_label": labels.get(tab, "Consulta")}
 
