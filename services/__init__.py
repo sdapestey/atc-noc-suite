@@ -1,15 +1,26 @@
 """Capa de servicios (inventario, dashboards, exportaciones)."""
-from altiplano import cambiar_sn_ont, crear_ont_connection_intent
+from altiplano import buscar_intents_ont_connection_inp, cambiar_sn_ont, crear_ont_connection_intent
 from .camino_optico import (
     dashboard_camino_optico_access_id,
     dashboard_camino_optico_cto,
+    dashboard_camino_optico_equipo,
+    dashboard_camino_optico_lt,
     dashboard_camino_optico_rama,
+    dashboard_camino_optico_sitio,
+    gis_payload_para_lt,
     infer_camino_consulta_tipo,
 )
 from .camino_gis import consultar_ci_op_por_rama
 from .dashboard_calidad_inventario import (
+    dashboard_calidad_aids_inconsistencia_datos,
+    dashboard_calidad_dtv_sin_serial,
+    dashboard_calidad_fat_nfc_duplicados_tabla,
+    dashboard_calidad_fat_sin_nfc_tabla,
+    dashboard_calidad_inventario_conciliacion,
     dashboard_calidad_inventario_hallazgos,
+    dashboard_calidad_inventario_historico,
     dashboard_calidad_inventario_resumen,
+    dashboard_calidad_inventario_resumen_general,
     export_dashboard_calidad_inventario_csv,
 )
 from .dashboard_olt import dashboard_olts, estructura_dashboard_lt
@@ -62,6 +73,13 @@ __all__ = [
     "dashboard_rama_totales",
     "dashboard_calidad_inventario_resumen",
     "dashboard_calidad_inventario_hallazgos",
+    "dashboard_calidad_inventario_conciliacion",
+    "dashboard_calidad_inventario_historico",
+    "dashboard_calidad_inventario_resumen_general",
+    "dashboard_calidad_dtv_sin_serial",
+    "dashboard_calidad_aids_inconsistencia_datos",
+    "dashboard_calidad_fat_sin_nfc_tabla",
+    "dashboard_calidad_fat_nfc_duplicados_tabla",
     "dashboard_olts",
     "consultar_dashboard_rama",
     "inventario_dashboard_rama",
@@ -76,9 +94,14 @@ __all__ = [
     "ALLOWED_HISTORICO_DAYS",
     "dashboard_camino_optico_cto",
     "dashboard_camino_optico_rama",
+    "dashboard_camino_optico_lt",
+    "dashboard_camino_optico_equipo",
+    "dashboard_camino_optico_sitio",
     "dashboard_camino_optico_access_id",
+    "gis_payload_para_lt",
     "infer_camino_consulta_tipo",
     "consultar_ci_op_por_rama",
     "cambiar_sn_ont",
     "crear_ont_connection_intent",
+    "buscar_intents_ont_connection_inp",
 ]

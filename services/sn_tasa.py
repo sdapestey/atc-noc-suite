@@ -44,3 +44,24 @@ def normalize_tasa_change_sn(raw: str) -> str:
             return s
 
     return s
+
+
+def default_tasa_serial_from_lt_pon_ont(lt, pon, ont) -> str:
+    """
+    Serial por defecto en alta TASA: ``ALCL00`` + LT + PON + ONT (cada parte numérica, mín. 2 dígitos).
+
+    Ej.: LT=10, PON=6, ONT=99 → ``ALCL00100699``.
+    """
+    def _part(raw) -> str | None:
+        s = str(raw or "").strip()
+        if not s.isdigit():
+            return None
+        n = int(s)
+        if n < 0:
+            return None
+        return f"{n:02d}" if n < 100 else str(n)
+
+    a, b, c = _part(lt), _part(pon), _part(ont)
+    if not a or not b or not c:
+        return ""
+    return f"ALCL00{a}{b}{c}"

@@ -1,7 +1,17 @@
 """consultar_access_id_detalle_desde_bajada_inventario, consultar_access_id_baja_o_ausente e índice (AID)."""
 from contextlib import contextmanager
 
+import pytest
 
+
+@pytest.fixture(autouse=True)
+def _clear_aux_bajas_cm_desc_cache():
+    """Evita que `_AUX_BAJAS_TIENE_CM_DESC` de un test afecte mocks de otro."""
+    from services import inventory as inv
+
+    inv._AUX_BAJAS_TIENE_CM_DESC.clear()
+    yield
+    inv._AUX_BAJAS_TIENE_CM_DESC.clear()
 def _fake_db_cursor_bajas_aux(bde_row=None, bi_row=None):
     """Consultas a aux.bajas_de_inventario y aux.bajas_inventario (consultar_access_id_baja_o_ausente)."""
 
@@ -48,6 +58,7 @@ def test_consultar_access_id_detalle_desde_bajada_inventario_con_fila(monkeypatc
 
     dt = __import__("datetime").datetime(2026, 4, 22, 14, 30)
     row = (
+        "1058516041",
         1001,
         dt,
         None,
@@ -71,10 +82,34 @@ def test_consultar_access_id_detalle_desde_bajada_inventario_con_fila(monkeypatc
     assert out.get("fuente_detalle") == "bajada_inventario"
 
 
+def test_consultar_access_id_detalle_desde_bajada_case_insensitive(monkeypatch):
+    """Misma fila que en inventario con AID en mayúsculas; búsqueda en minúsculas."""
+    from services import inventory as inv
+
+    dt = __import__("datetime").datetime(2026, 4, 22, 14, 30)
+    row = (
+        "FES_A5_23",
+        1001,
+        dt,
+        None,
+        "SF01-FATC-8-200189",
+        None,
+        "BA_OLTA_SF01_01-1-2-3:1-1",
+        "SF01-RATC-0-000308",
+        "IN SERVICE",
+        "ALCLF00ABCD12",
+    )
+    monkeypatch.setattr(inv, "db_cursor", _fake_db_cursor_bajada_detalle(bajada_row=row))
+    out = inv.consultar_access_id_detalle_desde_bajada_inventario("fes_a5_23")
+    assert out is not None
+    assert out["AID"] == "FES_A5_23"
+
+
 def test_consultar_access_id_detalle_desde_bajada_prefiere_cm_description(monkeypatch):
     from services import inventory as inv
 
     row = (
+        "1",
         1001,
         None,
         None,
@@ -112,6 +147,7 @@ def test_consultar_access_id_baja_o_ausente_solo_bajas_de_inventario(monkeypatch
     from services import inventory as inv
 
     bde_row = (
+        "1053492422",
         "1001",
         "2026-04-23",
         "2024-04-24 14:06:40",
@@ -133,6 +169,7 @@ def test_consultar_access_id_baja_o_ausente_solo_bajas_inventario(monkeypatch):
     from services import inventory as inv
 
     bi_row = (
+        "1053492422",
         "1001",
         "2026-04-23",
         None,
@@ -153,6 +190,7 @@ def test_consultar_access_id_baja_o_ausente_prioriza_bajas_de_sobre_bajas_invent
     from services import inventory as inv
 
     bde_row = (
+        "1",
         "1001",
         "2026-06-01",
         None,
@@ -162,6 +200,7 @@ def test_consultar_access_id_baja_o_ausente_prioriza_bajas_de_sobre_bajas_invent
         None,
     )
     bi_row = (
+        "1",
         "3001",
         "2026-01-01",
         None,
@@ -181,6 +220,7 @@ def test_consultar_access_id_baja_o_ausente_bajas_de_cto_fallback_sin_cm(monkeyp
     from services import inventory as inv
 
     bde_row = (
+        "999888",
         "1001",
         "2026-04-23",
         None,
@@ -201,6 +241,7 @@ def test_consultar_access_id_bajas_de_sin_cm_description_reintento(monkeypatch):
     from services import inventory as inv
 
     plain_row = (
+        "111",
         "1001",
         "2026-04-23",
         None,

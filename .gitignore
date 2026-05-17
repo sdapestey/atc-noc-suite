@@ -7,3 +7,7 @@ __pycache__/
 venv/
 .cursor/
 .vscode/
+
+# Salidas locales de análisis / export puntual (no versionar)
+resultado.csv
+resultado.cs

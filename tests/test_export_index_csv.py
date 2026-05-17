@@ -63,6 +63,29 @@ def test_export_digit_no_existe(monkeypatch):
     assert "no encontrado" in out.lower() or "ATC" in out
 
 
+def test_export_alphanumeric_access_id_uses_bajada(monkeypatch):
+    """Access ID alfanumérico (VNO) debe usar la misma ruta que el numérico en CSV."""
+    import services.exports as exp
+
+    det = {
+        "AID": "fes_a5_23",
+        "OPERADOR": "ATC",
+        "Status": "IN SERVICE",
+        "CTO": "SF01-FATC-8-1",
+        "RAMA": "SF01-RATC-0-1",
+        "ONT": "ONT-x",
+        "SN": "SN999",
+        "fuente_detalle": "bajada_inventario",
+    }
+    monkeypatch.setattr(exp, "consultar_access_id_detalle_desde_bajada_inventario", lambda v: det if v == "fes_a5_23" else None)
+    monkeypatch.setattr(exp, "consultar_access_id_baja_o_ausente", lambda _v: {"tipo": "no_existe"})
+
+    out = exp.export_index_query_csv("fes_a5_23")
+    assert "fes_a5_23" in out
+    assert "SN999" in out
+    assert "bajada_inventario" in out
+
+
 @patch("services.exports.consultar_cto_estructura", lambda _cto: [])
 def test_export_fatc_still_uses_cto_estructura():
     import services.exports as exp
@@ -74,16 +97,17 @@ def test_export_fatc_still_uses_cto_estructura():
 def test_export_multiple_tokens_two_blocks(monkeypatch):
     import services.exports as exp
 
-    det = lambda aid: {
-        "AID": aid,
-        "OPERADOR": "TASA",
-        "Status": "IN SERVICE",
-        "CTO": "TG01-FATC-8-1",
-        "RAMA": "TG01-RATC-0-1",
-        "ONT": "ONT-1",
-        "SN": "SN123",
-        "fuente_detalle": "bajada_inventario",
-    }
+    def det(aid):
+        return {
+            "AID": aid,
+            "OPERADOR": "TASA",
+            "Status": "IN SERVICE",
+            "CTO": "TG01-FATC-8-1",
+            "RAMA": "TG01-RATC-0-1",
+            "ONT": "ONT-1",
+            "SN": "SN123",
+            "fuente_detalle": "bajada_inventario",
+        }
 
     monkeypatch.setattr(
         exp,

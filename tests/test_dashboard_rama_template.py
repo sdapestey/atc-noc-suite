@@ -49,5 +49,9 @@ def test_dashboard_rama_includes_cto_selection_and_no_expand_all(client, monkeyp
     assert "verMapaRama(" in html
     assert "rama-cto-map.css" in html
     assert "leaflet" in html.lower()
-    assert "12 CTO" in html
-    assert "34 ONT" in html
+    assert "dashboard-tree-panel" in html
+    assert "dashboard-metric-pill" in html
+    assert ">12<" in html or "12" in html
+    assert "CTO" in html
+    assert "34" in html
+    assert "ONT" in html

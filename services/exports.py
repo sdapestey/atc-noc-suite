@@ -12,6 +12,7 @@ from .domain import (
     split_index_query_tokens,
 )
 from .inventory import (
+    _access_lookup_token_ok,
     consultar_access_id_baja_o_ausente,
     consultar_access_id_detalle_desde_bajada_inventario,
     consultar_cto_estructura,
@@ -108,7 +109,13 @@ def _export_index_query_csv_one(value: str) -> str:
         w.writerow(["error", "valor vacío"])
         return buf.getvalue()
 
-    if value.isdigit():
+    is_access_id_lookup = value.isdigit() or (
+        _access_lookup_token_ok(value)
+        and "FATC" not in value_upper
+        and "RATC" not in value_upper
+    )
+
+    if is_access_id_lookup:
         res = consultar_access_id_detalle_desde_bajada_inventario(value)
         if res:
             w.writerow(["AID", "OPERADOR", "Status", "CTO", "RAMA", "ONT", "SN", "fuente"])
@@ -177,7 +184,7 @@ def _export_index_query_csv_one(value: str) -> str:
                     r["STATUS"],
                 ])
     else:
-        w.writerow(["error", "usar ID numérico, FATC o RATC"])
+        w.writerow(["error", "usar Access ID, FATC o RATC"])
     return buf.getvalue()
 
 

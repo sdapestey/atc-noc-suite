@@ -38,6 +38,41 @@ def _validar_days(days: int | str | None) -> int | None:
     return value if value in ALLOWED_HISTORICO_DAYS else None
 
 
+def _ont_inventory_maps(rama: str) -> tuple[dict[str, str], dict[str, str]]:
+    """Último segmento de `object_name` (ONT) → CTO y Access ID en la rama."""
+    cto_by_ont: dict[str, str] = {}
+    access_by_ont: dict[str, str] = {}
+    rama_s = str(rama or "").strip()
+    if not rama_s:
+        return cto_by_ont, access_by_ont
+    with db_cursor() as cur:
+        cur.execute(QUERIES["onts_por_rama"], (rama_s,))
+        rows = cur.fetchall()
+    for r in rows:
+        obj_raw = r[4]
+        if not obj_raw:
+            continue
+        ont_key = str(obj_raw).split("-")[-1].strip()
+        if not ont_key:
+            continue
+        cto_by_ont[ont_key] = str(r[2] or "").strip()
+        aid = r[0]
+        if aid is not None:
+            aid_s = str(aid).strip()
+            if aid_s:
+                access_by_ont[ont_key] = aid_s
+    return cto_by_ont, access_by_ont
+
+
+def _ont_sort_key(ont: str, cto_by_ont: dict[str, str]) -> tuple:
+    cto = (cto_by_ont.get(ont) or "").strip()
+    prim = cto if cto else "\uffff"
+    s = str(ont)
+    if s.isdigit():
+        return (prim, 0, int(s))
+    return (prim, 1, s)
+
+
 def consultar_potencias_historico_rama(ratc: str, days: int = 30) -> dict:
     """Devuelve serie histórica de RX para todas las ONT de la rama."""
     rama = (ratc or "").strip()
@@ -70,9 +105,12 @@ def consultar_potencias_historico_rama(ratc: str, days: int = 30) -> dict:
             "error": f"Sin muestras de potencia en el rango seleccionado ({days_validado} dias)",
         }
 
+    ont_cto, ont_access = _ont_inventory_maps(rama)
+
     by_ont = defaultdict(dict)
     timestamps = set()
-    last_by_ont = {}
+    last_by_ont: dict[str, float | None] = {}
+    last_ts_by_ont: dict[str, str] = {}
 
     csv_rows = []
     for ts, objectname, rx in rows:
@@ -84,6 +122,8 @@ def consultar_potencias_historico_rama(ratc: str, days: int = 30) -> dict:
         by_ont[ont_short][ts_key] = None if rx is None else float(rx)
         timestamps.add(ts_key)
         last_by_ont[ont_short] = None if rx is None else float(rx)
+        if rx is not None:
+            last_ts_by_ont[ont_short] = ts_key
         csv_rows.append({
             "timestamp": ts_key,
             "objectname": objectname_str,
@@ -103,6 +143,17 @@ def consultar_potencias_historico_rama(ratc: str, days: int = 30) -> dict:
             "tension": 0.3,
         })
 
+    ont_summary: list[dict] = []
+    for ont in sorted(by_ont.keys(), key=lambda o: _ont_sort_key(o, ont_cto)):
+        lv = last_by_ont.get(ont)
+        ont_summary.append({
+            "ont_key": ont,
+            "cto": ont_cto.get(ont) or "",
+            "access_id": ont_access.get(ont) or "",
+            "last_hist_rx": None if lv is None else round(float(lv), 2),
+            "last_hist_ts": last_ts_by_ont.get(ont),
+        })
+
     last_values = [v for v in last_by_ont.values() if v is not None]
     median_value = round(float(median(last_values)), 2) if last_values else "-"
 
@@ -116,6 +167,7 @@ def consultar_potencias_historico_rama(ratc: str, days: int = 30) -> dict:
         "total_onts": len(datasets),
         "status": "Activo" if datasets else "Sin datos",
         "rows": csv_rows,
+        "ont_summary": ont_summary,
     }
 
 

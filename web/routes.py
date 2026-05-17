@@ -5,14 +5,24 @@ invoca servicios y devuelve templates o JSON según corresponda.
 """
 from datetime import datetime, timezone
 import re
+import unicodedata
 from uuid import uuid4
 
 from flask import Response, current_app, g, jsonify, redirect, render_template, request, session, url_for
 from urllib.parse import quote_plus
 
-from altiplano import obtener_token_entorno_nbi
+from altiplano import (
+    _access_id_match_mode_for_inp_consult,
+    actualizar_required_network_state_ont_connection_inp,
+    build_consulta_create_prefill,
+    obtener_token_entorno_nbi,
+    corregir_dependencias_l1_y_alinear_intent_inp,
+    inp_advanced_filters_active_aligned_blocked,
+    parse_l1_scheduler_missing_ont_connection,
+    sincronizar_intent_ont_connection_inp,
+)
 from db import ensure_db_connection_ready, healthcheck_db
-from services.domain import split_index_query_tokens
+from services.domain import OPERADORES, resumen_semaforo_desde_rx_values, split_index_query_tokens
 from services import (
     ALLOWED_HISTORICO_DAYS,
     cambiar_sn_ont,
@@ -31,12 +41,24 @@ from services import (
     consultar_ci_op_por_rama,
     dashboard_camino_optico_access_id,
     dashboard_camino_optico_cto,
+    dashboard_camino_optico_equipo,
+    dashboard_camino_optico_lt,
     dashboard_camino_optico_rama,
+    dashboard_camino_optico_sitio,
+    gis_payload_para_lt,
     infer_camino_consulta_tipo,
+    dashboard_calidad_aids_inconsistencia_datos,
+    dashboard_calidad_dtv_sin_serial,
+    dashboard_calidad_fat_nfc_duplicados_tabla,
+    dashboard_calidad_fat_sin_nfc_tabla,
+    dashboard_calidad_inventario_conciliacion,
     dashboard_calidad_inventario_hallazgos,
+    dashboard_calidad_inventario_historico,
     dashboard_calidad_inventario_resumen,
+    dashboard_calidad_inventario_resumen_general,
     dashboard_olts,
     dashboard_rama_bundle,
+    buscar_intents_ont_connection_inp,
     crear_ont_connection_intent,
     estructura_dashboard_lt,
     export_dashboard_olts_csv,
@@ -47,7 +69,223 @@ from services import (
     consultar_potencias_altiplano_ahora_rama,
     consultar_potencias_historico_rama,
 )
+from services.inp_borrado_cascade import borrar_inp_con_cascada_vno
+from services.tasa_postman_catalog import build_tasa_vno_wizard_context
+from services.tasa_postman_execute import execute_tasa_postman_api
 from services.camino_gis import consultar_cto_coordenadas_desde_sfat
+from services.inventory import resolver_target_ont_connection_por_access_id, _access_lookup_token_ok
+
+_ALTIPLANO_INTENT_UUID_RE = re.compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+)
+# Access ID numérico o alfanumérico (ALCL…, RES_IP_…, Srvc_loc_…, etc.)
+_ALTIPLANO_BY_ID_ACCESS_TOKEN_RE = re.compile(r"^[A-Za-z0-9_.\-]{1,256}$")
+ALTIPLANO_BORRADO_LOTE_MAX_ITEMS = 300
+
+# Consulta INP (dashboard): solo device ``BA_OLTA_…`` (prefijo o ``…#VNO#gpon``) o Access ID, no ambos.
+_INP_CONSULTA_DEVICE_PREFIX = "BA_OLTA_"
+
+
+def _inp_consulta_device_name_valid(dn: str) -> bool:
+    """True si el criterio device cumple el formato aceptado en consulta INP (head ``BA_OLTA_``)."""
+    s = (dn or "").strip()
+    if not s:
+        return False
+    head = s.split("#", 1)[0].strip()
+    if len(head) <= len(_INP_CONSULTA_DEVICE_PREFIX):
+        return False
+    return head.upper().startswith(_INP_CONSULTA_DEVICE_PREFIX)
+
+
+def _inp_consulta_remap_ba_olta_from_by_id(device_name: str, by_id: str) -> tuple[str, str]:
+    """Promueve a ``device_name`` un target/prefijo BA_OLTA enviado solo en ``by_id`` (API / pegado)."""
+    dn = (device_name or "").strip()
+    bid = (by_id or "").strip()
+    if bid and not dn and _inp_consulta_device_name_valid(bid) and _ALTIPLANO_BY_ID_ACCESS_TOKEN_RE.match(bid):
+        return bid, ""
+    return dn, bid
+
+
+def _normalize_inp_device_by_id_fields_from_request(data: dict) -> tuple[str, str]:
+    """NFKC + strip; target en ``by_id`` → ``device_name``; con target completo ignora ``by_id`` inválido (no UUID/token)."""
+    device_name = unicodedata.normalize("NFKC", (data.get("device_name") or "").strip())
+    by_id = unicodedata.normalize("NFKC", (data.get("by_id") or data.get("id") or "").strip())
+    if by_id and "#" in by_id:
+        if not device_name:
+            device_name = by_id
+        by_id = ""
+    if device_name and "#" in device_name and by_id:
+        if not (
+            _ALTIPLANO_INTENT_UUID_RE.match(by_id)
+            or _ALTIPLANO_BY_ID_ACCESS_TOKEN_RE.match(by_id)
+        ):
+            by_id = ""
+    return device_name, by_id
+
+
+def _parse_access_id_for_borrado(by_id: str) -> tuple[str | None, str | None]:
+    """Resuelve el campo Access ID para borrado (no admite UUID)."""
+    if _ALTIPLANO_INTENT_UUID_RE.match(by_id):
+        return None, (
+            "No se admite UUID en borrado; indicá solo Access ID o device name "
+            "(prefijo o target completo)."
+        )
+    if _ALTIPLANO_BY_ID_ACCESS_TOKEN_RE.match(by_id):
+        return by_id, None
+    return None, (
+        "El Access ID debe ser dígitos o identificador alfanumérico "
+        "(letras, números, _, -, .)"
+    )
+
+
+def _borrar_ont_connection_desde_campos(
+    sess_token: str,
+    device_name: str,
+    by_id: str,
+    *,
+    svlan: str | None = None,
+) -> dict:
+    """Cascada VNO (TASA) y luego borrado INP ont-connection. ``device_name`` y ``by_id`` ya stripados."""
+    if by_id:
+        _access_filter, err = _parse_access_id_for_borrado(by_id)
+        if err:
+            return {"ok": False, "message": err}
+
+    if not device_name and not by_id:
+        return {
+            "ok": False,
+            "message": "Indicá device name (prefijo o target) y/o Access ID",
+        }
+
+    return borrar_inp_con_cascada_vno(
+        sess_token,
+        device_name,
+        by_id,
+        svlan=svlan,
+    )
+
+
+def _enrich_consulta_inp_no_match(
+    out: dict,
+    *,
+    access_filter: str | None,
+    device_name: str | None,
+    inventory_resolution: dict | None,
+    has_advanced_filters: bool = False,
+) -> dict:
+    """Mensaje y prefill de alta cuando la consulta INP no devolvió intents."""
+    if not out.get("ok") or out.get("matches"):
+        return out
+    if has_advanced_filters or out.get("search_source") == "gui-search-intents-advanced":
+        if not out.get("create_prefill") and ((device_name or "").strip() or (access_filter or "").strip()):
+            prefill = build_consulta_create_prefill(
+                device_query=device_name,
+                access_id=access_filter,
+                inventory_resolution=inventory_resolution,
+            )
+            if prefill:
+                out["create_prefill"] = prefill
+        return out
+    by_access = bool((access_filter or "").strip()) and not (device_name or "").strip()
+    if by_access:
+        out["message"] = "No existe ese Access ID en Altiplano"
+        out["consulta_criterion"] = "access_id"
+    else:
+        out["message"] = "No existe ese Device Name en Altiplano"
+        out["consulta_criterion"] = "device_name"
+    out["no_match"] = True
+    out["suggest_create"] = True
+    if not out.get("create_prefill"):
+        prefill = build_consulta_create_prefill(
+            device_query=device_name,
+            access_id=access_filter,
+            inventory_resolution=inventory_resolution,
+        )
+        if prefill:
+            out["create_prefill"] = prefill
+    return out
+
+
+def _inp_intent_mutacion_context(data: dict) -> dict:
+    """
+    Parsea device/target, Access ID o UUID de intent (mutaciones / API) y resolución inventario ATC
+    cuando solo viene Access ID. La consulta ``consultar-intent`` no admite UUID; las mutaciones sí.
+    """
+    device_name, by_id = _normalize_inp_device_by_id_fields_from_request(data)
+    intent_uuid = None
+    access_filter = None
+    if by_id:
+        if _ALTIPLANO_INTENT_UUID_RE.match(by_id):
+            intent_uuid = by_id
+        elif _ALTIPLANO_BY_ID_ACCESS_TOKEN_RE.match(by_id):
+            access_filter = by_id
+        else:
+            return {
+                "error": (
+                    {
+                        "ok": False,
+                        "message": (
+                            "El campo ID debe ser UUID de intent o Access ID "
+                            "(dígitos o identificador alfanumérico: letras, números, _, -, .). "
+                            "Si querés filtrar por target, usá device_name con el prefijo o target completo "
+                            "(…#VNO#gpon), no en by_id."
+                        ),
+                        "matches": [],
+                    },
+                    400,
+                )
+            }
+    if not device_name and not by_id:
+        return {
+            "error": (
+                {
+                    "ok": False,
+                    "message": "Indicá device name (prefijo del target) y/o Access ID / UUID",
+                    "matches": [],
+                },
+                400,
+            )
+        }
+    inventory_resolution = None
+    inventory_miss_fallback = False
+    dn = device_name
+    if access_filter and not dn:
+        inv = resolver_target_ont_connection_por_access_id(access_filter)
+        if inv.get("ok"):
+            dn = inv["device_name_for_query"]
+            inventory_resolution = {k: v for k, v in inv.items() if k != "ok"}
+        else:
+            inventory_miss_fallback = True
+    return {
+        "device_prefix": dn or None,
+        "access_id": access_filter,
+        "intent_uuid": intent_uuid,
+        "inventory_resolution": inventory_resolution,
+        "inventory_miss_fallback": inventory_miss_fallback,
+    }
+
+
+def _http_code_for_borrado_payload(out: dict) -> int:
+    if out.get("ok"):
+        return 200
+    msg_err = (out.get("message") or "").lower()
+    if any(
+        sub in msg_err
+        for sub in (
+            "indicá device name",
+            "access id debe ser",
+            "no se admite uuid",
+        )
+    ):
+        return 400
+    code = 502
+    if "se encontraron" in msg_err and "intent" in msg_err:
+        code = 400
+    elif "no se encontró ningún intent" in msg_err:
+        code = 400
+    elif "no tiene target" in msg_err:
+        code = 400
+    return code
 
 
 def _build_google_maps_search_url(lat: float, lon: float) -> str:
@@ -102,8 +340,49 @@ def _is_alias_identifier(value_upper: str) -> bool:
     )
 
 
-def _resolve_index_consulta(token: str) -> dict:
-    """Resuelve un token de búsqueda del índice (AID, CTO FATC, RAMA RATC o alias)."""
+def _consulta_semaforo_desde_consulta(consulta: dict) -> dict:
+    """Conteos RX rojo/amarillo/verde (misma regla que dashboard RAMA / CTO)."""
+    empty = {"ROJAS": 0, "AMARILLAS": 0, "VERDES": 0}
+    try:
+        if consulta.get("resultado"):
+            aid = (consulta.get("resultado") or {}).get("AID")
+            if aid is None or aid == "" or aid == "—":
+                return dict(empty)
+            pot = consultar_access_id_potencias(str(aid).strip())
+            rx = pot.get("RX") if isinstance(pot, dict) else None
+            return resumen_semaforo_desde_rx_values([rx])
+
+        ruta = consulta.get("ruta") or {}
+        rama = (ruta.get("rama") or "").strip()
+        if rama and consulta.get("es_rama"):
+            data = consultar_dashboard_rama(rama)
+            if isinstance(data, dict):
+                res = data.get("__dashboard_resumen__")
+                if isinstance(res, dict):
+                    return {
+                        "ROJAS": int(res.get("ROJAS") or 0),
+                        "AMARILLAS": int(res.get("AMARILLAS") or 0),
+                        "VERDES": int(res.get("VERDES") or 0),
+                    }
+            return dict(empty)
+
+        cto = (ruta.get("cto") or "").strip()
+        if cto:
+            rx_vals = [p.get("RX") for p in (consultar_cto_potencias(cto) or [])]
+            return resumen_semaforo_desde_rx_values(rx_vals)
+
+        return dict(empty)
+    except Exception:
+        current_app.logger.exception("consulta índice: semáforo RX")
+        return dict(empty)
+
+
+def _resolve_index_consulta(token: str, *, defer_altiplano_summary: bool = False) -> dict:
+    """Resuelve un token de búsqueda del índice (Access ID numérico o alfanumérico, CTO FATC, RAMA RATC o alias).
+
+    Si ``defer_altiplano_summary`` es True, no llama a Altiplano para el resumen RX del panel;
+    el cliente lo completa tras ``/potencias`` (consulta individual y masiva).
+    """
     token = (token or "").strip()
     vu = token.upper()
     consulta = {
@@ -117,6 +396,12 @@ def _resolve_index_consulta(token: str) -> dict:
         "busqueda_aid": None,
     }
     if not token:
+        if defer_altiplano_summary:
+            consulta["semaforo_resumen"] = {"ROJAS": 0, "AMARILLAS": 0, "VERDES": 0}
+            consulta["semaforo_deferred"] = True
+        else:
+            consulta["semaforo_resumen"] = _consulta_semaforo_desde_consulta(consulta)
+            consulta["semaforo_deferred"] = False
         return consulta
 
     if token.isdigit():
@@ -149,10 +434,30 @@ def _resolve_index_consulta(token: str) -> dict:
         else:
             consulta["busqueda_aid"] = {"tipo": "no_existe", "AID": token}
 
+    elif _access_lookup_token_ok(token) and "FATC" not in vu and "RATC" not in vu:
+        resultado = consultar_access_id_detalle_desde_bajada_inventario(token)
+        if resultado:
+            consulta["resultado"] = resultado
+            consulta["cto_maps_url"] = _update_route_and_maps_from_result(resultado, consulta["ruta"])
+        else:
+            consulta["busqueda_aid"] = consultar_access_id_baja_o_ausente(token)
+
     if consulta["ruta"].get("cto"):
         consulta["cto_postal_address"] = consultar_cto_direccion_postal(consulta["ruta"]["cto"])
 
+    if defer_altiplano_summary:
+        consulta["semaforo_resumen"] = {"ROJAS": 0, "AMARILLAS": 0, "VERDES": 0}
+        consulta["semaforo_deferred"] = True
+    else:
+        consulta["semaforo_resumen"] = _consulta_semaforo_desde_consulta(consulta)
+        consulta["semaforo_deferred"] = False
     return consulta
+
+
+_CONSULTA_INDIVIDUAL_MULTI_TOKEN_MSG = (
+    "En consulta individual solo se admite un Access ID, una CTO o una RAMA. "
+    "Usá la pestaña «Masivo» para pegar varias líneas o varios valores separados por coma."
+)
 
 
 def _consulta_fila_count(c: dict) -> int:
@@ -165,6 +470,26 @@ def _consulta_fila_count(c: dict) -> int:
     if c.get("es_rama"):
         return sum(len(rows) for rows in t.values())
     return len(t) if isinstance(t, list) else 0
+
+
+_DASH_LIKE_OPERADORES = frozenset({"-", "—"})
+
+
+def sort_consulta_operadores_chips(operadores) -> list[str]:
+    """Orden de chips de operador: valores «sin operador» (-, —) al final."""
+    seen: set[str] = set()
+    head: list[str] = []
+    tail: list[str] = []
+    for raw in operadores or []:
+        op = str(raw).strip() if raw is not None else ""
+        if not op or op in seen:
+            continue
+        seen.add(op)
+        if op in _DASH_LIKE_OPERADORES:
+            tail.append(op)
+        else:
+            head.append(op)
+    return head + tail
 
 
 def _consulta_operadores_union(consultas: list[dict]) -> list[str]:
@@ -188,7 +513,7 @@ def _consulta_operadores_union(consultas: list[dict]) -> list[str]:
                 if op and op not in seen:
                     seen.add(op)
                     out.append(op)
-    return out
+    return sort_consulta_operadores_chips(out)
 
 
 def _request_context_for_log() -> dict:
@@ -241,6 +566,7 @@ def register(app):
         is_json = (
             request.path.startswith("/api/")
             or request.path.endswith("/consultar")
+            or request.path.endswith("/gis-por-lt")
             or request.path.endswith(".json")
             or request.accept_mimetypes.best == "application/json"
         )
@@ -275,13 +601,40 @@ def register(app):
 
     @app.route("/", methods=["GET", "POST"])
     def index():
-        value = ""
-        consultas = []
+        consulta_modo = "individual"
+        value_individual = ""
+        value_masivo = ""
+        consultas: list = []
+        consulta_error = None
 
         if request.method == "POST":
-            value = request.form.get("value", "").strip()
-            for token in split_index_query_tokens(value):
-                consultas.append(_resolve_index_consulta(token))
+            consulta_modo = (request.form.get("consulta_modo") or "individual").strip().lower()
+            if consulta_modo not in ("individual", "masivo"):
+                consulta_modo = "individual"
+            if consulta_modo == "masivo":
+                raw = (request.form.get("value_masivo") or "").strip()
+                value_masivo = raw
+            else:
+                raw = (request.form.get("value") or "").strip()
+                value_individual = raw
+
+            tokens = split_index_query_tokens(raw)
+            if consulta_modo == "individual":
+                if len(tokens) > 1:
+                    consulta_error = _CONSULTA_INDIVIDUAL_MULTI_TOKEN_MSG
+                elif len(tokens) == 1:
+                    consultas = [
+                        _resolve_index_consulta(tokens[0], defer_altiplano_summary=True)
+                    ]
+            else:
+                for token in tokens:
+                    consultas.append(
+                        _resolve_index_consulta(token, defer_altiplano_summary=True)
+                    )
+        elif request.args.get("modo", "").strip().lower() == "masivo":
+            consulta_modo = "masivo"
+
+        value = value_masivo if consulta_modo == "masivo" else value_individual
 
         if len(consultas) > 1:
             consulta_ops_merged = _consulta_operadores_union(consultas)
@@ -293,9 +646,14 @@ def register(app):
         return render_template(
             "index.html",
             consultas=consultas,
+            consulta_modo=consulta_modo,
+            value_individual=value_individual,
+            value_masivo=value_masivo,
+            consulta_error=consulta_error,
             value=value,
             consulta_ops_merged=consulta_ops_merged,
             consulta_row_counts=consulta_row_counts,
+            sort_consulta_operadores_chips=sort_consulta_operadores_chips,
         )
 
     @app.route("/potencias", methods=["POST"])
@@ -303,9 +661,10 @@ def register(app):
         """Endpoint AJAX de potencias para índice/rama/cto.
 
         Acepta un valor libre y decide automáticamente si consultar por:
-        - Access ID (numérico)
+        - Access ID (numérico o alfanumérico VNO, p. ej. ``fes_a5_23``)
         - CTO (FATC)
         - RAMA (RATC)
+        - Alias (Srvc_loc_*, etc.)
         """
         valor = (request.form.get("value") or "").strip()
         if not valor:
@@ -326,6 +685,13 @@ def register(app):
             if not resolved:
                 return jsonify([])
             return jsonify(consultar_access_id_potencias(str(resolved.get("AID") or valor)))
+
+        if (
+            _access_lookup_token_ok(valor)
+            and "FATC" not in valor_upper
+            and "RATC" not in valor_upper
+        ):
+            return jsonify(consultar_access_id_potencias(valor))
 
         return jsonify([])
 
@@ -487,10 +853,11 @@ def register(app):
     def dash_altiplano():
         if not _orquestador_session_token():
             return render_template("dashboard_altiplano_login.html")
-        return render_template(
-            "dashboard_altiplano.html",
-            orquestador_user=(session.get("orquestador_user") or "").strip() or "—",
-        )
+        ctx = {
+            "orquestador_user": (session.get("orquestador_user") or "").strip() or "—",
+        }
+        ctx.update(build_tasa_vno_wizard_context())
+        return render_template("dashboard_altiplano.html", **ctx)
 
     @app.route("/dashboard/altiplano/login", methods=["POST"])
     def dash_altiplano_login():
@@ -526,6 +893,37 @@ def register(app):
         session["orquestador_inp_token"] = token
         return jsonify({"ok": True, "message": "Sesión iniciada"})
 
+    @app.route("/dashboard/altiplano/vno/tasa/ejecutar", methods=["POST"])
+    def dash_altiplano_tasa_ejecutar():
+        """Ejecuta una request del catálogo Postman TASA (NBI) con sesión Orquestador."""
+        if not _orquestador_session_token():
+            return jsonify({"ok": False, "message": "Sesión requerida"}), 401
+        data = request.get_json(silent=True) or {}
+        api_id = (data.get("api_id") or "").strip()
+        raw_vars = data.get("variables")
+        variables: dict[str, str] = {}
+        if isinstance(raw_vars, dict):
+            variables = {str(k): "" if v is None else str(v) for k, v in raw_vars.items()}
+        out = execute_tasa_postman_api(api_id, variables)
+        if out.get("ok"):
+            return jsonify(out), 200
+        msg = (out.get("message") or "").lower()
+        if any(
+            frag in msg
+            for frag in (
+                "api_id",
+                "no encontrada",
+                "credenciales",
+                "destino nbi",
+                "faltan variables",
+                "url final",
+                "json de cuerpo",
+                "cabecera",
+            )
+        ):
+            return jsonify(out), 400
+        return jsonify(out), 502
+
     @app.route("/dashboard/altiplano/logout", methods=["POST"])
     def dash_altiplano_logout():
         session.pop("orquestador_ok", None)
@@ -555,7 +953,8 @@ def register(app):
         estado_base = (request.args.get("estado_base") or "").strip()
         operador = (request.args.get("operador") or "").strip()
         q = (request.args.get("q") or "").strip()
-        limit = request.args.get("limit", default=500, type=int)
+        limit = request.args.get("limit", default=50, type=int)
+        offset = request.args.get("offset", default=0, type=int)
         try:
             payload = dashboard_calidad_inventario_hallazgos(
                 regla=regla,
@@ -563,9 +962,57 @@ def register(app):
                 operador=operador,
                 q=q,
                 limit=limit,
+                offset=offset,
             )
         except Exception:
             return _log_and_internal_error("Error interno consultando hallazgos de calidad")
+        return jsonify(payload)
+
+    @app.route("/dashboard/calidad-inventario/conciliacion.json")
+    def dash_calidad_inventario_conciliacion_json():
+        try:
+            payload = dashboard_calidad_inventario_conciliacion()
+        except Exception:
+            return _log_and_internal_error("Error interno consultando conciliación por operador")
+        return jsonify(payload)
+
+    @app.route("/dashboard/calidad-inventario/resumen-general.json")
+    def dash_calidad_inventario_resumen_general_json():
+        days = request.args.get("days", default=90, type=int)
+        try:
+            payload = dashboard_calidad_inventario_resumen_general(days=days)
+        except Exception:
+            return _log_and_internal_error("Error interno consultando resumen general de calidad")
+        return jsonify(payload)
+
+    @app.route("/dashboard/calidad-inventario/tabla.json")
+    def dash_calidad_inventario_tabla_json():
+        tipo = (request.args.get("tipo") or "").strip()
+        q = (request.args.get("q") or "").strip()
+        limit = request.args.get("limit", default=10, type=int)
+        offset = request.args.get("offset", default=0, type=int)
+        loaders = {
+            "dtv_sin_serial": dashboard_calidad_dtv_sin_serial,
+            "aids_inconsistencia": dashboard_calidad_aids_inconsistencia_datos,
+            "fat_sin_nfc": dashboard_calidad_fat_sin_nfc_tabla,
+            "fat_nfc_duplicados": dashboard_calidad_fat_nfc_duplicados_tabla,
+        }
+        loader = loaders.get(tipo)
+        if not loader:
+            return jsonify({"error": "tipo de tabla no válido"}), 400
+        try:
+            payload = loader(q=q, limit=limit, offset=offset)
+        except Exception:
+            return _log_and_internal_error("Error interno consultando tabla de calidad")
+        return jsonify(payload)
+
+    @app.route("/dashboard/calidad-inventario/historico.json")
+    def dash_calidad_inventario_historico_json():
+        days = request.args.get("days", default=90, type=int)
+        try:
+            payload = dashboard_calidad_inventario_historico(days=days)
+        except Exception:
+            return _log_and_internal_error("Error interno consultando histórico de conciliaciones")
         return jsonify(payload)
 
     @app.route("/dashboard/calidad-inventario/export.csv")
@@ -726,6 +1173,557 @@ def register(app):
         code = 201 if out.get("ok") else 502
         return jsonify(out), code
 
+    @app.route("/dashboard/altiplano/consultar-intent", methods=["POST"])
+    def dash_altiplano_consultar_intent():
+        """Busca intents ont-connection en INP por device ``BA_OLTA_…`` o Access ID (no UUID de intent)."""
+        data = request.get_json(silent=True) or {}
+        device_name, by_id = _normalize_inp_device_by_id_fields_from_request(data)
+        device_name, by_id = _inp_consulta_remap_ba_olta_from_by_id(device_name, by_id)
+
+        access_filter = None
+        if by_id:
+            if _ALTIPLANO_INTENT_UUID_RE.match(by_id):
+                return (
+                    jsonify(
+                        {
+                            "ok": False,
+                            "message": (
+                                "La consulta solo admite Access ID o device/target; "
+                                "no uses el UUID del intent en este campo."
+                            ),
+                            "matches": [],
+                        }
+                    ),
+                    400,
+                )
+            if _ALTIPLANO_BY_ID_ACCESS_TOKEN_RE.match(by_id):
+                access_filter = by_id
+            else:
+                return (
+                    jsonify(
+                        {
+                            "ok": False,
+                            "message": (
+                                "El Access ID debe ser dígitos o identificador alfanumérico "
+                                "(letras, números, _, -, .)"
+                            ),
+                            "matches": [],
+                        }
+                    ),
+                    400,
+                )
+
+        advanced_raw = data.get("advanced_filters")
+        advanced_filters: dict = advanced_raw if isinstance(advanced_raw, dict) else {}
+        filter_rn = advanced_filters.get("required_network_state")
+        filter_al = advanced_filters.get("alignment_state")
+        if filter_rn is not None and not isinstance(filter_rn, list):
+            filter_rn = None
+        if filter_al is not None and not isinstance(filter_al, list):
+            filter_al = None
+        has_advanced = bool(filter_rn or filter_al)
+
+        if has_advanced and inp_advanced_filters_active_aligned_blocked(filter_rn, filter_al):
+            return (
+                jsonify(
+                    {
+                        "ok": False,
+                        "message": (
+                            "La combinación Active + Aligned no está permitida en búsqueda avanzada "
+                            "(demasiados resultados). Usá Misaligned, otro estado RN o prefijo device."
+                        ),
+                        "matches": [],
+                    }
+                ),
+                400,
+            )
+
+        if not device_name and not by_id and not has_advanced:
+            return (
+                jsonify(
+                    {
+                        "ok": False,
+                        "message": (
+                            "Indicá **device name**, **Access ID** o al menos un filtro en "
+                            "búsqueda avanzada (estados RN / alineación)."
+                        ),
+                        "matches": [],
+                    }
+                ),
+                400,
+            )
+
+        if (device_name or "").strip() and (by_id or "").strip():
+            return (
+                jsonify(
+                    {
+                        "ok": False,
+                        "message": (
+                            "En la consulta INP indicá un solo criterio: device name "
+                            "(``BA_OLTA_…`` o ``BA_OLTA_…#3001#gpon``) **o** Access ID, no ambos."
+                        ),
+                        "matches": [],
+                    }
+                ),
+                400,
+            )
+
+        if (device_name or "").strip() and not _inp_consulta_device_name_valid(device_name):
+            return (
+                jsonify(
+                    {
+                        "ok": False,
+                        "message": (
+                            "El device name debe empezar por ``BA_OLTA_`` (prefijo antes del ``#`` "
+                            "o target completo tipo ``BA_OLTA_…#3001#gpon``)."
+                        ),
+                        "matches": [],
+                    }
+                ),
+                400,
+            )
+
+        inventory_resolution = None
+        inventory_miss_fallback = False
+        inv: dict | None = None
+        # Inventario ATC: solo contexto en la respuesta (suggested target, VNO, etc.).
+        # No acotamos el NBI a un solo device: la GUI puede listar varios intents con el mismo Access ID.
+        if access_filter and not device_name:
+            inv = resolver_target_ont_connection_por_access_id(access_filter)
+            if inv.get("ok"):
+                inventory_resolution = {k: v for k, v in inv.items() if k != "ok"}
+            else:
+                inventory_miss_fallback = True
+
+        sess_token = _orquestador_session_token()
+        if not sess_token:
+            return (
+                jsonify(
+                    {
+                        "ok": False,
+                        "message": (
+                            "Sesión Orquestador no iniciada. "
+                            "Ingresá con tu usuario Altiplano (INP) desde la pantalla de login."
+                        ),
+                        "matches": [],
+                    }
+                ),
+                401,
+            )
+
+        aid_mode = (
+            _access_id_match_mode_for_inp_consult(access_filter)
+            if access_filter
+            else "exact"
+        )
+        nbi_device_prefix = (device_name or "").strip() or None
+        out = buscar_intents_ont_connection_inp(
+            sess_token,
+            device_prefix=nbi_device_prefix,
+            access_id=access_filter,
+            intent_uuid=None,
+            access_id_match_mode=aid_mode,
+            filter_required_network_state=filter_rn,
+            filter_alignment_state=filter_al,
+        )
+        if inventory_resolution:
+            out["inventory_resolution"] = inventory_resolution
+        if inventory_miss_fallback:
+            out["inventory_miss_fallback"] = True
+        out = _enrich_consulta_inp_no_match(
+            out,
+            access_filter=access_filter,
+            device_name=device_name,
+            inventory_resolution=inventory_resolution,
+            has_advanced_filters=has_advanced,
+        )
+        code = 200 if out.get("ok") else 502
+        return jsonify(out), code
+
+    @app.route("/dashboard/altiplano/sincronizar-intent", methods=["POST"])
+    def dash_altiplano_sincronizar_intent():
+        """POST operación IBN equivalente a «Synchronize intent» en la GUI (un solo match)."""
+        data = request.get_json(silent=True) or {}
+        ctx = _inp_intent_mutacion_context(data)
+        if ctx.get("error"):
+            body, st = ctx["error"]
+            return jsonify(body), st
+
+        sess_token = _orquestador_session_token()
+        if not sess_token:
+            return (
+                jsonify(
+                    {
+                        "ok": False,
+                        "message": (
+                            "Sesión Orquestador no iniciada. "
+                            "Ingresá con tu usuario Altiplano (INP) desde la pantalla de login."
+                        ),
+                        "matches": [],
+                    }
+                ),
+                401,
+            )
+
+        out = sincronizar_intent_ont_connection_inp(
+            sess_token,
+            device_prefix=ctx["device_prefix"],
+            access_id=ctx["access_id"],
+            intent_uuid=ctx["intent_uuid"],
+        )
+        if ctx.get("inventory_resolution"):
+            out["inventory_resolution"] = ctx["inventory_resolution"]
+        if ctx.get("inventory_miss_fallback"):
+            out["inventory_miss_fallback"] = True
+        code = 200 if out.get("ok") else 502
+        if not out.get("ok"):
+            code = _http_code_for_borrado_payload(out)
+        return jsonify(out), code
+
+    @app.route("/dashboard/altiplano/crear-ont-connection-faltante", methods=["POST"])
+    def dash_altiplano_crear_ont_connection_faltante():
+        """
+        Crea el intent ``ont-connection`` que falta en L1 Scheduler (mismo Access ID de la consulta).
+
+        El puerto ONT/LT/PON/VNO se obtiene del ``error-detail`` o del mensaje de sync fallido.
+        """
+        data = request.get_json(silent=True) or {}
+        access_id = (data.get("access_id") or data.get("by_id") or "").strip()
+        if not access_id:
+            return (
+                jsonify({"ok": False, "message": "Access ID requerido (mismo que en la consulta)"}),
+                400,
+            )
+
+        err_text = (
+            data.get("error_detail")
+            or data.get("message")
+            or data.get("error_message")
+            or ""
+        ).strip()
+        missing = parse_l1_scheduler_missing_ont_connection(err_text)
+        if not missing:
+            miss_in = data.get("missing_ont_connection")
+            if isinstance(miss_in, dict):
+                missing = miss_in
+        if not missing and data.get("device_name") and data.get("lt"):
+            vno_raw = (data.get("vno") or data.get("vno_s") or "").strip()
+            try:
+                vno_n = int(vno_raw) if vno_raw else None
+            except ValueError:
+                vno_n = None
+            device = (data.get("device_name") or "").strip()
+            lt_s = (data.get("lt") or "").strip()
+            pon_s = (data.get("pon") or "").strip()
+            ont_s = (data.get("ont") or "").strip()
+            if device and lt_s and pon_s and ont_s and vno_n:
+                missing = {
+                    "device_name": device,
+                    "lt": lt_s,
+                    "pon": pon_s,
+                    "ont": ont_s,
+                    "vno": vno_n,
+                    "vno_s": str(vno_n),
+                    "fiber_name": f"{device}-{lt_s}-{pon_s}",
+                    "target": f"{device}-{lt_s}-{pon_s}-{ont_s}#{vno_n}#gpon",
+                }
+
+        if not missing:
+            return (
+                jsonify(
+                    {
+                        "ok": False,
+                        "message": (
+                            "No se pudo interpretar la ubicación faltante en L1 Scheduler. "
+                            "Usá una fila con error-detail o el mensaje completo de sync fallido."
+                        ),
+                    }
+                ),
+                400,
+            )
+
+        vno_n = missing.get("vno")
+        operador = (data.get("operador") or "").strip().upper()
+        if not operador and vno_n is not None:
+            operador = (OPERADORES.get(int(vno_n)) or "").upper()
+        if not operador:
+            return (
+                jsonify(
+                    {
+                        "ok": False,
+                        "message": f"VNO {vno_n} sin operador mapeado en la suite; indicá operador en la petición.",
+                    }
+                ),
+                400,
+            )
+
+        sess_token = _orquestador_session_token()
+        if not sess_token:
+            return (
+                jsonify(
+                    {
+                        "ok": False,
+                        "message": (
+                            "Sesión Orquestador no iniciada. "
+                            "Ingresá con tu usuario Altiplano (INP) desde la pantalla de login."
+                        ),
+                    }
+                ),
+                401,
+            )
+
+        out = crear_ont_connection_intent(
+            operador=operador,
+            entorno_nbi="INP",
+            device_name=str(missing["device_name"]),
+            lt=str(missing["lt"]),
+            pon=str(missing["pon"]),
+            ont=str(missing["ont"]),
+            vno=str(missing.get("vno_s") or missing.get("vno")),
+            fiber_name=str(missing["fiber_name"]),
+            access_id=access_id,
+            pir=ONT_CONNECTION_PIR_FIXED,
+            cir=ONT_CONNECTION_CIR_FIXED,
+            nbi_bearer_token=sess_token,
+        )
+        if out.get("ok"):
+            out["missing_ont_connection"] = missing
+            out["access_id"] = access_id
+            out["message"] = (
+                f"ONT Connection creada en {out.get('target') or missing.get('target')} "
+                f"con Access ID {access_id}. Podés sincronizar de nuevo."
+            )
+        code = 200 if out.get("ok") else 502
+        return jsonify(out), code
+
+    @app.route("/dashboard/altiplano/corregir-dependencias-l1", methods=["POST"])
+    def dash_altiplano_corregir_dependencias_l1():
+        """
+        Crea en cadena ONT Connections faltantes en L1 (mismo Access ID) y sincroniza
+        hasta alinear el intent consultado.
+        """
+        data = request.get_json(silent=True) or {}
+        access_id = (data.get("access_id") or data.get("by_id") or "").strip()
+        if not access_id:
+            return jsonify({"ok": False, "message": "Access ID requerido"}), 400
+
+        ctx = _inp_intent_mutacion_context(data)
+        if ctx.get("error"):
+            body, st = ctx["error"]
+            return jsonify(body), st
+
+        sess_token = _orquestador_session_token()
+        if not sess_token:
+            return (
+                jsonify(
+                    {
+                        "ok": False,
+                        "message": (
+                            "Sesión Orquestador no iniciada. "
+                            "Ingresá con tu usuario Altiplano (INP) desde la pantalla de login."
+                        ),
+                    }
+                ),
+                401,
+            )
+
+        err_text = (
+            data.get("error_detail")
+            or data.get("message")
+            or data.get("error_message")
+            or ""
+        ).strip()
+        try:
+            max_steps = int(data.get("max_steps") or 8)
+        except (TypeError, ValueError):
+            max_steps = 8
+
+        out = corregir_dependencias_l1_y_alinear_intent_inp(
+            sess_token,
+            access_id=access_id,
+            device_prefix=ctx["device_prefix"],
+            intent_uuid=ctx["intent_uuid"],
+            error_detail=err_text or None,
+            max_steps=max_steps,
+            pir=ONT_CONNECTION_PIR_FIXED,
+            cir=ONT_CONNECTION_CIR_FIXED,
+        )
+        code = 200 if out.get("ok") else 502
+        return jsonify(out), code
+
+    @app.route("/dashboard/altiplano/actualizar-required-network-state", methods=["POST"])
+    def dash_altiplano_actualizar_required_network_state():
+        """PATCH ``required-network-state`` (equivalente a «Modify intent» en la GUI)."""
+        data = request.get_json(silent=True) or {}
+        rn = (data.get("required_network_state") or data.get("requiredNetworkState") or "").strip()
+        if not rn:
+            return (
+                jsonify(
+                    {
+                        "ok": False,
+                        "message": "Indicá required_network_state (active, suspended, not-present, delete)",
+                        "matches": [],
+                    }
+                ),
+                400,
+            )
+
+        ctx = _inp_intent_mutacion_context(data)
+        if ctx.get("error"):
+            body, st = ctx["error"]
+            return jsonify(body), st
+
+        sess_token = _orquestador_session_token()
+        if not sess_token:
+            return (
+                jsonify(
+                    {
+                        "ok": False,
+                        "message": (
+                            "Sesión Orquestador no iniciada. "
+                            "Ingresá con tu usuario Altiplano (INP) desde la pantalla de login."
+                        ),
+                        "matches": [],
+                    }
+                ),
+                401,
+            )
+
+        out = actualizar_required_network_state_ont_connection_inp(
+            sess_token,
+            rn,
+            device_prefix=ctx["device_prefix"],
+            access_id=ctx["access_id"],
+            intent_uuid=ctx["intent_uuid"],
+        )
+        if ctx.get("inventory_resolution"):
+            out["inventory_resolution"] = ctx["inventory_resolution"]
+        if ctx.get("inventory_miss_fallback"):
+            out["inventory_miss_fallback"] = True
+        code = 200 if out.get("ok") else 502
+        if not out.get("ok"):
+            code = _http_code_for_borrado_payload(out)
+        return jsonify(out), code
+
+    @app.route("/dashboard/altiplano/borrar-intent", methods=["POST"])
+    def dash_altiplano_borrar_intent():
+        """Elimina un intent ont-connection en INP (un solo match). Solo device name y/o Access ID (sin UUID)."""
+        data = request.get_json(silent=True) or {}
+        device_name = (data.get("device_name") or "").strip()
+        by_id = (data.get("by_id") or data.get("id") or "").strip()
+        svlan = (data.get("svlan") or data.get("SVLAN") or "").strip() or None
+
+        sess_token = _orquestador_session_token()
+        if not sess_token:
+            return (
+                jsonify(
+                    {
+                        "ok": False,
+                        "message": (
+                            "Sesión Orquestador no iniciada. "
+                            "Ingresá con tu usuario Altiplano (INP) desde la pantalla de login."
+                        ),
+                    }
+                ),
+                401,
+            )
+
+        out = _borrar_ont_connection_desde_campos(
+            sess_token, device_name, by_id, svlan=svlan
+        )
+        code = _http_code_for_borrado_payload(out)
+        return jsonify(out), code
+
+    @app.route("/dashboard/altiplano/borrar-intent-lote", methods=["POST"])
+    def dash_altiplano_borrar_intent_lote():
+        """Borrado masivo: lista de device names o de Access IDs (un valor por fila en archivo)."""
+        data = request.get_json(silent=True) or {}
+        mode = (data.get("mode") or "").strip().lower()
+        raw_items = data.get("items")
+        if raw_items is None:
+            raw_items = data.get("lines") or []
+        if mode not in ("device", "access"):
+            return (
+                jsonify({"ok": False, "message": "Modo inválido: indicá device o access"}),
+                400,
+            )
+        if not isinstance(raw_items, list):
+            return jsonify({"ok": False, "message": "Se esperaba una lista en items"}), 400
+
+        items: list[str] = []
+        for x in raw_items:
+            s = str(x).strip()
+            if s:
+                items.append(s)
+        if not items:
+            return jsonify({"ok": False, "message": "La lista está vacía"}), 400
+        if len(items) > ALTIPLANO_BORRADO_LOTE_MAX_ITEMS:
+            return (
+                jsonify(
+                    {
+                        "ok": False,
+                        "message": f"Máximo {ALTIPLANO_BORRADO_LOTE_MAX_ITEMS} filas por lote",
+                    }
+                ),
+                400,
+            )
+
+        sess_token = _orquestador_session_token()
+        if not sess_token:
+            return (
+                jsonify(
+                    {
+                        "ok": False,
+                        "message": (
+                            "Sesión Orquestador no iniciada. "
+                            "Ingresá con tu usuario Altiplano (INP) desde la pantalla de login."
+                        ),
+                        "results": [],
+                    }
+                ),
+                401,
+            )
+
+        results = []
+        ok_n = 0
+        fail_n = 0
+        for idx, token in enumerate(items, start=1):
+            if mode == "device":
+                row_out = _borrar_ont_connection_desde_campos(sess_token, token, "")
+            else:
+                row_out = _borrar_ont_connection_desde_campos(sess_token, "", token)
+            row_ok = bool(row_out.get("ok"))
+            if row_ok:
+                ok_n += 1
+            else:
+                fail_n += 1
+            results.append(
+                {
+                    "index": idx,
+                    "input": token,
+                    "ok": row_ok,
+                    "message": row_out.get("message") or "",
+                    "target": row_out.get("target"),
+                }
+            )
+
+        summary_ok = fail_n == 0
+        msg = f"Lote: {ok_n} borrado(s) OK, {fail_n} error(es)."
+        return (
+            jsonify(
+                {
+                    "ok": summary_ok,
+                    "message": msg,
+                    "mode": mode,
+                    "total": len(items),
+                    "ok_count": ok_n,
+                    "fail_count": fail_n,
+                    "results": results,
+                }
+            ),
+            200,
+        )
+
     @app.route("/dashboard/camino-optico/consultar", methods=["POST"])
     def dash_camino_optico_consultar():
         """Dispatcher JSON para consultas del dashboard Camino Óptico."""
@@ -743,8 +1741,9 @@ def register(app):
                     jsonify(
                         {
                             "error": (
-                                "No se reconoce el formato. Usá un identificador con "
-                                "«FATC» (CTO), «RATC» (rama) o solo dígitos (Access ID)."
+                                "No se reconoce el formato. Usá «FATC» (CTO), «RATC» (rama), "
+                                "solo dígitos (Access ID), un LT tipo BA_OLTA_….LT1, "
+                                "o sitio / región (ej. Moreno, MR01, sitio:Tigre)."
                             ),
                         }
                     ),
@@ -753,13 +1752,52 @@ def register(app):
         else:
             if tipo in ("access_id", "aid", "id"):
                 valor = re.sub(r"\s+", "", valor)
-        if tipo == "cto":
-            return jsonify(dashboard_camino_optico_cto(valor))
-        if tipo == "rama":
-            return jsonify(dashboard_camino_optico_rama(valor))
-        if tipo in ("access_id", "aid", "id"):
-            return jsonify(dashboard_camino_optico_access_id(valor))
-        return jsonify({"error": "tipo inválido. Use: cto, rama, access_id o auto"}), 400
+        try:
+            if tipo == "cto":
+                return jsonify(dashboard_camino_optico_cto(valor))
+            if tipo == "rama":
+                return jsonify(dashboard_camino_optico_rama(valor))
+            if tipo in ("access_id", "aid", "id"):
+                return jsonify(dashboard_camino_optico_access_id(valor))
+            if tipo == "lt":
+                return jsonify(dashboard_camino_optico_lt(valor))
+            if tipo in ("equipo", "olt"):
+                return jsonify(dashboard_camino_optico_equipo(valor))
+            if tipo == "sitio":
+                return jsonify(dashboard_camino_optico_sitio(valor))
+            return jsonify(
+                {
+                    "error": (
+                        "tipo inválido. Use: cto, rama, access_id, lt, equipo, sitio o auto"
+                    )
+                }
+            ), 400
+        except Exception:
+            return _log_and_internal_error("Error al consultar camino óptico")
+
+    @app.route("/dashboard/camino-optico/gis-por-lt", methods=["POST"])
+    def dash_camino_optico_gis_por_lt():
+        """GIS + marcadores para un LT (capas superpuestas en el mapa)."""
+        data = request.get_json(silent=True) or {}
+        lt = (data.get("lt") or "").strip()
+        if not lt:
+            return jsonify({"ok": False, "error": "Parámetro lt requerido"}), 400
+        try:
+            payload = gis_payload_para_lt(lt)
+        except Exception:
+            return _log_and_internal_error("Error al cargar GIS por LT")
+        if not payload.get("ok"):
+            return jsonify(payload), 400
+        return jsonify(payload)
+
+    @app.route("/dashboard/camino-optico/arbol-olt.json")
+    def dash_camino_arbol_olt_json():
+        """Jerarquía sitio → OLT → LT (misma data que dashboard OLT/LT) para mapa por casillas."""
+        try:
+            tree = dashboard_olts()
+            return jsonify({"ok": True, "tree": tree})
+        except Exception:
+            return _log_and_internal_error("Error al cargar árbol OLT para Camino óptico")
 
     @app.route("/dashboard/camino-optico/gis", methods=["POST"])
     def dash_camino_optico_gis():

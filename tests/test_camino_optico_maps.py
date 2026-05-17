@@ -35,6 +35,9 @@ def _fake_cto_fat_cursor():
     vals[cols.index("status")] = "IN SERVICE"
     vals[cols.index("path_atc")] = "SF01-RATC-0-000001"
     vals[cols.index("location_description")] = "SF01-FATC-8-200189"
+    vals[cols.index("object_name_ui")] = "BA_OLTA_SF01_01-1-1-3-6-35"
+    vals[cols.index("site_fullname")] = "San Fernando · Site X"
+    vals[cols.index("physical_path")] = "SF01 / path"
 
     class FakeCur:
         def execute(self, sql, params=None):
@@ -67,9 +70,10 @@ def test_camino_optico_template_has_no_text_maps_links():
     assert "gmapsSearchUrl" not in tpl
     assert "mapsLinkHref" not in tpl
     assert "cableMaps" not in tpl
-    assert "cto_maps_url" in tpl
-    assert "Ver en Google Maps" in tpl
-    assert "Sin coordenadas" in tpl
+    assert "Ubicación (CTO)" in tpl
+    assert "camino-ubicacion-cto" in tpl
+    assert "camino-path-badge" in tpl
+    assert "camino-popup-addr" in tpl
 
 
 def test_camino_optico_consultar_access_id_includes_cto_maps_url(client, monkeypatch):
@@ -109,10 +113,34 @@ def test_camino_optico_template_access_id_loads_map():
     assert "GIS_HEAD_ACCESS" in tpl
 
 
+def test_dashboard_camino_optico_cto_camino_contexto(monkeypatch):
+    import services.camino_optico as co
+
+    monkeypatch.setattr(co, "db_cursor", _fake_cto_fat_cursor())
+    monkeypatch.setattr(co, "consultar_cto_coordenadas", lambda _cto: None)
+    monkeypatch.setattr(co, "consultar_cto_direccion_postal", lambda _cto: "Bolivia 4836 (BA Moreno)")
+    monkeypatch.setattr(co, "_cto_markers_para_ramas", lambda *_a, **_k: [])
+    monkeypatch.setattr(
+        co,
+        "_gis_merge_para_ramas",
+        lambda _ramas: {"ok": False, "error": "sin GIS en test"},
+    )
+
+    out = co.dashboard_camino_optico_cto("SF01-FATC-8-200189")
+    ctx = out.get("camino_contexto") or {}
+    assert ctx["ramas"] == ["SF01-RATC-0-000001"]
+    assert ctx["lt"] == "BA_OLTA_SF01_01.LT1"
+    assert ctx["sitio_principal"] == "San Fernando"
+    assert ctx["sitio_codigo"] == "SF01_01"
+    assert ctx["site_fullname"] == "San Fernando · Site X"
+    assert out["direccion_postal"] == "Bolivia 4836 (BA Moreno)"
+
+
 def test_dashboard_camino_optico_cto_cto_maps_url_with_coords(monkeypatch):
     import services.camino_optico as co
 
     monkeypatch.setattr(co, "db_cursor", _fake_cto_fat_cursor())
+    monkeypatch.setattr(co, "consultar_cto_direccion_postal", lambda _cto: None)
     monkeypatch.setattr(
         co,
         "consultar_cto_coordenadas",
@@ -137,6 +165,7 @@ def test_dashboard_camino_optico_cto_cto_maps_url_without_coords(monkeypatch):
     import services.camino_optico as co
 
     monkeypatch.setattr(co, "db_cursor", _fake_cto_fat_cursor())
+    monkeypatch.setattr(co, "consultar_cto_direccion_postal", lambda _cto: None)
     monkeypatch.setattr(co, "consultar_cto_coordenadas", lambda _cto: None)
     monkeypatch.setattr(co, "_cto_markers_para_ramas", lambda *_a, **_k: [])
     monkeypatch.setattr(
@@ -150,11 +179,13 @@ def test_dashboard_camino_optico_cto_cto_maps_url_without_coords(monkeypatch):
     assert out.get("cto_maps_url") is None
 
 
-def test_camino_optico_template_cto_branch_uses_cto_maps_url():
+def test_camino_optico_template_cto_branch_renders_contexto():
     tpl = Path("templates/dashboard_camino_optico.html").read_text(encoding="utf-8")
     assert 'data.tipo === "cto"' in tpl
-    assert "mapsUrlCto" in tpl
-    assert "data.cto_maps_url" in tpl
+    assert "camino_contexto" in tpl
+    assert "camino-contexto-path" in tpl
+    assert "renderJerarquiaNavBar" in tpl
+    assert "data-camino-nav-tipo" in tpl
 
 
 def test_camino_optico_template_rama_loads_map():
@@ -162,6 +193,26 @@ def test_camino_optico_template_rama_loads_map():
     assert "loadCaminoRamaMap" in tpl
     assert "cto_markers" in tpl
     assert "gis-rama" not in tpl
+
+
+def test_camino_optico_template_lt_overlay_controls():
+    tpl = Path("templates/dashboard_camino_optico.html").read_text(encoding="utf-8")
+    assert "camino-lt-overlay-controls" in tpl
+    assert "gis-por-lt" in tpl
+    assert "setupLtSiblingUi" in tpl
+
+
+def test_camino_optico_template_map_before_results_no_arbol_panel():
+    tpl = Path("templates/dashboard_camino_optico.html").read_text(encoding="utf-8")
+    assert "camino-consulta-stack" in tpl
+    idx_map = tpl.find('id="camino-rama-map-panel"')
+    idx_out = tpl.find('id="out"')
+    assert idx_map != -1 and idx_out != -1
+    assert idx_map < idx_out
+    assert "camino-arbol-panel" not in tpl
+    assert "renderCaminoTree" not in tpl
+    assert 'id="camino-gis-fs-toggle"' in tpl
+    assert "requestFullscreen" in tpl or "webkitRequestFullscreen" in tpl
 
 
 def test_camino_optico_template_cto_loads_map():
@@ -172,12 +223,50 @@ def test_camino_optico_template_cto_loads_map():
     assert idx_load != -1
     assert "ctoMarkerFocalOpts" in tpl
     assert "focal" in tpl
+    assert "wireCaminoCtoMarker" in tpl
+
+
+def test_dashboard_camino_optico_lt_jerarquia_includes_equipo_pasos(monkeypatch):
+    import services.camino_optico as co
+
+    def fake_olts():
+        return [
+            {
+                "PRINCIPAL": "Moreno",
+                "OLTS": [
+                    {"OLT_LOGICO": "BA_OLTA_MR01_01", "SITIO_CODIGO": "MR01_01", "LTS": []},
+                    {"OLT_LOGICO": "BA_OLTA_MR01_02", "SITIO_CODIGO": "MR01_02", "LTS": []},
+                ],
+            }
+        ]
+
+    monkeypatch.setattr(co, "dashboard_olts", fake_olts)
+    monkeypatch.setattr(
+        co,
+        "gis_payload_para_lt",
+        lambda _lt: {
+            "ok": True,
+            "lt": "BA_OLTA_MR01_01.LT1",
+            "resumen": {"rama_count": 1, "ramas": ["MR01-RATC-0-000001"]},
+            "cto_markers": [],
+            "gis": {"ok": True, "geojson": {"type": "FeatureCollection", "features": []}},
+        },
+    )
+    monkeypatch.setattr(co, "list_lts_mismo_olt", lambda _olt: ["BA_OLTA_MR01_01.LT1"])
+
+    out = co.dashboard_camino_optico_lt("BA_OLTA_MR01_01.LT1")
+    pasos = (out.get("jerarquia_nav") or {}).get("pasos") or []
+    tipos = [p["tipo"] for p in pasos]
+    assert tipos[:4] == ["sitio", "equipo", "equipo", "lt"]
+    assert pasos[1].get("titulo") == "MR01_01"
+    assert pasos[1]["valor"] == "BA_OLTA_MR01_01"
 
 
 def test_dashboard_camino_optico_cto_includes_gis_and_markers(monkeypatch):
     import services.camino_optico as co
 
     monkeypatch.setattr(co, "db_cursor", _fake_cto_fat_cursor())
+    monkeypatch.setattr(co, "consultar_cto_direccion_postal", lambda _cto: None)
     monkeypatch.setattr(
         co,
         "consultar_cto_coordenadas",
@@ -186,7 +275,7 @@ def test_dashboard_camino_optico_cto_includes_gis_and_markers(monkeypatch):
     monkeypatch.setattr(
         co,
         "_cto_markers_para_ramas",
-        lambda _cur, ramas, focal: [
+        lambda ramas, focal: [
             {
                 "cto": "SF01-FATC-8-200189",
                 "lat": -34.5,
@@ -286,6 +375,7 @@ def test_dashboard_camino_optico_access_id_includes_gis_and_markers(monkeypatch)
         yield FakeCur()
 
     monkeypatch.setattr(co, "db_cursor", _fake_access_cursor)
+    monkeypatch.setattr(co, "consultar_cto_direccion_postal", lambda _cto: "Dir test (CM)")
     monkeypatch.setattr(
         co,
         "consultar_cto_coordenadas",
@@ -294,7 +384,7 @@ def test_dashboard_camino_optico_access_id_includes_gis_and_markers(monkeypatch)
     monkeypatch.setattr(
         co,
         "_cto_markers_para_ramas",
-        lambda _cur, ramas, focal: [
+        lambda ramas, focal: [
             {
                 "cto": focal,
                 "lat": -34.5,
@@ -316,8 +406,11 @@ def test_dashboard_camino_optico_access_id_includes_gis_and_markers(monkeypatch)
 
     out = co.dashboard_camino_optico_access_id("1057109390")
     assert out["tipo"] == "access_id"
+    assert out["direccion_postal"] == "Dir test (CM)"
     assert out["cto_markers"][0]["focal"] is True
     assert out["gis"]["ok"] is True
+    assert out["jerarquia_nav"]["foco"]["tipo"] == "access_id"
+    assert out["camino_contexto"]["cto"] == "SF01-FATC-8-100189"
 
 
 @pytest.fixture
@@ -334,6 +427,8 @@ def _fake_rama_db_cursor():
                 return (2, 5)
             if "cm_report_isp" in self.sql:
                 return None
+            if "s.object_name" in self.sql and "LIMIT 1" in self.sql:
+                return ("BA_OLTA_ES01_01-1-1",)
             return None
 
         def fetchall(self):
@@ -357,6 +452,7 @@ def test_dashboard_camino_optico_rama_includes_markers_and_gis(monkeypatch, _fak
         "consultar_cto_coordenadas",
         lambda cto: {"lat": -34.1, "lon": -58.2},
     )
+    monkeypatch.setattr(co, "consultar_cto_direccion_postal", lambda cto: f"Dir postal {cto}")
     monkeypatch.setattr(
         co,
         "consultar_ci_op_por_rama",
@@ -381,5 +477,6 @@ def test_dashboard_camino_optico_rama_includes_markers_and_gis(monkeypatch, _fak
     assert len(out["cto_markers"]) == 2
     assert out["cto_markers"][0]["cto"] == "ES01-FATC-8-A"
     assert out["cto_markers"][0]["lat"] == -34.1
+    assert out["cto_markers"][0]["direccion_postal"] == "Dir postal ES01-FATC-8-A"
     assert out["gis"]["ok"] is True
     assert out["gis"]["geojson"]["features"][0]["properties"]["nombre_op"] == "ES01-RATC-0-000001"

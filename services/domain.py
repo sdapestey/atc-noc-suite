@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Optional, Tuple
+from typing import Any
 
 OPERADORES = {
     1001: "TASA",
@@ -44,7 +44,7 @@ def nombre_operador(op_id: Any) -> str:
     return OPERADORES.get(op_id, str(op_id))
 
 
-def natural_sort_key_str(s: Optional[str]):
+def natural_sort_key_str(s: str | None):
     """Genera clave de orden natural (texto + números)."""
     if s is None:
         return ()
@@ -64,7 +64,7 @@ def calcular_ne(object_name_raw: str) -> str:
     return f"{p[0]}.LT{p[1]}"
 
 
-def lt_desde_object_name(object_name_raw: Optional[str]) -> Optional[str]:
+def lt_desde_object_name(object_name_raw: str | None) -> str | None:
     """Deriva LT lógica desde `object_name`; retorna `None` si no aplica."""
     if not object_name_raw:
         return None
@@ -74,7 +74,7 @@ def lt_desde_object_name(object_name_raw: Optional[str]) -> Optional[str]:
     return f"{p[0]}.LT{p[1]}"
 
 
-def principal_y_sitio_desde_olt(olt_logico: str) -> Tuple[str, str, str]:
+def principal_y_sitio_desde_olt(olt_logico: str) -> tuple[str, str, str]:
     """Obtiene sitio principal y código de sitio a partir del nombre de OLT."""
     o = (olt_logico or "").strip()
     m = re.match(r"^BA_OLTA_([A-Z]{2}\d{2})_(\d{2})$", o, re.I)
@@ -107,7 +107,7 @@ def region_desde_rama(rama: str) -> str:
     return s[:4].upper() if len(s) >= 4 else s.upper()
 
 
-def clasificar_rx_dbm(rx: Any) -> Optional[str]:
+def clasificar_rx_dbm(rx: Any) -> str | None:
     """Clasifica RX dBm en `rojo`, `amarillo`, `verde` o `None`."""
     if rx is None:
         return None
@@ -120,6 +120,20 @@ def clasificar_rx_dbm(rx: Any) -> Optional[str]:
     if v <= -25:
         return "amarillo"
     return "verde"
+
+
+def resumen_semaforo_desde_rx_values(rx_values) -> dict[str, int]:
+    """Cuenta ROJAS / AMARILLAS / VERDES a partir de valores RX (``clasificar_rx_dbm``)."""
+    out = {"ROJAS": 0, "AMARILLAS": 0, "VERDES": 0}
+    for rx in rx_values:
+        cat = clasificar_rx_dbm(rx)
+        if cat == "rojo":
+            out["ROJAS"] += 1
+        elif cat == "amarillo":
+            out["AMARILLAS"] += 1
+        elif cat == "verde":
+            out["VERDES"] += 1
+    return out
 
 
 def split_index_query_tokens(raw: str | None) -> list[str]:

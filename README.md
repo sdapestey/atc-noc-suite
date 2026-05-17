@@ -130,8 +130,3 @@ APIs / acciones:
 Para runbook completo de despliegue, checks post-deploy, variables detalladas y recomendaciones operativas:
 
 - `README_DEPLOY.md`
-
-## Créditos
-
-- Dashboard de Potencias Histórico y lógica de cálculo de potencias: **Lucas Gimenez (Mgr. NOC.)**.
-- Dashboard de Altiplano: **Lucas Gimenez (Mgr. NOC.)**.

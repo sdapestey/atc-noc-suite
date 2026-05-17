@@ -15,7 +15,7 @@
         <h1>ATC NOC Suite</h1>
       </div>
       <p class="page-lead">
-        <strong>Orquestador</strong> — creación de intent <code class="inline-code">ont-connection</code>.
+        <strong>Orquestador</strong> — creación y borrado de intent <code class="inline-code">ont-connection</code> (INP); operaciones por operador en VNO.
       </p>
     </div>
     {% include 'partials/noc_topbar.html' %}
@@ -28,18 +28,87 @@
     <button type="button" id="btn-orquestador-logout" class="btn btn-ghost">Cerrar sesión</button>
   </div>
 
-  <div class="altiplano-subtabs-shell">
-    <div class="altiplano-subtabs" role="tablist" aria-label="Secciones Orquestador">
-      <button id="alt-tab-inp" class="altiplano-subtab is-active" type="button" role="tab" aria-selected="true" aria-controls="altiplano-panel-inp">INP</button>
-      <button id="alt-tab-vno" class="altiplano-subtab" type="button" role="tab" aria-selected="false" aria-controls="altiplano-panel-vno">VNO</button>
+  <div class="altiplano-subtabs-shell altiplano-subtabs-shell--dash">
+    <div class="dash-segment dash-segment--lg" role="tablist" aria-label="Secciones Orquestador">
+      <button id="alt-tab-inp" class="dash-segment__btn is-active" type="button" role="tab" aria-selected="true" aria-controls="altiplano-panel-inp">INP</button>
+      <button id="alt-tab-vno" class="dash-segment__btn" type="button" role="tab" aria-selected="false" aria-controls="altiplano-panel-vno">VNO</button>
     </div>
   </div>
 
   <div id="altiplano-panel-inp" role="tabpanel" aria-labelledby="alt-tab-inp">
+    <div class="altiplano-subtabs-shell altiplano-subtabs-shell--nested">
+      <div
+        class="dash-segment"
+        role="tablist"
+        aria-label="Operaciones INP"
+      >
+        <button
+          id="alt-inp-tab-consulta"
+          class="dash-segment__btn is-active"
+          type="button"
+          role="tab"
+          aria-selected="true"
+          aria-controls="alt-inp-panel-consulta"
+        >
+          Consulta
+        </button>
+        <button
+          id="alt-inp-tab-creacion"
+          class="dash-segment__btn"
+          type="button"
+          role="tab"
+          aria-selected="false"
+          aria-controls="alt-inp-panel-creacion"
+        >
+          Creación
+        </button>
+        <button
+          id="alt-inp-tab-borrado"
+          class="dash-segment__btn dash-segment__btn--danger"
+          type="button"
+          role="tab"
+          aria-selected="false"
+          aria-controls="alt-inp-panel-borrado"
+        >
+          Borrado
+        </button>
+      </div>
+    </div>
+
+    <div id="alt-inp-panel-creacion" role="tabpanel" aria-labelledby="alt-inp-tab-creacion" hidden>
     <div class="panel altiplano-panel">
       <div class="altiplano-panel-inner">
-      <div class="altiplano-form-grid" aria-label="Formulario ONT Connection INP">
-        <div class="altiplano-field altiplano-field-site">
+      <div class="altiplano-create-form" id="altiplano-create-form-grid" aria-label="Formulario ONT Connection INP">
+        <section class="altiplano-create-step altiplano-create-step--location">
+          <header class="altiplano-create-step__head">
+            <span class="altiplano-create-step__badge" aria-hidden="true">1</span>
+            <div>
+              <h3 class="altiplano-create-step__title">Ubicación en la OLT</h3>
+              <p class="altiplano-create-step__lead muted">Pegá el device name completo o usá el modo avanzado.</p>
+            </div>
+          </header>
+          <div class="altiplano-create-location-card">
+        <div class="altiplano-field altiplano-field-full-device">
+          <label class="t" for="device_location_full">Device name completo</label>
+          <input
+            id="device_location_full"
+            class="altiplano-input-location"
+            type="text"
+            placeholder="BA_OLTA_SF01_04-7-1-26"
+            autocomplete="off"
+            spellcheck="false"
+          >
+          <p class="muted altiplano-field-hint">
+            Formato <code class="inline-code">BA_OLTA_SITIO-LT-PON-ONT</code>
+          </p>
+          <p id="device_location_parse_err" class="altiplano-field-parse-err" hidden></p>
+          <div id="device_location_summary" class="altiplano-location-summary" hidden></div>
+        </div>
+          </div>
+          <details class="altiplano-create-details" id="altiplano-create-details">
+            <summary class="altiplano-create-details__summary">Campos desglosados (modo avanzado)</summary>
+            <div class="altiplano-create-details__grid">
+        <div class="altiplano-field altiplano-field-site altiplano-field-detail">
           <label class="t" for="sitio">Sitio</label>
           <select id="sitio">
             <option value="">Seleccionar sitio...</option>
@@ -107,23 +176,39 @@
             </optgroup>
           </select>
         </div>
-        <div class="altiplano-field altiplano-field-device">
+        <div class="altiplano-field altiplano-field-device altiplano-field-detail">
           <label class="t" for="device_name">Device Name (derivado)</label>
           <input id="device_name" type="text" value="BA_OLTA_" readonly>
         </div>
-        <div class="altiplano-field altiplano-field-sm">
+        <div class="altiplano-field altiplano-field-sm altiplano-field-detail">
           <label class="t" for="lt">LT</label>
           <input id="lt" type="text" autocomplete="off">
         </div>
-        <div class="altiplano-field altiplano-field-sm">
+        <div class="altiplano-field altiplano-field-sm altiplano-field-detail">
           <label class="t" for="pon">PON</label>
           <input id="pon" type="text" autocomplete="off">
         </div>
-        <div class="altiplano-field altiplano-field-sm">
+        <div class="altiplano-field altiplano-field-sm altiplano-field-detail">
           <label class="t" for="ont">ONT</label>
           <input id="ont" type="text" autocomplete="off">
         </div>
+        <div class="altiplano-field altiplano-field-fiber altiplano-field-detail">
+          <label class="t" for="fiber_name">Fiber Name</label>
+          <input id="fiber_name" type="text" readonly>
+        </div>
+            </div>
+          </details>
+        </section>
 
+        <section class="altiplano-create-step altiplano-create-step--service">
+          <header class="altiplano-create-step__head">
+            <span class="altiplano-create-step__badge" aria-hidden="true">2</span>
+            <div>
+              <h3 class="altiplano-create-step__title">Servicio</h3>
+              <p class="altiplano-create-step__lead muted">VNO y Access ID del abonado.</p>
+            </div>
+          </header>
+          <div class="altiplano-create-service-row">
         <div class="altiplano-field altiplano-field-vno">
           <label class="t" for="vno">VNO</label>
           <select id="vno">
@@ -140,14 +225,12 @@
             <option value="2806">2806 - ATC</option>
           </select>
         </div>
-        <div class="altiplano-field altiplano-field-fiber">
-          <label class="t" for="fiber_name">Fiber Name</label>
-          <input id="fiber_name" type="text" readonly>
-        </div>
-        <div class="altiplano-field altiplano-field-access altiplano-field-access--span">
+        <div class="altiplano-field altiplano-field-access">
           <label class="t" for="access_id">Access ID</label>
           <input id="access_id" type="text" placeholder="1051234567" autocomplete="off">
         </div>
+          </div>
+        </section>
 
         <div class="altiplano-form-footer">
           <div class="altiplano-actions altiplano-actions--stacked">
@@ -155,7 +238,6 @@
               <button id="btn-clear" type="button" class="btn btn-ghost">Limpiar campos</button>
               <button id="btn-create" type="button" class="btn btn-primary">Crear ONT Connection</button>
             </div>
-            <p class="altiplano-credits muted">Desarrollo e implementacion por Mgr. NOC Lucas Gimenez</p>
           </div>
         </div>
       </div>
@@ -165,22 +247,274 @@
     <div id="altiplano-result" class="panel altiplano-result">
       <p class="muted">Completá los campos y ejecutá la creación del intent.</p>
     </div>
+    </div>
+
+    <div id="alt-inp-panel-consulta" role="tabpanel" aria-labelledby="alt-inp-tab-consulta">
+      <div class="altiplano-consulta-shell">
+        <div class="panel altiplano-panel altiplano-consulta-panel--search">
+          <div class="altiplano-consulta-panel-inner">
+            <p class="muted altiplano-consulta-lead">
+              Buscá intents <code class="inline-code">ont-connection</code> en <strong>Altiplano INP</strong>.
+              Device name (<code class="inline-code">BA_OLTA_…</code>), Access ID y/o <strong>búsqueda avanzada</strong>
+              por estados (como la GUI). Device y Access ID son excluyentes entre sí.
+            </p>
+            <div class="altiplano-consulta-search-row">
+              <div class="altiplano-consulta-grid altiplano-consulta-grid--single">
+                <div class="altiplano-field">
+                  <label class="t" for="consulta_device_name">Device name (prefijo o target)</label>
+                  <input
+                    id="consulta_device_name"
+                    type="text"
+                    placeholder="Ej. BA_OLTA_ES01_01-1-1-99 o …#3001#gpon"
+                    autocomplete="off"
+                  >
+                </div>
+                <div class="altiplano-field">
+                  <label class="t" for="consulta_by_id">Access ID</label>
+                  <input
+                    id="consulta_by_id"
+                    type="text"
+                    placeholder="Ej. 1051234567 o ALCL00010199"
+                    autocomplete="off"
+                  >
+                </div>
+              </div>
+              <div class="altiplano-consulta-actions">
+                <button type="button" id="btn-consulta-run" class="btn btn-primary">Consultar</button>
+                <button type="button" id="btn-consulta-clear" class="btn btn-ghost">Limpiar</button>
+              </div>
+            </div>
+            <details class="altiplano-consulta-advanced" id="consulta-advanced-details">
+              <summary class="altiplano-consulta-advanced__summary">Búsqueda avanzada (estados)</summary>
+              <div class="altiplano-consulta-advanced__body">
+                <div class="altiplano-field altiplano-consulta-advanced-device">
+                  <label class="t" for="consulta_advanced_device">Prefijo device (opcional)</label>
+                  <input
+                    id="consulta_advanced_device"
+                    type="text"
+                    placeholder="Ej. BA_OLTA_SF01_04 — vacío = todos los OLT en INP"
+                    autocomplete="off"
+                    spellcheck="false"
+                  >
+                  <p class="muted altiplano-field-hint">
+                    Acota por location name / target. Sin prefijo: listado global según los estados elegidos.
+                  </p>
+                </div>
+                <div class="altiplano-consulta-advanced__presets" role="group" aria-label="Combinaciones frecuentes">
+                  <button type="button" class="btn btn-ghost btn-sm" data-consulta-preset="misaligned">Solo Misaligned</button>
+                  <button type="button" class="btn btn-ghost btn-sm" data-consulta-preset="not-present-misaligned">Not present + Misaligned</button>
+                  <button type="button" class="btn btn-ghost btn-sm" data-consulta-preset="not-present-aligned">Not present + Aligned</button>
+                  <button type="button" class="btn btn-ghost btn-sm" data-consulta-preset="clear-filters">Limpiar filtros</button>
+                </div>
+                <div class="altiplano-consulta-advanced__filters">
+                  <fieldset class="altiplano-consulta-advanced__fieldset">
+                    <legend class="t">Required Network State</legend>
+                    <label class="altiplano-consulta-advanced__chk"><input type="checkbox" name="consulta_rn" value="active"> Active</label>
+                    <label class="altiplano-consulta-advanced__chk"><input type="checkbox" name="consulta_rn" value="suspended"> Suspended</label>
+                    <label class="altiplano-consulta-advanced__chk"><input type="checkbox" name="consulta_rn" value="not-present"> Not present</label>
+                  </fieldset>
+                  <fieldset class="altiplano-consulta-advanced__fieldset">
+                    <legend class="t">Alignment State</legend>
+                    <label class="altiplano-consulta-advanced__chk"><input type="checkbox" name="consulta_al" value="aligned"> Aligned</label>
+                    <label class="altiplano-consulta-advanced__chk"><input type="checkbox" name="consulta_al" value="misaligned"> Misaligned</label>
+                  </fieldset>
+                </div>
+                <p class="muted altiplano-consulta-advanced__hint">
+                  Marcá al menos un estado y pulsá <strong>Búsqueda avanzada</strong>. La tabla muestra todos los
+                  device/target que cumplan el criterio (hasta el tope del NBI).
+                  <strong>Active + Aligned</strong> no está disponible (demasiados resultados): usá
+                  <strong>Misaligned</strong>, otro RN o prefijo device.
+                </p>
+                <div class="altiplano-consulta-advanced__actions">
+                  <button type="button" id="btn-consulta-advanced-run" class="btn btn-primary">
+                    Búsqueda avanzada
+                  </button>
+                </div>
+              </div>
+            </details>
+            <p id="consulta-inline-hint" class="muted altiplano-consulta-inline-msg" aria-live="polite"></p>
+          </div>
+        </div>
+        <div
+          id="altiplano-consulta-result"
+          class="panel altiplano-result altiplano-consulta-panel--result"
+          aria-live="polite"
+        >
+          <div id="consulta-result-body">
+            <p class="muted">Completá un criterio y pulsá Consultar.</p>
+          </div>
+          <div id="consulta-busy-overlay" class="altiplano-consulta-result-busy" hidden>
+            <span class="altiplano-consulta-loading" role="status">
+              <span class="altiplano-consulta-loading__spinner" aria-hidden="true"></span>
+              <span class="altiplano-consulta-loading__text">Consultando Altiplano INP…</span>
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="alt-inp-panel-borrado" role="tabpanel" aria-labelledby="alt-inp-tab-borrado" hidden>
+      <div class="panel altiplano-panel">
+        <div class="altiplano-panel-inner">
+          <p class="muted altiplano-consulta-lead">
+            Indicá <strong>device name</strong> (prefijo antes del <code class="inline-code">#</code> o target completo
+            <code class="inline-code">…#VNO#gpon</code>) y/o <strong>Access ID</strong> del servicio.
+            El Access ID puede resolverse desde inventario ATC cuando ya está sincronizado; si no, se busca en Altiplano INP.
+            Si hay más de un intent coincidente, acotá con Access ID o target completo en device name.
+          </p>
+          <p class="muted" style="margin-bottom:14px;color:var(--danger-text);font-weight:600;">
+            La operación elimina el intent en Altiplano (irreversible). Se detecta el
+            <strong>VNO</strong> desde el target (<code class="inline-code">…#VNO#gpon</code>), inventario ATC
+            o consulta INP; en <strong>TASA</strong> se borran antes el servicio HSI y el ONT, luego el
+            <strong>ONT Connection</strong> en INP.
+          </p>
+          <div class="altiplano-consulta-grid">
+            <div class="altiplano-field">
+              <label class="t" for="borrado_device_name">Device name (prefijo target)</label>
+              <input id="borrado_device_name" type="text" placeholder="Ej. BA_OLTA_ES01_01-1-1-99 o …#3001#gpon" autocomplete="off">
+            </div>
+            <div class="altiplano-field">
+              <label class="t" for="borrado_by_id">Access ID</label>
+              <input id="borrado_by_id" type="text" placeholder="Ej. 1051234567 o identificador de servicio (sin UUID)" autocomplete="off">
+            </div>
+          </div>
+          <div class="altiplano-consulta-actions">
+            <button type="button" id="btn-borrado-clear" class="btn btn-ghost">Limpiar</button>
+            <button type="button" id="btn-borrado-run" class="btn btn-primary" style="border-color:var(--danger);background:linear-gradient(180deg,#f85149,#da3633);">Borrar intent</button>
+          </div>
+
+          <hr class="altiplano-borrado-sep" aria-hidden="true">
+          <h3 class="altiplano-borrado-lote-heading">Borrado masivo</h3>
+          <p class="muted altiplano-borrado-lote-lead">
+            Subí un <strong>.txt</strong> o <strong>.csv</strong>: una fila por intent.
+            Elegí si cada fila es un <strong>device name</strong> o un <strong>Access ID</strong> (no mezclar en el mismo archivo).
+            En CSV se usa la <strong>primera columna</strong> de cada fila. Líneas vacías o que empiezan con <code class="inline-code">#</code> se ignoran.
+          </p>
+          <div class="altiplano-field altiplano-field--grow">
+            <label class="t" for="borrado-lote-mode">Tipo de valores en el archivo</label>
+            <select id="borrado-lote-mode" class="altiplano-borrado-lote-select">
+              <option value="device">Device name por fila (prefijo OLT o target …#VNO#gpon)</option>
+              <option value="access">Access ID por fila</option>
+            </select>
+          </div>
+          <div
+            id="borrado-lote-dropzone"
+            class="altiplano-borrado-dropzone"
+            role="button"
+            tabindex="0"
+            aria-label="Arrastrá un archivo txt o csv o pulsá para elegir"
+          >
+            <span class="altiplano-borrado-dropzone-title">Arrastrá aquí un .txt / .csv</span>
+            <span class="altiplano-borrado-dropzone-hint muted">o hacé clic para seleccionar · máximo 300 filas</span>
+          </div>
+          <input type="file" id="borrado-lote-file" accept=".txt,.csv,text/plain,text/csv" hidden>
+          <p id="borrado-lote-preview" class="muted altiplano-borrado-lote-preview" aria-live="polite"></p>
+          <div class="altiplano-consulta-actions altiplano-consulta-actions--lote">
+            <button type="button" id="btn-borrado-lote-clear-file" class="btn btn-ghost">Quitar archivo</button>
+            <button type="button" id="btn-borrado-lote-run" class="btn btn-primary" style="border-color:var(--danger);background:linear-gradient(180deg,#f85149,#da3633);">Borrar lote</button>
+          </div>
+        </div>
+      </div>
+      <div id="altiplano-borrado-result" class="panel altiplano-result">
+        <p class="muted">Completá criterios y confirmá el borrado.</p>
+      </div>
+    </div>
   </div>
 
   <div id="altiplano-panel-vno" role="tabpanel" aria-labelledby="alt-tab-vno" hidden>
     <div class="altiplano-subtabs-shell altiplano-subtabs-shell--nested">
-      <div class="altiplano-subtabs altiplano-subtabs--nested" role="tablist" aria-label="VNO operadores">
-        <button id="alt-vno-tab-tasa" class="altiplano-subtab altiplano-subtab--nested is-active" type="button" role="tab" aria-selected="true" aria-controls="alt-vno-panel-tasa">TASA</button>
-        <button id="alt-vno-tab-directv" class="altiplano-subtab altiplano-subtab--nested" type="button" role="tab" aria-selected="false" aria-controls="alt-vno-panel-directv">DIRECTV</button>
-        <button id="alt-vno-tab-iplan" class="altiplano-subtab altiplano-subtab--nested" type="button" role="tab" aria-selected="false" aria-controls="alt-vno-panel-iplan">IPLAN</button>
-        <button id="alt-vno-tab-metrotel" class="altiplano-subtab altiplano-subtab--nested" type="button" role="tab" aria-selected="false" aria-controls="alt-vno-panel-metrotel">METROTEL</button>
-        <button id="alt-vno-tab-sion" class="altiplano-subtab altiplano-subtab--nested" type="button" role="tab" aria-selected="false" aria-controls="alt-vno-panel-sion">SION</button>
-        <button id="alt-vno-tab-cambio-cto" class="altiplano-subtab altiplano-subtab--nested altiplano-subtab--highlight" type="button" role="tab" aria-selected="false" aria-controls="alt-vno-panel-cambio-cto">CAMBIO DE CTO</button>
+      <div class="dash-segment dash-segment--wrap" role="tablist" aria-label="VNO operadores">
+        <button id="alt-vno-tab-tasa" class="dash-segment__btn is-active" type="button" role="tab" aria-selected="true" aria-controls="alt-vno-panel-tasa">TASA</button>
+        <button id="alt-vno-tab-directv" class="dash-segment__btn" type="button" role="tab" aria-selected="false" aria-controls="alt-vno-panel-directv">DIRECTV</button>
+        <button id="alt-vno-tab-iplan" class="dash-segment__btn" type="button" role="tab" aria-selected="false" aria-controls="alt-vno-panel-iplan">IPLAN</button>
+        <button id="alt-vno-tab-metrotel" class="dash-segment__btn" type="button" role="tab" aria-selected="false" aria-controls="alt-vno-panel-metrotel">METROTEL</button>
+        <button id="alt-vno-tab-sion" class="dash-segment__btn" type="button" role="tab" aria-selected="false" aria-controls="alt-vno-panel-sion">SION</button>
+        <button id="alt-vno-tab-cambio-cto" class="dash-segment__btn dash-segment__btn--warn" type="button" role="tab" aria-selected="false" aria-controls="alt-vno-panel-cambio-cto">CAMBIO DE CTO</button>
       </div>
     </div>
 
     <div id="alt-vno-panel-tasa" class="panel altiplano-result" role="tabpanel" aria-labelledby="alt-vno-tab-tasa">
-      <p class="muted">Próximamente.</p>
+      <div class="panel altiplano-panel altiplano-tasa-shell">
+        <div class="altiplano-tasa-layout">
+          <aside class="altiplano-tasa-rail" aria-label="Selección Orquestador TASA">
+            <header class="altiplano-tasa-head altiplano-tasa-head--rail">
+              <span class="altiplano-tasa-head__icon" aria-hidden="true">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M12 3v18M3 12h18" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" opacity="0.35"/>
+                  <path d="M7 8h4v8H7V8zm6-2h4v12h-4V6z" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linejoin="round"/>
+                </svg>
+              </span>
+              <div>
+                <h2 class="altiplano-tasa-head__title">Orquestador NOC ATC</h2>
+                <p class="muted altiplano-tasa-head__sub">VNO TASA — NBI según colección Postman.</p>
+              </div>
+            </header>
+
+            <div class="altiplano-tasa-steps">
+              <div class="altiplano-tasa-step">
+                <label class="t altiplano-tasa-step__n" for="tasa-entorno">1. Seleccionar Entorno</label>
+                <select id="tasa-entorno" class="field altiplano-tasa-api-select" aria-readonly="true">
+                  <option value="tasa" selected>{{ tasa_nbi_entorno_label }}</option>
+                </select>
+              </div>
+              <div class="altiplano-tasa-step">
+                <label class="t altiplano-tasa-step__n" for="tasa-coleccion">2. Colección Postman</label>
+                <select id="tasa-coleccion" class="field altiplano-tasa-api-select" aria-readonly="true">
+                  <option value="default" selected>{{ tasa_postman_collection_name }}</option>
+                </select>
+              </div>
+              <div class="altiplano-tasa-step">
+                <label class="t altiplano-tasa-step__n" for="tasa-postman-api">3. API a Ejecutar</label>
+                {% if tasa_postman_catalog_error %}
+                <p class="muted altiplano-tasa-catalog-err" role="alert">{{ tasa_postman_catalog_error }}</p>
+                {% endif %}
+                <select id="tasa-postman-api" class="field altiplano-tasa-api-select" aria-describedby="tasa-api-subtitle">
+                  <option value="">Seleccione API…</option>
+                  {% for api in tasa_postman_apis %}
+                  <option value="{{ api.id }}">{{ api.label }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+            </div>
+          </aside>
+
+          <main class="altiplano-tasa-work">
+            <div class="altiplano-tasa-work-head">
+              <div class="altiplano-tasa-work-head__text">
+                <h2 id="tasa-api-title" class="altiplano-tasa-work-title">—</h2>
+                <p class="muted altiplano-tasa-work-sub" id="tasa-api-subtitle">Complete las variables para ejecutar.</p>
+              </div>
+              <div class="altiplano-tasa-mode" role="tablist" aria-label="Modo de ejecución">
+                <button type="button" class="altiplano-tasa-mode__btn is-active" id="tasa-mode-individual" role="tab" aria-selected="true">Individual</button>
+                <button type="button" class="altiplano-tasa-mode__btn" id="tasa-mode-masivo" role="tab" aria-selected="false" disabled title="Próximamente">Masivo (CSV)</button>
+                <button type="button" class="altiplano-tasa-mode__btn" id="tasa-mode-secuencial" role="tab" aria-selected="false" disabled title="Próximamente">Secuencial</button>
+              </div>
+            </div>
+
+            <p id="tasa-no-api" class="muted altiplano-tasa-placeholder">Seleccioná una API en el paso 3.</p>
+
+            <div id="tasa-vars-wrap" class="altiplano-tasa-vars-wrap" hidden>
+              <div id="tasa-vars-grid" class="altiplano-tasa-vars-grid"></div>
+              <button type="button" id="tasa-btn-ejecutar" class="btn btn-primary altiplano-tasa-run">
+                <span class="altiplano-tasa-run__icon" aria-hidden="true">▶</span>
+                Ejecutar API
+              </button>
+            </div>
+
+            <section class="altiplano-tasa-console" aria-label="Consola de resultados">
+              <div class="altiplano-tasa-console__bar">
+                <h3 class="altiplano-tasa-console__title">Consola de Resultados</h3>
+                <div class="altiplano-tasa-console__actions">
+                  <button type="button" id="tasa-btn-copy" class="btn btn-ghost altiplano-tasa-console__btn">Copiar</button>
+                  <button type="button" id="tasa-btn-clear" class="btn btn-ghost altiplano-tasa-console__btn">Limpiar</button>
+                </div>
+              </div>
+              <pre id="tasa-console-out" class="altiplano-tasa-console__out" tabindex="0">Esperando ejecución…</pre>
+            </section>
+          </main>
+        </div>
+        <script type="application/json" id="tasa-postman-apis-json">{{ tasa_postman_apis | tojson }}</script>
+      </div>
     </div>
     <div id="alt-vno-panel-directv" class="panel altiplano-result" role="tabpanel" aria-labelledby="alt-vno-tab-directv" hidden>
       <p class="muted">Próximamente.</p>
@@ -200,6 +534,39 @@
   </div>
 </div>
 
+<dialog
+  id="altiplano-confirm-dialog"
+  class="altiplano-confirm-dialog"
+  aria-labelledby="altiplano-confirm-title"
+>
+  <div class="altiplano-confirm-dialog-inner">
+    <h2 id="altiplano-confirm-title" class="altiplano-confirm-dialog-title"></h2>
+    <p id="altiplano-confirm-message" class="altiplano-confirm-dialog-message"></p>
+    <ul id="altiplano-confirm-list" class="altiplano-confirm-dialog-list" hidden></ul>
+    <p id="altiplano-confirm-detail" class="altiplano-confirm-dialog-detail muted" hidden></p>
+    <div class="altiplano-confirm-dialog-actions">
+      <button type="button" id="altiplano-confirm-cancel" class="btn btn-ghost altiplano-confirm-dialog-btn-cancel">Cancelar</button>
+      <button type="button" id="altiplano-confirm-ok" class="btn btn-primary altiplano-confirm-dialog-btn-ok">Confirmar</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog
+  id="altiplano-result-dialog"
+  class="altiplano-confirm-dialog altiplano-result-dialog"
+  aria-labelledby="altiplano-result-title"
+>
+  <div class="altiplano-confirm-dialog-inner">
+    <h2 id="altiplano-result-title" class="altiplano-confirm-dialog-title"></h2>
+    <p id="altiplano-result-message" class="altiplano-confirm-dialog-message"></p>
+    <p id="altiplano-result-detail" class="altiplano-confirm-dialog-detail muted" hidden></p>
+    <ul id="altiplano-result-list" class="altiplano-confirm-dialog-list" hidden></ul>
+    <div class="altiplano-confirm-dialog-actions">
+      <button type="button" id="altiplano-result-ok" class="btn btn-primary altiplano-confirm-dialog-btn-ok">Cerrar</button>
+    </div>
+  </div>
+</dialog>
+
 <script>
 (function () {
   const btn = document.getElementById("btn-create");
@@ -209,6 +576,11 @@
   const topTabs = [
     { tab: "alt-tab-inp", panel: "altiplano-panel-inp" },
     { tab: "alt-tab-vno", panel: "altiplano-panel-vno" },
+  ];
+  const inpTabs = [
+    { tab: "alt-inp-tab-consulta", panel: "alt-inp-panel-consulta" },
+    { tab: "alt-inp-tab-creacion", panel: "alt-inp-panel-creacion" },
+    { tab: "alt-inp-tab-borrado", panel: "alt-inp-panel-borrado" },
   ];
   const vnoTabs = [
     { tab: "alt-vno-tab-tasa", panel: "alt-vno-panel-tasa" },
@@ -224,6 +596,23 @@
     return el ? String(el.value || "").trim() : "";
   }
 
+  function parseJsonResponse(res) {
+    return res.text().then(function (text) {
+      var j = {};
+      if (text) {
+        try {
+          j = JSON.parse(text);
+        } catch (parseErr) {
+          j = {
+            ok: false,
+            message: "Respuesta inválida del servidor (HTTP " + res.status + ")",
+          };
+        }
+      }
+      return { okHttp: res.ok, status: res.status, payload: j || {} };
+    });
+  }
+
   function activateTabs(items, activeTabId) {
     items.forEach(function (item) {
       const tabEl = document.getElementById(item.tab);
@@ -237,15 +626,2190 @@
     });
   }
 
-  function renderResult(payload, ok) {
+  const consultaOut = document.getElementById("altiplano-consulta-result");
+  const consultaBusy = document.getElementById("consulta-busy-overlay");
+  const consultaHint = document.getElementById("consulta-inline-hint");
+  const btnConsulta = document.getElementById("btn-consulta-run");
+  const btnConsultaClear = document.getElementById("btn-consulta-clear");
+  var lastConsultaCriteria = null;
+  var consultaLastCreatePrefill = null;
+  var consultaLastResultRows = [];
+  const borradoOut = document.getElementById("altiplano-borrado-result");
+  const btnBorrado = document.getElementById("btn-borrado-run");
+  const btnBorradoClear = document.getElementById("btn-borrado-clear");
+  const borradoLoteDrop = document.getElementById("borrado-lote-dropzone");
+  const borradoLoteFile = document.getElementById("borrado-lote-file");
+  const borradoLotePreview = document.getElementById("borrado-lote-preview");
+  const borradoLoteMode = document.getElementById("borrado-lote-mode");
+  const btnBorradoLoteRun = document.getElementById("btn-borrado-lote-run");
+  const btnBorradoLoteClearFile = document.getElementById("btn-borrado-lote-clear-file");
+  var borradoLoteItems = [];
+
+  function renderBorradoResult(payload, ok) {
+    if (!borradoOut) return;
+    if (!payload || typeof payload !== "object") {
+      borradoOut.innerHTML = '<p class="muted">Sin datos.</p>';
+      return;
+    }
+    const msg = payload.message ? String(payload.message) : (ok ? "OK" : "Error");
+    const tgt = payload.target ? String(payload.target) : "";
+    const inv = payload.inventory_resolution;
+    const rows = payload.matches || [];
+    let html = "";
+    html += '<p><strong>' + (ok ? "Borrado" : "Operación fallida") + ":</strong> " + escHtml(msg) + "</p>";
+    if (tgt) {
+      html += '<p><strong>Target:</strong> <code class="inline-code">' + escHtml(tgt) + "</code></p>";
+    }
+    if (inv && inv.device_location_prefix) {
+      html +=
+        '<p class="muted altiplano-consulta-inv"><strong>Inventario ATC:</strong> prefijo derivado ' +
+        '<code class="inline-code">' +
+        escHtml(String(inv.device_location_prefix)) +
+        "</code></p>";
+    }
+    const vnoSteps = payload.vno_steps || [];
+    if (vnoSteps.length) {
+      html += '<div class="altiplano-consulta-table-wrap"><table class="altiplano-consulta-table">';
+      html += "<thead><tr><th>Paso</th><th>Estado</th><th>Detalle</th></tr></thead><tbody>";
+      for (let si = 0; si < vnoSteps.length; si++) {
+        const st = vnoSteps[si] || {};
+        const stOk = st.ok ? (st.skipped ? "Omitido" : "OK") : "Error";
+        const det = st.message ? String(st.message) : "—";
+        html +=
+          "<tr><td>" +
+          escHtml(st.label || "—") +
+          "</td><td>" +
+          escHtml(stOk) +
+          "</td><td>" +
+          escHtml(det) +
+          "</td></tr>";
+      }
+      html += "</tbody></table></div>";
+    }
+    if (payload && payload.inventory_miss_fallback) {
+      html +=
+        '<p class="muted altiplano-consulta-inv"><strong>Inventario ATC:</strong> sin fila para este Access ID todavía; la búsqueda usó solo <strong>Altiplano INP</strong>.</p>';
+    }
+    if (!ok && rows.length > 1) {
+      html += '<div class="altiplano-consulta-table-wrap"><table class="altiplano-consulta-table">';
+      html += "<thead><tr><th>Access ID</th><th>Target</th><th>UUID</th></tr></thead><tbody>";
+      for (let i = 0; i < rows.length; i++) {
+        var br = rows[i] || {};
+        html +=
+          "<tr><td><code class=\"inline-code\">" +
+          (br.access_id != null ? String(br.access_id) : "—") +
+          "</code></td>";
+        html +=
+          "<td><code class=\"inline-code\">" +
+          (br.target != null ? String(br.target) : "—") +
+          "</code></td>";
+        html +=
+          "<td><code class=\"inline-code\">" +
+          (br.intent_uuid != null ? String(br.intent_uuid) : "—") +
+          "</code></td></tr>";
+      }
+      html += "</tbody></table></div>";
+    }
+    borradoOut.innerHTML = html;
+  }
+
+  function escHtml(s) {
+    if (s === null || s === undefined) return "";
+    return String(s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function escAttr(s) {
+    return escHtml(s).replace(/'/g, "&#39;");
+  }
+
+  function consultaLoadingMarkup(message, panel) {
+    var msg = message != null ? String(message) : "Consultando Altiplano INP…";
+    var extra = panel ? " altiplano-consulta-loading--panel" : "";
+    return (
+      '<span class="altiplano-consulta-loading' +
+      extra +
+      '" role="status">' +
+      '<span class="altiplano-consulta-loading__spinner" aria-hidden="true"></span>' +
+      '<span class="altiplano-consulta-loading__text">' +
+      escHtml(msg) +
+      "</span></span>"
+    );
+  }
+
+  var consultaBusyDefaultMessage = "Consultando Altiplano INP…";
+  var consultaAdvancedBusyMessage = "Búsqueda avanzada en Altiplano INP…";
+
+  function setConsultaOverlayMessage(message) {
+    var overlay = document.getElementById("consulta-busy-overlay");
+    if (!overlay) return;
+    var textEl = overlay.querySelector(".altiplano-consulta-loading__text");
+    if (textEl) {
+      textEl.textContent = message != null ? String(message) : consultaBusyDefaultMessage;
+    }
+  }
+
+  var altiplanoConfirmResolve = null;
+  var altiplanoConfirmDialogWired = false;
+
+  function closeAltiplanoConfirm(confirmed) {
+    var dlg = document.getElementById("altiplano-confirm-dialog");
+    if (dlg && dlg.open) dlg.close();
+    if (altiplanoConfirmResolve) {
+      var fn = altiplanoConfirmResolve;
+      altiplanoConfirmResolve = null;
+      fn(!!confirmed);
+    }
+  }
+
+  function wireAltiplanoConfirmDialog() {
+    if (altiplanoConfirmDialogWired) return;
+    var dlg = document.getElementById("altiplano-confirm-dialog");
+    var btnOk = document.getElementById("altiplano-confirm-ok");
+    var btnCancel = document.getElementById("altiplano-confirm-cancel");
+    if (!dlg || !btnOk || !btnCancel) return;
+    altiplanoConfirmDialogWired = true;
+    btnOk.addEventListener("click", function () {
+      closeAltiplanoConfirm(true);
+    });
+    btnCancel.addEventListener("click", function () {
+      closeAltiplanoConfirm(false);
+    });
+    dlg.addEventListener("cancel", function (e) {
+      e.preventDefault();
+      closeAltiplanoConfirm(false);
+    });
+    dlg.addEventListener("click", function (e) {
+      if (e.target === dlg) closeAltiplanoConfirm(false);
+    });
+  }
+
+  function altiplanoConfirm(opts) {
+    opts = opts || {};
+    wireAltiplanoConfirmDialog();
+    var dlg = document.getElementById("altiplano-confirm-dialog");
+    var titleEl = document.getElementById("altiplano-confirm-title");
+    var msgEl = document.getElementById("altiplano-confirm-message");
+    var listEl = document.getElementById("altiplano-confirm-list");
+    var detailEl = document.getElementById("altiplano-confirm-detail");
+    var btnOk = document.getElementById("altiplano-confirm-ok");
+    var btnCancel = document.getElementById("altiplano-confirm-cancel");
+    if (!dlg || !titleEl || !msgEl || !listEl || !detailEl || !btnOk || !btnCancel) {
+      return Promise.resolve(window.confirm((opts.title || "") + "\n\n" + (opts.message || "")));
+    }
+    var title = opts.title != null ? String(opts.title) : "¿Confirmar acción?";
+    var message = opts.message != null ? String(opts.message) : "";
+    var detail = opts.detail != null ? String(opts.detail) : "";
+    var items = Array.isArray(opts.items) ? opts.items : [];
+    var variant = opts.variant === "danger" ? "danger" : "default";
+    titleEl.textContent = title;
+    if (message) {
+      msgEl.hidden = false;
+      msgEl.innerHTML = escHtml(message).replace(/\n/g, "<br>");
+    } else {
+      msgEl.hidden = true;
+      msgEl.textContent = "";
+    }
+    if (items.length) {
+      listEl.hidden = false;
+      listEl.innerHTML = items
+        .map(function (item) {
+          return "<li><code class=\"inline-code\">" + escHtml(String(item)) + "</code></li>";
+        })
+        .join("");
+    } else {
+      listEl.hidden = true;
+      listEl.innerHTML = "";
+    }
+    if (detail) {
+      detailEl.hidden = false;
+      detailEl.textContent = detail;
+    } else {
+      detailEl.hidden = true;
+      detailEl.textContent = "";
+    }
+    btnCancel.textContent = opts.cancelLabel || "Cancelar";
+    btnOk.textContent = opts.confirmLabel || "Confirmar";
+    btnOk.classList.toggle("altiplano-confirm-dialog-btn-ok--danger", variant === "danger");
+    return new Promise(function (resolve) {
+      altiplanoConfirmResolve = resolve;
+      dlg.showModal();
+      btnOk.focus();
+    });
+  }
+
+  var altiplanoResultResolve = null;
+  var altiplanoResultDialogWired = false;
+
+  function closeAltiplanoResult() {
+    var dlg = document.getElementById("altiplano-result-dialog");
+    if (dlg && dlg.open) dlg.close();
+    if (altiplanoResultResolve) {
+      var fn = altiplanoResultResolve;
+      altiplanoResultResolve = null;
+      fn();
+    }
+  }
+
+  function wireAltiplanoResultDialog() {
+    if (altiplanoResultDialogWired) return;
+    var dlg = document.getElementById("altiplano-result-dialog");
+    var btnOk = document.getElementById("altiplano-result-ok");
+    if (!dlg || !btnOk) return;
+    altiplanoResultDialogWired = true;
+    btnOk.addEventListener("click", function () {
+      closeAltiplanoResult();
+    });
+    dlg.addEventListener("cancel", function (e) {
+      e.preventDefault();
+      closeAltiplanoResult();
+    });
+    dlg.addEventListener("click", function (e) {
+      if (e.target === dlg) closeAltiplanoResult();
+    });
+  }
+
+  function altiplanoResultDialog(opts) {
+    opts = opts || {};
+    wireAltiplanoResultDialog();
+    var dlg = document.getElementById("altiplano-result-dialog");
+    var titleEl = document.getElementById("altiplano-result-title");
+    var msgEl = document.getElementById("altiplano-result-message");
+    var detailEl = document.getElementById("altiplano-result-detail");
+    var listEl = document.getElementById("altiplano-result-list");
+    var btnOk = document.getElementById("altiplano-result-ok");
+    if (!dlg || !titleEl || !msgEl || !listEl || !btnOk) {
+      var fallback =
+        (opts.title ? String(opts.title) + "\n\n" : "") +
+        (opts.message ? String(opts.message) + "\n\n" : "") +
+        (opts.detail ? String(opts.detail) + "\n\n" : "") +
+        (Array.isArray(opts.items) ? opts.items.join("\n") : "");
+      window.alert(fallback || "Operación finalizada.");
+      return Promise.resolve();
+    }
+    var title = opts.title != null ? String(opts.title) : "Resultado";
+    var message = opts.message != null ? String(opts.message) : "";
+    var detail = opts.detail != null ? String(opts.detail) : "";
+    var items = Array.isArray(opts.items) ? opts.items : [];
+    var variant = opts.variant === "error" ? "error" : opts.variant === "warning" ? "warning" : "default";
+    titleEl.textContent = title;
+    titleEl.classList.toggle("altiplano-result-dialog-title--warn", variant === "warning");
+    titleEl.classList.toggle("altiplano-result-dialog-title--error", variant === "error");
+    dlg.classList.toggle("altiplano-result-dialog--error", variant === "error");
+    dlg.classList.toggle("altiplano-result-dialog--warn", variant === "warning");
+    if (message) {
+      msgEl.hidden = false;
+      msgEl.innerHTML = escHtml(message).replace(/\n/g, "<br>");
+    } else {
+      msgEl.hidden = true;
+      msgEl.textContent = "";
+    }
+    if (detailEl) {
+      if (detail) {
+        detailEl.hidden = false;
+        detailEl.textContent = detail;
+      } else {
+        detailEl.hidden = true;
+        detailEl.textContent = "";
+      }
+    }
+    if (items.length) {
+      listEl.hidden = false;
+      listEl.innerHTML = items
+        .map(function (item) {
+          return "<li>" + escHtml(String(item)) + "</li>";
+        })
+        .join("");
+    } else {
+      listEl.hidden = true;
+      listEl.innerHTML = "";
+    }
+    btnOk.textContent = opts.okLabel || "Cerrar";
+    btnOk.classList.toggle("altiplano-confirm-dialog-btn-ok--danger", variant === "error");
+    return new Promise(function (resolve) {
+      altiplanoResultResolve = resolve;
+      dlg.showModal();
+      btnOk.focus();
+    });
+  }
+
+  function consultaFormatVnoStepsItems(steps) {
+    if (!steps || !steps.length) return [];
+    return steps.map(function (st) {
+      var label = (st && st.label) || "Paso";
+      var status = st && st.ok ? (st.skipped ? "omitido" : "OK") : "error";
+      var det = st && st.message ? String(st.message) : "";
+      return label + " · " + status + (det ? ": " + det : "");
+    });
+  }
+
+  function altiplanoInpErrorDialog(opts) {
+    opts = opts || {};
+    var out = opts.out;
+    var items = Array.isArray(opts.items) ? opts.items.slice() : [];
+    var detail = opts.detail != null ? String(opts.detail) : "";
+    if (out && out.vno_steps && out.vno_steps.length) {
+      items = items.concat(consultaFormatVnoStepsItems(out.vno_steps));
+      if (!detail) {
+        detail = "Revisá los pasos en la pestaña Borrado si hace falta.";
+      }
+    }
+    if (out && out.error_detail) {
+      var ed = String(out.error_detail);
+      if (items.indexOf(ed) < 0) items.push(ed);
+    }
+    return altiplanoResultDialog({
+      title: opts.title || "Error en la operación",
+      message: opts.message || (out && out.message) || "La operación no se completó.",
+      detail: detail,
+      items: items,
+      variant: opts.variant || "error",
+      okLabel: opts.okLabel || "Cerrar",
+    });
+  }
+
+  function consultaActIconSvg(kind) {
+    if (kind === "sync") {
+      return (
+        '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">' +
+        '<path d="M21 12a9 9 0 1 1-2.64-6.36" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>' +
+        '<path d="M21 3v6h-6M3 12a9 9 0 1 1 2.64 6.36" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>' +
+        '<path d="M3 21v-6h6" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>' +
+        "</svg>"
+      );
+    }
+    if (kind === "del") {
+      return (
+        '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">' +
+        '<path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m-1 0v11a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V7" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>' +
+        "</svg>"
+      );
+    }
+    if (kind === "create-l1") {
+      return (
+        '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">' +
+        '<path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>' +
+        "</svg>"
+      );
+    }
+    if (kind === "fix") {
+      return (
+        '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">' +
+        '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>' +
+        "</svg>"
+      );
+    }
+    return (
+      '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">' +
+      '<path d="M4 20h4l10.5-10.5a2.1 2.1 0 0 0 0-3L16.5 4a2.1 2.1 0 0 0-3 0L3 14.5V20z" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>' +
+      '<path d="M13.5 6.5l4 4" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>' +
+      "</svg>"
+    );
+  }
+
+  function consultaActButton(act, row, disabled, title) {
+    var tgt = row && row.target ? String(row.target) : "";
+    var aid = row && row.access_id != null && String(row.access_id) !== "" ? String(row.access_id) : "";
+    var rn = row && row.required_network_state != null ? String(row.required_network_state) : "";
+    var extra = aid ? ' data-access-id="' + escAttr(aid) + '"' : "";
+    if (rn && act === "sync") {
+      extra += ' data-required-network-state="' + escAttr(rn) + '"';
+    }
+    if ((act === "create-l1" || act === "fix") && row && row.error_detail) {
+      extra += ' data-error-detail="' + escAttr(String(row.error_detail)) + '"';
+    }
+    return (
+      '<button type="button" class="altiplano-consulta-act-btn" data-consulta-act="' +
+      escAttr(act) +
+      '" data-target="' +
+      escAttr(tgt) +
+      '"' +
+      extra +
+      (disabled ? " disabled" : "") +
+      ' title="' +
+      escAttr(title) +
+      '">' +
+      consultaActIconSvg(act) +
+      "</button>"
+    );
+  }
+
+  function consultaRowNeedsActive(row) {
+    var rn =
+      row && row.required_network_state != null
+        ? String(row.required_network_state).trim().toLowerCase()
+        : "";
+    if (!rn) return true;
+    var norm = rn.replace(/_/g, "-").replace(/\s+/g, "-");
+    while (norm.indexOf("--") >= 0) norm = norm.replace(/--/g, "-");
+    return norm !== "active";
+  }
+
+  function consultaRowFromActButton(btn) {
+    return {
+      target: btn.getAttribute("data-target") || "",
+      access_id: btn.getAttribute("data-access-id") || "",
+      error_detail: btn.getAttribute("data-error-detail") || "",
+      required_network_state: btn.getAttribute("data-required-network-state") || "",
+    };
+  }
+
+  function consultaRowCanFixL1(row) {
+    if (!row || row.access_id == null || String(row.access_id) === "") return false;
+    if (row.can_create_missing_ont_connection) return true;
+    var ed = row.error_detail ? String(row.error_detail) : "";
+    return /ont-connection intent does not exist/i.test(ed);
+  }
+
+  function consultaFindResultRow(target, accessId) {
+    var tgt = target != null ? String(target).trim() : "";
+    var aid = accessId != null ? String(accessId).trim() : "";
+    for (var i = 0; i < consultaLastResultRows.length; i++) {
+      var r = consultaLastResultRows[i] || {};
+      if (tgt && String(r.target || "").trim() === tgt) return r;
+      if (aid && String(r.access_id || "").trim() === aid) return r;
+    }
+    return null;
+  }
+
+  function consultaMergeSelectedRowFromCheckbox(cb) {
+    var target = cb.getAttribute("data-target") || "";
+    var accessId = cb.getAttribute("data-access-id") || "";
+    var full = consultaFindResultRow(target, accessId);
+    var row = {
+      target: target,
+      access_id: accessId,
+      required_network_state:
+        (full && full.required_network_state) ||
+        cb.getAttribute("data-required-network-state") ||
+        "",
+      error_detail: (full && full.error_detail) || cb.getAttribute("data-error-detail") || "",
+    };
+    if (full) {
+      if (full.alignment_state != null) row.alignment_state = full.alignment_state;
+      if (full.can_create_missing_ont_connection) {
+        row.can_create_missing_ont_connection = full.can_create_missing_ont_connection;
+      }
+      if (full.missing_ont_connection) row.missing_ont_connection = full.missing_ont_connection;
+    }
+    return row;
+  }
+
+  function consultaRunFixItPromise(row) {
+    var target = (row && row.target) || "";
+    var accessId =
+      row && row.access_id != null && String(row.access_id) !== ""
+        ? String(row.access_id)
+        : "";
+    if (!accessId) {
+      return Promise.resolve({ ok: false, message: "Falta Access ID para corregir dependencias L1." });
+    }
+    var payload = {
+      access_id: accessId,
+      device_name: target,
+      error_detail: (row && row.error_detail) || "",
+    };
+    if (row && row.missing_ont_connection) {
+      payload.missing_ont_connection = row.missing_ont_connection;
+    }
+    return consultaInpApiPost("/dashboard/altiplano/corregir-dependencias-l1", payload);
+  }
+
+  function consultaRunFixItChain(row, btn) {
+    var target = (row && row.target) || (btn && btn.getAttribute("data-target")) || "";
+    var accessId =
+      row && row.access_id != null && String(row.access_id) !== ""
+        ? String(row.access_id)
+        : (btn && btn.getAttribute("data-access-id")) || "";
+    if (!accessId) {
+      altiplanoResultDialog({
+        title: "No se puede corregir",
+        message: "Falta Access ID para corregir dependencias L1.",
+        variant: "warning",
+      });
+      return;
+    }
+    var fullRow = row || consultaFindResultRow(target, accessId) || {};
+    fullRow.target = fullRow.target || target;
+    fullRow.access_id = fullRow.access_id || accessId;
+    consultaSetFixItBusy(btn, true);
+    consultaClearActionError();
+    if (consultaHint) consultaHint.textContent = "";
+    setConsultaBusy(true, "Creando dependencias L1 y sincronizando…");
+    consultaRunFixItPromise(fullRow)
+      .then(function (out) {
+        if (!out) return;
+        if (!out.ok) {
+          showConsultaActionError(out, fullRow);
+          return;
+        }
+        var note = out.message || "Intent alineado.";
+        if (out.created_targets && out.created_targets.length) {
+          note += " Creados: " + out.created_targets.join(", ");
+        }
+        consultaRefreshAfterAction(note);
+      })
+      .catch(function () {
+        altiplanoResultDialog({
+          title: "Error de red",
+          message: "No se pudo contactar al servidor al corregir dependencias L1.",
+          variant: "warning",
+        });
+      })
+      .finally(function () {
+        consultaSetFixItBusy(btn, false);
+        setConsultaBusy(false);
+      });
+  }
+
+  function consultaRowsShareOneAccessId(rows) {
+    if (!rows || rows.length < 2) return false;
+    var aid = null;
+    for (var i = 0; i < rows.length; i++) {
+      var a =
+        rows[i] && rows[i].access_id != null && String(rows[i].access_id).trim() !== ""
+          ? String(rows[i].access_id).trim()
+          : "";
+      if (!a) return false;
+      if (aid === null) aid = a;
+      else if (aid !== a) return false;
+    }
+    return true;
+  }
+
+  function consultaDistinctTargetCount(rows) {
+    var targets = {};
+    for (var j = 0; j < (rows || []).length; j++) {
+      var t = rows[j] && rows[j].target != null ? String(rows[j].target).trim() : "";
+      if (t) targets[t] = true;
+    }
+    return Object.keys(targets).length;
+  }
+
+  function consultaShouldShowMultiSelect(rows) {
+    if (!rows || rows.length < 2) return false;
+    if (consultaDistinctTargetCount(rows) < 2) return false;
+    if (consultaRowsShareOneAccessId(rows)) return true;
+    if (lastConsultaCriteria && String(lastConsultaCriteria.by_id || "").trim() !== "") {
+      return true;
+    }
+    if (
+      lastConsultaCriteria &&
+      lastConsultaCriteria.advanced_filters &&
+      (lastConsultaCriteria.advanced_filters.required_network_state || []).length +
+        (lastConsultaCriteria.advanced_filters.alignment_state || []).length >
+        0
+    ) {
+      return true;
+    }
+    return false;
+  }
+
+  function consultaRowSelectCell(row) {
+    var tgt = row && row.target ? String(row.target) : "";
+    var aid = row && row.access_id != null ? String(row.access_id) : "";
+    var rn = row && row.required_network_state != null ? String(row.required_network_state) : "";
+    var err = row && row.error_detail ? String(row.error_detail) : "";
+    return (
+      '<td class="altiplano-consulta-sel-cell">' +
+      '<input type="checkbox" class="consulta-row-select" aria-label="Seleccionar ' +
+      escAttr(tgt || "intent") +
+      '" data-target="' +
+      escAttr(tgt) +
+      '" data-access-id="' +
+      escAttr(aid) +
+      '" data-required-network-state="' +
+      escAttr(rn) +
+      '" data-error-detail="' +
+      escAttr(err) +
+      '">' +
+      "</td>"
+    );
+  }
+
+  function consultaGetSelectedRows() {
+    var body = document.getElementById("consulta-result-body");
+    if (!body) return [];
+    var rows = [];
+    body.querySelectorAll(".consulta-row-select:checked").forEach(function (cb) {
+      rows.push(consultaMergeSelectedRowFromCheckbox(cb));
+    });
+    return rows;
+  }
+
+  function consultaUpdateBulkBar() {
+    var bar = document.getElementById("consulta-bulk-bar");
+    if (!bar) return;
+    var selected = consultaGetSelectedRows();
+    var countEl = document.getElementById("consulta-bulk-count");
+    var syncBtn = document.getElementById("btn-consulta-bulk-sync");
+    var fixBtn = document.getElementById("btn-consulta-bulk-fix");
+    var delBtn = document.getElementById("btn-consulta-bulk-del");
+    var n = selected.length;
+    var fixable = selected.filter(consultaRowCanFixL1);
+    var fixN = fixable.length;
+    if (countEl) {
+      var countText =
+        n === 0 ? "Ningún intent seleccionado" : n === 1 ? "1 intent seleccionado" : n + " intents seleccionados";
+      if (n > 0 && fixN > 0 && fixN < n) {
+        countText += " · " + fixN + " corregible(s)";
+      } else if (n > 0 && fixN === n && fixN > 0) {
+        countText += " · todos corregibles";
+      }
+      countEl.textContent = countText;
+    }
+    if (syncBtn) syncBtn.disabled = n === 0;
+    if (fixBtn) {
+      fixBtn.disabled = fixN === 0;
+      fixBtn.title =
+        fixN === 0 && n > 0
+          ? "Ningún seleccionado requiere corrección L1 (intent faltante en scheduler)"
+          : fixN > 0
+            ? "Corregir dependencias L1 en " + fixN + " intent(s) seleccionado(s)"
+            : "";
+    }
+    if (delBtn) delBtn.disabled = n === 0;
+    var selectAll = document.getElementById("consulta-select-all");
+    var allCbs = document.querySelectorAll("#consulta-result-body .consulta-row-select");
+    if (selectAll && allCbs.length) {
+      var checked = document.querySelectorAll("#consulta-result-body .consulta-row-select:checked").length;
+      selectAll.checked = checked > 0 && checked === allCbs.length;
+      selectAll.indeterminate = checked > 0 && checked < allCbs.length;
+    }
+  }
+
+  function consultaBindMultiSelectHandlers() {
+    var selectAll = document.getElementById("consulta-select-all");
+    if (selectAll) {
+      selectAll.addEventListener("change", function () {
+        var on = !!selectAll.checked;
+        document.querySelectorAll("#consulta-result-body .consulta-row-select").forEach(function (cb) {
+          cb.checked = on;
+        });
+        consultaUpdateBulkBar();
+      });
+    }
+    document.querySelectorAll("#consulta-result-body .consulta-row-select").forEach(function (cb) {
+      cb.addEventListener("change", consultaUpdateBulkBar);
+    });
+    consultaUpdateBulkBar();
+  }
+
+  function consultaRunActivateAndSyncPromise(row) {
+    var target = (row && row.target) || "";
+    var accessId =
+      row && row.access_id != null && String(row.access_id) !== ""
+        ? String(row.access_id)
+        : "";
+    if (!target) return Promise.reject(new Error("sin-target"));
+    var payload = consultaMutationPayload(target, accessId);
+    var needActive = consultaRowNeedsActive(row);
+    var chain = Promise.resolve();
+    if (needActive) {
+      var rnPayload = Object.assign({}, payload, { required_network_state: "active" });
+      chain = chain.then(function () {
+        return consultaInpApiPost("/dashboard/altiplano/actualizar-required-network-state", rnPayload);
+      });
+      chain = chain.then(function (rnOut) {
+        if (!rnOut || !rnOut.ok) {
+          var errRn = new Error("rn-fail");
+          errRn.rnOut = rnOut;
+          errRn.row = row;
+          throw errRn;
+        }
+        return rnOut;
+      });
+    }
+    return chain.then(function () {
+      return consultaInpApiPost("/dashboard/altiplano/sincronizar-intent", payload);
+    });
+  }
+
+  function consultaRunBulkSync(triggerBtn) {
+    var rows = consultaGetSelectedRows();
+    if (!rows.length) {
+      altiplanoResultDialog({
+        title: "Sin selección",
+        message: "Seleccioná al menos un intent con el checkbox.",
+        variant: "warning",
+      });
+      return;
+    }
+    altiplanoConfirm({
+      title: "¿Activar y sincronizar?",
+      message: rows.length + " intent(s) seleccionados:",
+      items: rows.map(function (r) {
+        return r.target || "(sin target)";
+      }),
+      confirmLabel: "Sincronizar",
+    }).then(function (ok) {
+      if (!ok) return;
+      if (consultaHint) consultaHint.textContent = "";
+      var total = rows.length;
+      var successes = 0;
+      setConsultaBusy(true, "Sincronizando intents seleccionados…");
+      consultaClearActionError();
+      var failures = [];
+      var idx = 0;
+      function next() {
+        if (idx >= rows.length) {
+          setConsultaBusy(false);
+          var done = function () {
+            consultaRefreshAfterAction(
+              failures.length
+                ? "Sincronización masiva finalizada con errores."
+                : "Sincronización masiva completada."
+            );
+          };
+          if (failures.length) {
+            altiplanoResultDialog({
+              title: "Sincronización con errores",
+              message:
+                "No se pudieron sincronizar " +
+                failures.length +
+                " de " +
+                total +
+                " intent(s):",
+              items: failures,
+              variant: "warning",
+            }).then(done);
+          } else {
+            done();
+          }
+          return;
+        }
+        var row = rows[idx];
+        idx += 1;
+        consultaRunActivateAndSyncPromise(row)
+          .then(function (syncOut) {
+            if (!syncOut || !syncOut.ok) {
+              failures.push((row.target || "?") + ": " + (syncOut && syncOut.message ? syncOut.message : "sync fallida"));
+            } else {
+              successes += 1;
+              setConsultaOverlayMessage("Exitoso " + successes + "/" + total);
+            }
+            next();
+          })
+          .catch(function (err) {
+            if (err && err.syncOut) {
+              failures.push((row.target || "?") + ": " + (err.syncOut.message || "sync fallida"));
+            } else if (err && err.rnOut) {
+              failures.push((row.target || "?") + ": " + (err.rnOut.message || "no Active"));
+            } else {
+              failures.push((row.target || "?") + ": error de red");
+            }
+            next();
+          });
+      }
+      next();
+    });
+  }
+
+  function consultaRunBulkFix(triggerBtn) {
+    var selected = consultaGetSelectedRows();
+    if (!selected.length) {
+      altiplanoResultDialog({
+        title: "Sin selección",
+        message: "Seleccioná al menos un intent con el checkbox.",
+        variant: "warning",
+      });
+      return;
+    }
+    var rows = selected.filter(consultaRowCanFixL1);
+    if (!rows.length) {
+      altiplanoResultDialog({
+        title: "Sin intents corregibles",
+        message:
+          "Ninguno de los seleccionados tiene dependencia L1 pendiente (error «intent does not exist» en scheduler).",
+        variant: "warning",
+      });
+      return;
+    }
+    var skipped = selected.length - rows.length;
+    altiplanoConfirm({
+      title: "¿Corregir dependencias L1?",
+      message: rows.length + " intent(s) seleccionados:",
+      items: rows.map(function (r) {
+        return r.target || "(sin target)";
+      }),
+      detail:
+        (skipped
+          ? skipped + " seleccionado(s) no aplican y se omitirán. "
+          : "") + "Se crean dependencias L1 y se sincroniza cada intent.",
+      confirmLabel: "Corregir",
+    }).then(function (ok) {
+      if (!ok) return;
+      if (consultaHint) consultaHint.textContent = "";
+      var total = rows.length;
+      var successes = 0;
+      setConsultaBusy(true, "Corrigiendo dependencias L1…");
+      consultaClearActionError();
+      if (triggerBtn) consultaSetActBusy(triggerBtn, true);
+      var failures = [];
+      var idx = 0;
+      function next() {
+        if (idx >= rows.length) {
+          setConsultaBusy(false);
+          if (triggerBtn) consultaSetActBusy(triggerBtn, false);
+          var done = function () {
+            consultaRefreshAfterAction(
+              failures.length
+                ? "Corrección masiva finalizada con errores."
+                : "Corrección masiva completada."
+            );
+          };
+          if (failures.length) {
+            altiplanoResultDialog({
+              title: "Corrección con errores",
+              message:
+                "No se pudieron corregir " + failures.length + " de " + total + " intent(s):",
+              items: failures,
+              variant: "warning",
+            }).then(done);
+          } else {
+            done();
+          }
+          return;
+        }
+        var row = rows[idx];
+        idx += 1;
+        consultaRunFixItPromise(row)
+          .then(function (out) {
+            if (!out || !out.ok) {
+              failures.push((row.target || "?") + ": " + (out && out.message ? out.message : "corrección fallida"));
+            } else {
+              successes += 1;
+              setConsultaOverlayMessage("Exitoso " + successes + "/" + total);
+            }
+            next();
+          })
+          .catch(function () {
+            failures.push((row.target || "?") + ": error de red");
+            next();
+          });
+      }
+      next();
+    });
+  }
+
+  function consultaRunBulkDelete(triggerBtn) {
+    var rows = consultaGetSelectedRows();
+    if (!rows.length) {
+      altiplanoResultDialog({
+        title: "Sin selección",
+        message: "Seleccioná al menos un intent con el checkbox.",
+        variant: "warning",
+      });
+      return;
+    }
+    altiplanoConfirm({
+      title: "¿Borrar en cascada?",
+      message: rows.length + " intent(s):",
+      items: rows.map(function (r) {
+        return r.target || "(sin target)";
+      }),
+      detail: "VNO (servicios + ONT) e INP (ONT Connection). No se puede deshacer.",
+      variant: "danger",
+      confirmLabel: "Borrar en cascada",
+    }).then(function (ok) {
+      if (!ok) return;
+      if (consultaHint) consultaHint.textContent = "";
+      var total = rows.length;
+      var successes = 0;
+      setConsultaBusy(true, "Borrando intents seleccionados…");
+      var failures = [];
+      var idx = 0;
+      function next() {
+        if (idx >= rows.length) {
+          setConsultaBusy(false);
+          var doneDel = function () {
+            consultaRefreshAfterAction(
+              failures.length ? "Borrado masivo con errores." : "Borrado masivo completado."
+            );
+          };
+          if (failures.length) {
+            altiplanoResultDialog({
+              title: "Borrado con errores",
+              message:
+                "No se pudieron borrar " + failures.length + " de " + total + " intent(s):",
+              items: failures,
+              variant: "warning",
+            }).then(doneDel);
+          } else {
+            doneDel();
+          }
+          return;
+        }
+        var row = rows[idx];
+        idx += 1;
+        consultaInpApiPost(
+          "/dashboard/altiplano/borrar-intent",
+          consultaMutationPayload(row.target, row.access_id)
+        )
+          .then(function (out) {
+            if (!out || !out.ok) {
+              failures.push((row.target || "?") + ": " + (out && out.message ? out.message : "borrado fallido"));
+            } else {
+              successes += 1;
+              setConsultaOverlayMessage("Exitoso " + successes + "/" + total);
+            }
+            next();
+          })
+          .catch(function () {
+            failures.push((row.target || "?") + ": error de red");
+            next();
+          });
+      }
+      next();
+    });
+  }
+
+  function consultaRowActionsCell(row) {
+    var al = String((row && row.alignment_state) || "")
+      .trim()
+      .toLowerCase();
+    var syncDisabled = al === "aligned";
+    var html =
+      '<td class="altiplano-consulta-act-cell"><div class="altiplano-consulta-act-strip">' +
+      consultaActButton(
+        "sync",
+        row,
+        syncDisabled,
+        "Activar (Active) y sincronizar (Aligned)"
+      );
+    if (consultaRowCanFixL1(row)) {
+      html += consultaActButton(
+        "fix",
+        row,
+        false,
+        "Corregir dependencias L1 (intent faltante en scheduler)"
+      );
+    }
+    html +=
+      consultaActButton("del", row, !row.target, "Borrar intent (cascada VNO + INP)") +
+      "</div></td>";
+    return html;
+  }
+
+  function consultaRunActivateAndSync(row, btn) {
+    var target = (row && row.target) || (btn && btn.getAttribute("data-target")) || "";
+    var accessId =
+      row && row.access_id != null && String(row.access_id) !== ""
+        ? String(row.access_id)
+        : (btn && btn.getAttribute("data-access-id")) || "";
+    if (!target) return;
+    var needActive = consultaRowNeedsActive(row);
+    var syncDetail = needActive
+      ? "1) Required Network State → Active\n2) Synchronize intent → Aligned"
+      : "Synchronize intent (alinear con la red).";
+    altiplanoConfirm({
+      title: "¿Activar y sincronizar?",
+      message: "Intent en Altiplano INP:",
+      items: [target],
+      detail: syncDetail,
+      confirmLabel: "Sincronizar",
+    }).then(function (ok) {
+      if (!ok) return;
+      consultaSetActBusy(btn, true);
+      consultaClearActionError();
+      consultaRunActivateAndSyncPromise(row)
+        .then(function (syncOut) {
+          if (!syncOut) return;
+          if (!syncOut.ok) {
+            var errSync = new Error("sync-fail");
+            errSync.syncOut = syncOut;
+            throw errSync;
+          }
+          var note =
+            syncOut.message ||
+            (needActive
+              ? "Intent en Active; sincronización solicitada."
+              : "Sincronización solicitada.");
+          consultaRefreshAfterAction(note);
+        })
+        .catch(function (err) {
+          if (err && err.rnOut) {
+            altiplanoInpErrorDialog({
+              title: "No se pudo activar",
+              message: err.rnOut.message || "No se pudo pasar a Active.",
+              out: err.rnOut,
+            });
+            return;
+          }
+          if (err && err.syncOut) {
+            var fullRow = row || {};
+            fullRow.target = fullRow.target || target;
+            if (accessId) fullRow.access_id = fullRow.access_id || accessId;
+            if (err.syncOut.missing_ont_connection) {
+              fullRow.missing_ont_connection = err.syncOut.missing_ont_connection;
+            }
+            fullRow.error_detail =
+              err.syncOut.error_detail || fullRow.error_detail || err.syncOut.message || "";
+            if (err.syncOut.can_create_missing_ont_connection) {
+              fullRow.can_create_missing_ont_connection = true;
+            }
+            showConsultaActionError(err.syncOut, fullRow);
+            return;
+          }
+          if (err && err.message === "sin-target") return;
+          altiplanoResultDialog({
+            title: "Error de red",
+            message: "No se pudo contactar al servidor.",
+            variant: "error",
+          });
+        })
+        .finally(function () {
+          consultaSetActBusy(btn, false);
+        });
+    });
+  }
+
+  function consultaBuildCreateMissingPayload(row, out) {
+    var r = row || {};
+    var o = out || {};
+    var aid = r.access_id != null ? String(r.access_id) : "";
+    var err = r.error_detail ? String(r.error_detail) : "";
+    if (o.error_detail) err = String(o.error_detail);
+    if (o.message && !err) err = String(o.message);
+    if (o.missing_ont_connection && o.missing_ont_connection.access_id) {
+      aid = String(o.missing_ont_connection.access_id);
+    }
+    var body = { access_id: aid, error_detail: err };
+    if (o.missing_ont_connection) body.missing_ont_connection = o.missing_ont_connection;
+    else if (r.missing_ont_connection) body.missing_ont_connection = r.missing_ont_connection;
+    return body;
+  }
+
+  function consultaRunCreateMissing(row, out, btn) {
+    var payload = consultaBuildCreateMissingPayload(row, out);
+    if (!payload.access_id) {
+      altiplanoResultDialog({
+        title: "Datos incompletos",
+        message: "Falta Access ID para crear la ONT Connection.",
+        variant: "warning",
+      });
+      return;
+    }
+    var miss = payload.missing_ont_connection || {};
+    var createTarget = miss.target || "";
+    var syncTarget = (row && row.target) || createTarget;
+    var createItems = [payload.access_id];
+    if (createTarget) createItems.unshift(createTarget);
+    altiplanoConfirm({
+      title: "¿Crear ONT Connection faltante?",
+      message: "L1 Scheduler — se respeta el Access ID de la consulta.",
+      items: createItems,
+      confirmLabel: "Crear",
+    }).then(function (ok) {
+      if (!ok) return;
+      consultaSetActBusy(btn, true);
+      consultaInpApiPost("/dashboard/altiplano/crear-ont-connection-faltante", payload)
+        .then(function (res) {
+          if (!res) return;
+          if (!res.ok) {
+            showConsultaActionError(res);
+            return;
+          }
+          consultaClearActionError();
+          if (consultaHint) consultaHint.textContent = res.message || "ONT Connection creada.";
+          return altiplanoConfirm({
+            title: "ONT Connection creada",
+            message: res.message || "¿Synchronize intent ahora en el intent consultado?",
+            confirmLabel: "Sincronizar",
+            cancelLabel: "Ahora no",
+          }).then(function (syncNow) {
+            if (!syncNow) {
+              consultaRefreshAfterAction();
+              return null;
+            }
+            return consultaInpApiPost(
+              "/dashboard/altiplano/sincronizar-intent",
+              consultaMutationPayload(syncTarget, payload.access_id)
+            );
+          });
+        })
+        .then(function (syncOut) {
+          if (!syncOut) return;
+          if (!syncOut.ok) {
+            showConsultaActionError(syncOut);
+            return;
+          }
+          consultaRefreshAfterAction(syncOut.message || "Sincronización solicitada.");
+        })
+        .catch(function () {
+          altiplanoResultDialog({
+            title: "Error de red",
+            message: "No se pudo contactar al servidor al crear la ONT Connection.",
+            variant: "error",
+          });
+        })
+        .finally(function () {
+          consultaSetActBusy(btn, false);
+        });
+    });
+  }
+
+  function consultaMutationPayload(target, accessId) {
+    var p = { device_name: target || "" };
+    if (accessId) p.by_id = String(accessId);
+    return p;
+  }
+
+  function consultaInpApiPost(url, payload) {
+    return fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify(payload || {}),
+    })
+      .then(parseJsonResponse)
+      .then(function (r) {
+        if (r.status === 401) {
+          window.location.reload();
+          return null;
+        }
+        return r.payload || {};
+      });
+  }
+
+  function consultaClearActionError() {
+    var body = document.getElementById("consulta-result-body");
+    if (!body) return;
+    var el = body.querySelector(".altiplano-consulta-sync-alert");
+    if (el) el.remove();
+  }
+
+  function showConsultaActionError(out, row) {
+    consultaClearActionError();
+    var message = out && out.message ? String(out.message) : "Error en la operación.";
+    var detail = out && out.error_detail ? String(out.error_detail) : "";
+    var body = document.getElementById("consulta-result-body");
+    if (!body) {
+      altiplanoInpErrorDialog({ message: message, out: out });
+      return;
+    }
+    var box = document.createElement("div");
+    box.className = "altiplano-consulta-sync-alert";
+    box.setAttribute("role", "alert");
+    var metaHtml = escHtml(message).replace(/\n/g, "<br>");
+    if (detail && message.indexOf(detail) < 0) {
+      metaHtml +=
+        '<p class="altiplano-consulta-sync-alert-hint muted"><strong>Reason:</strong> ' +
+        escHtml(detail) +
+        "</p>";
+    }
+    var cp = consultaBuildCreateMissingPayload(row || {}, out);
+    var actionsHtml = "";
+    if ((out && out.can_create_missing_ont_connection && cp.access_id) || consultaRowCanFixL1(row || {})) {
+      var fixRow = {
+        target: (row && row.target) || (out && out.target) || "",
+        access_id: cp.access_id,
+        error_detail: cp.error_detail,
+      };
+      actionsHtml +=
+        '<span class="altiplano-consulta-sync-alert-fix">' +
+        consultaActButton(
+          "fix",
+          fixRow,
+          false,
+          "Corregir dependencias L1 (intent faltante en scheduler)"
+        ) +
+        "</span> ";
+    }
+    actionsHtml +=
+      '<button type="button" class="btn btn-ghost btn-sm" data-consulta-dismiss-error>OK</button>';
+    box.innerHTML =
+      '<div class="altiplano-consulta-sync-alert-inner">' +
+      '<p class="altiplano-consulta-sync-alert-title"><strong>Error</strong></p>' +
+      '<div class="altiplano-consulta-sync-alert-meta">' +
+      metaHtml +
+      "</div>" +
+      '<div class="altiplano-consulta-sync-alert-actions">' +
+      actionsHtml +
+      "</div></div>";
+    body.insertBefore(box, body.firstChild);
+    var okBtn = box.querySelector("[data-consulta-dismiss-error]");
+    if (okBtn) {
+      okBtn.addEventListener("click", function () {
+        consultaClearActionError();
+      });
+    }
+    try {
+      box.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    } catch (_e) {}
+  }
+
+  function consultaRefreshAfterAction(note) {
+    consultaClearActionError();
+    if (consultaHint && note) consultaHint.textContent = note;
+    if (lastConsultaCriteria) {
+      if (lastConsultaCriteria.device_name) {
+        var dEl = document.getElementById("consulta_device_name");
+        if (dEl) dEl.value = lastConsultaCriteria.device_name;
+      }
+      if (lastConsultaCriteria.by_id) {
+        var aEl = document.getElementById("consulta_by_id");
+        if (aEl) aEl.value = lastConsultaCriteria.by_id;
+      }
+      runConsultaInp();
+    }
+  }
+
+  function consultaSetActBusy(btn, busy) {
+    if (!btn) return;
+    btn.disabled = !!busy;
+    btn.classList.toggle("altiplano-busy-spin", !!busy);
+  }
+
+  function consultaSetFixItBusy(btn, busy) {
+    consultaSetActBusy(btn, busy);
+  }
+
+  function handleConsultaRowAction(ev) {
+    var bulkBtn = ev.target.closest("[data-consulta-bulk]");
+    if (bulkBtn && !bulkBtn.disabled) {
+      ev.preventDefault();
+      var bulkAct = bulkBtn.getAttribute("data-consulta-bulk");
+      if (bulkAct === "sync") consultaRunBulkSync(bulkBtn);
+      else if (bulkAct === "fix") consultaRunBulkFix(bulkBtn);
+      else if (bulkAct === "del") consultaRunBulkDelete(bulkBtn);
+      return;
+    }
+    var btn = ev.target.closest("[data-consulta-act]");
+    if (!btn || btn.disabled) return;
+    ev.preventDefault();
+    var act = btn.getAttribute("data-consulta-act");
+    var target = btn.getAttribute("data-target") || "";
+    var accessId = btn.getAttribute("data-access-id") || "";
+
+    if (act === "create-l1") {
+      consultaRunCreateMissing(
+        {
+          target: target,
+          access_id: accessId,
+          error_detail: btn.getAttribute("data-error-detail") || "",
+        },
+        null,
+        btn
+      );
+      return;
+    }
+
+    if (act === "fix") {
+      consultaRunFixItChain(consultaRowFromActButton(btn), btn);
+      return;
+    }
+
+    if (!target) return;
+    var payload = consultaMutationPayload(target, accessId);
+
+    if (act === "sync") {
+      consultaRunActivateAndSync(consultaRowFromActButton(btn), btn);
+      return;
+    }
+
+    if (act === "del") {
+      altiplanoConfirm({
+        title: "¿Borrar en cascada este intent?",
+        message: "1) VNO (TASA u otro): servicios + ONT\n2) INP: ONT Connection",
+        items: [target],
+        detail: "Esta acción no se puede deshacer.",
+        variant: "danger",
+        confirmLabel: "Borrar",
+      }).then(function (ok) {
+        if (!ok) return;
+        consultaSetActBusy(btn, true);
+        consultaInpApiPost("/dashboard/altiplano/borrar-intent", payload)
+          .then(function (out) {
+            if (!out) return;
+            if (!out.ok) {
+              altiplanoInpErrorDialog({
+                title: "No se pudo borrar",
+                message: out.message || "No se pudo borrar el intent.",
+                out: out,
+              });
+              return;
+            }
+            consultaRefreshAfterAction(out.message || "Borrado completado.");
+          })
+          .catch(function () {
+            altiplanoResultDialog({
+              title: "Error de red",
+              message: "No se pudo contactar al servidor al borrar.",
+              variant: "error",
+            });
+          })
+          .finally(function () {
+            consultaSetActBusy(btn, false);
+          });
+      });
+    }
+  }
+
+  function setConsultaBusy(busy, message) {
+    var on = !!busy;
+    if (consultaOut) consultaOut.classList.toggle("altiplano-consulta-result--busy", on);
+    var overlay = document.getElementById("consulta-busy-overlay");
+    if (overlay) {
+      overlay.hidden = !on;
+      overlay.style.display = on ? "flex" : "none";
+      overlay.setAttribute("aria-hidden", on ? "false" : "true");
+    }
+    if (on) {
+      if (message != null) setConsultaOverlayMessage(message);
+    } else {
+      setConsultaOverlayMessage(consultaBusyDefaultMessage);
+    }
+    if (btnConsulta) btnConsulta.disabled = on;
+  }
+
+  function applyInpCreatePrefill(prefill) {
+    var p = prefill || {};
+    var fullEl = document.getElementById("device_location_full");
+    if (p.sitio && p.lt && p.pon && p.ont && fullEl) {
+      fullEl.value =
+        "BA_OLTA_" + String(p.sitio) + "-" + String(p.lt) + "-" + String(p.pon) + "-" + String(p.ont);
+      onFullDeviceLocationInput();
+    }
+    var sitioEl = document.getElementById("sitio");
+    if (p.sitio && sitioEl) sitioEl.value = String(p.sitio);
+    ["lt", "pon", "ont", "access_id"].forEach(function (id) {
+      if (p[id] == null || p[id] === "") return;
+      var el = document.getElementById(id);
+      if (el) el.value = String(p[id]);
+    });
+    if (p.vno != null && String(p.vno) !== "") {
+      var vnoEl = document.getElementById("vno");
+      if (vnoEl) vnoEl.value = String(p.vno);
+    }
+    if (!fullEl || !fullEl.value.trim()) {
+      if (typeof refreshDerivedFields === "function") refreshDerivedFields();
+    }
+  }
+
+  function consultaGoCreateIntent(prefill) {
+    if (typeof activateTabs === "function") {
+      activateTabs(topTabs, "alt-tab-inp");
+      activateTabs(inpTabs, "alt-inp-tab-creacion");
+    }
+    applyInpCreatePrefill(prefill || consultaLastCreatePrefill || {});
+    var creaOut = document.getElementById("altiplano-result");
+    if (creaOut) {
+      creaOut.innerHTML =
+        '<p class="muted">Datos precargados desde la consulta. Revisá los campos y pulsá <strong>Crear ONT Connection</strong>.</p>';
+    }
+    var sitioEl = document.getElementById("sitio");
+    if (sitioEl) {
+      try {
+        sitioEl.focus();
+      } catch (_e) {}
+    }
+  }
+
+  function renderConsultaResult(payload) {
+    var body = document.getElementById("consulta-result-body");
+    if (!body) return;
+    consultaLastCreatePrefill = null;
+    if (!payload || typeof payload !== "object") {
+      body.innerHTML = '<p class="muted">Sin datos.</p>';
+      return;
+    }
+    var ok = payload.ok === true;
+    var msg = payload.message ? String(payload.message) : ok ? "Consulta OK" : "Error";
+    var rows = payload.matches || [];
+    consultaLastResultRows = rows.slice();
+    if (payload.suggest_create && payload.create_prefill) {
+      consultaLastCreatePrefill = payload.create_prefill;
+    }
+    var multiSelect = consultaShouldShowMultiSelect(rows);
+    var html = "";
+    html +=
+      "<p><strong>" +
+      (ok ? "Resultado" : "Consulta fallida") +
+      ":</strong> " +
+      escHtml(msg) +
+      "</p>";
+    var inv = payload.inventory_resolution;
+    if (inv && inv.device_location_prefix) {
+      html +=
+        '<p class="muted altiplano-consulta-inv"><strong>Inventario ATC:</strong> ' +
+        escHtml(String(inv.device_location_prefix)) +
+        (inv.suggested_target
+          ? ' → <code class="inline-code">' + escHtml(String(inv.suggested_target)) + "</code>"
+          : "") +
+        "</p>";
+    }
+    if (payload.inventory_miss_fallback) {
+      html +=
+        '<p class="muted altiplano-consulta-inv"><strong>Inventario ATC:</strong> sin fila; búsqueda solo en <strong>Altiplano INP</strong>.</p>';
+    }
+    if (payload.truncated) {
+      html +=
+        '<p class="muted altiplano-consulta-inv"><strong>Resultado acotado:</strong> se alcanzó el tope de filas; refiná con device o Access ID.</p>';
+    }
+    if (payload.advanced_filters) {
+      var af = payload.advanced_filters;
+      var afParts = [];
+      if (af.required_network_state && af.required_network_state.length) {
+        afParts.push("RN: " + af.required_network_state.join(", "));
+      }
+      if (af.alignment_state && af.alignment_state.length) {
+        afParts.push("alineación: " + af.alignment_state.join(", "));
+      }
+      if (afParts.length) {
+        html +=
+          '<p class="muted altiplano-consulta-inv"><strong>Filtros:</strong> ' +
+          escHtml(afParts.join(" · ")) +
+          "</p>";
+      }
+    }
+    if (multiSelect) {
+      html +=
+        '<p class="muted altiplano-consulta-multi-aid">Varios intents <code class="inline-code">ont-connection</code> comparten este Access ID en Altiplano INP (como en la GUI). Seleccioná filas para sincronizar o borrar en lote.</p>';
+    } else if (rows.length > 1 && lastConsultaCriteria && lastConsultaCriteria.by_id) {
+      html +=
+        '<p class="muted altiplano-consulta-multi-aid">Varios intents <code class="inline-code">ont-connection</code> comparten este Access ID en Altiplano INP (como en la GUI).</p>';
+    }
+    if (rows.length) {
+      if (multiSelect) {
+        html +=
+          '<div id="consulta-bulk-bar" class="altiplano-consulta-bulk-bar" role="toolbar" aria-label="Acciones sobre intents seleccionados">' +
+          '<span id="consulta-bulk-count" class="altiplano-consulta-bulk-count muted">Ningún intent seleccionado</span>' +
+          '<button type="button" id="btn-consulta-bulk-sync" class="btn btn-primary btn-sm" data-consulta-bulk="sync" disabled>Sincronizar seleccionados</button>' +
+          '<button type="button" id="btn-consulta-bulk-fix" class="btn btn-ghost btn-sm altiplano-consulta-bulk-fix" data-consulta-bulk="fix" disabled>Corregir dependencias</button>' +
+          '<button type="button" id="btn-consulta-bulk-del" class="btn btn-ghost btn-sm altiplano-consulta-bulk-del" data-consulta-bulk="del" disabled>Eliminar seleccionados</button>' +
+          "</div>";
+      }
+      html += '<div class="altiplano-consulta-table-wrap"><table class="altiplano-consulta-table altiplano-consulta-table--wide">';
+      html += "<thead><tr>";
+      if (multiSelect) {
+        html +=
+          '<th class="altiplano-consulta-sel-cell">' +
+          '<input type="checkbox" id="consulta-select-all" aria-label="Seleccionar todos los intents" title="Seleccionar todos">' +
+          "</th>";
+      }
+      html +=
+        '<th class="altiplano-consulta-th-long">Location Name#Slice Owner Name#PON Type</th>' +
+        "<th>Required Network State</th>" +
+        "<th>Alignment State</th>" +
+        "<th>Access ID</th>" +
+        '<th class="altiplano-consulta-act-cell">Acciones</th>' +
+        "</tr></thead><tbody>";
+      for (var i = 0; i < rows.length; i++) {
+        var row = rows[i] || {};
+        var tgt = row.target != null ? String(row.target) : "";
+        var loc = row.location_slice_pon != null ? String(row.location_slice_pon) : tgt;
+        var rn =
+          row.network_state != null
+            ? String(row.network_state)
+            : row.required_network_state != null
+              ? String(row.required_network_state)
+              : "—";
+        var al = row.alignment_state != null ? String(row.alignment_state) : "—";
+        var aid = row.access_id != null ? String(row.access_id) : "—";
+        html += "<tr>";
+        if (multiSelect) {
+          html += consultaRowSelectCell(row);
+        }
+        html += '<td><code class="inline-code">' + escHtml(loc || "—") + "</code></td>";
+        html += "<td>" + escHtml(rn) + "</td>";
+        html += "<td>" + escHtml(al);
+        if (row.error_detail) {
+          html +=
+            '<p class="muted altiplano-consulta-row-detail">' +
+            escHtml(String(row.error_detail)) +
+            "</p>";
+        }
+        html += "</td>";
+        html += '<td><code class="inline-code">' + escHtml(aid) + "</code></td>";
+        html += consultaRowActionsCell(row);
+        html += "</tr>";
+      }
+      html += "</tbody></table></div>";
+    } else if (ok && payload.no_match && payload.suggest_create) {
+      html += '<div class="altiplano-consulta-no-match">';
+      html += '<p class="altiplano-consulta-no-match-msg">' + escHtml(msg) + "</p>";
+      if (payload.create_prefill) {
+        var hintParts = [];
+        var pf = payload.create_prefill;
+        if (pf.access_id) hintParts.push("Access ID " + pf.access_id);
+        if (pf.sitio) {
+          hintParts.push(
+            "BA_OLTA_" + pf.sitio + (pf.lt && pf.pon && pf.ont ? "-" + pf.lt + "-" + pf.pon + "-" + pf.ont : "")
+          );
+        }
+        if (pf.vno) hintParts.push("VNO " + pf.vno);
+        if (hintParts.length) {
+          html +=
+            '<p class="muted altiplano-consulta-no-match-hint">Precarga: ' +
+            escHtml(hintParts.join(" · ")) +
+            (payload.inventory_resolution ? " (inventario ATC cuando aplica)" : "") +
+            "</p>";
+        }
+      } else if (payload.inventory_resolution && payload.inventory_resolution.suggested_target) {
+        html +=
+          '<p class="muted altiplano-consulta-no-match-hint">Inventario ATC sugiere <code class="inline-code">' +
+          escHtml(String(payload.inventory_resolution.suggested_target)) +
+          "</code>, pero no hay intent en Altiplano INP.</p>";
+      }
+      html +=
+        '<button type="button" class="btn btn-primary" id="btn-consulta-create-from-search">Crear ONT Connection</button>';
+      html += "</div>";
+    } else if (ok) {
+      html += '<p class="muted">No se encontraron intents ont-connection para ese criterio.</p>';
+    }
+    body.innerHTML = html;
+    var createBtn = document.getElementById("btn-consulta-create-from-search");
+    if (createBtn) {
+      createBtn.addEventListener("click", function () {
+        consultaGoCreateIntent(consultaLastCreatePrefill);
+      });
+    }
+    if (multiSelect) {
+      consultaBindMultiSelectHandlers();
+    }
+  }
+
+  var CONSULTA_BLOCKED_ACTIVE_ALIGNED_MSG =
+    "Active + Aligned no está permitido (demasiados resultados). Usá Misaligned, otro estado RN o prefijo device.";
+
+  function consultaGetAdvancedFilters() {
+    var rn = [];
+    var al = [];
+    document.querySelectorAll('input[name="consulta_rn"]:checked').forEach(function (cb) {
+      if (cb.value) rn.push(cb.value);
+    });
+    document.querySelectorAll('input[name="consulta_al"]:checked').forEach(function (cb) {
+      if (cb.value) al.push(cb.value);
+    });
+    return { required_network_state: rn, alignment_state: al };
+  }
+
+  function consultaAdvancedActiveAlignedBlocked(adv) {
+    adv = adv || consultaGetAdvancedFilters();
+    return (
+      adv.required_network_state.indexOf("active") >= 0 &&
+      adv.alignment_state.indexOf("aligned") >= 0
+    );
+  }
+
+  function consultaRejectAdvancedActiveAligned() {
+    if (!consultaAdvancedActiveAlignedBlocked()) return false;
+    if (consultaHint) consultaHint.textContent = CONSULTA_BLOCKED_ACTIVE_ALIGNED_MSG;
+    altiplanoResultDialog({
+      title: "Combinación no permitida",
+      message: CONSULTA_BLOCKED_ACTIVE_ALIGNED_MSG,
+      variant: "warning",
+    });
+    return true;
+  }
+
+  function consultaUpdateAdvancedFilterUi() {
+    var adv = consultaGetAdvancedFilters();
+    var activeOn = adv.required_network_state.indexOf("active") >= 0;
+    var alignedOn = adv.alignment_state.indexOf("aligned") >= 0;
+    var activeCb = document.querySelector('input[name="consulta_rn"][value="active"]');
+    var alignedCb = document.querySelector('input[name="consulta_al"][value="aligned"]');
+    if (activeCb) {
+      activeCb.disabled = alignedOn;
+      var activeLbl = activeCb.closest("label");
+      if (activeLbl) activeLbl.classList.toggle("altiplano-consulta-advanced__chk--disabled", alignedOn);
+    }
+    if (alignedCb) {
+      alignedCb.disabled = activeOn;
+      var alignedLbl = alignedCb.closest("label");
+      if (alignedLbl) alignedLbl.classList.toggle("altiplano-consulta-advanced__chk--disabled", activeOn);
+    }
+    var btnAdv = document.getElementById("btn-consulta-advanced-run");
+    if (btnAdv) {
+      var blocked = consultaAdvancedActiveAlignedBlocked(adv);
+      btnAdv.disabled = blocked;
+      btnAdv.title = blocked ? CONSULTA_BLOCKED_ACTIVE_ALIGNED_MSG : "";
+    }
+  }
+
+  function consultaWireAdvancedFilterMutex() {
+    document.querySelectorAll('input[name="consulta_rn"], input[name="consulta_al"]').forEach(function (cb) {
+      if (cb.getAttribute("data-consulta-filter-wired") === "1") return;
+      cb.setAttribute("data-consulta-filter-wired", "1");
+      cb.addEventListener("change", function () {
+        consultaUpdateAdvancedFilterUi();
+      });
+    });
+    consultaUpdateAdvancedFilterUi();
+  }
+
+  function consultaSetAdvancedFilters(rnValues, alValues) {
+    document.querySelectorAll('input[name="consulta_rn"]').forEach(function (cb) {
+      cb.checked = rnValues.indexOf(cb.value) >= 0;
+    });
+    document.querySelectorAll('input[name="consulta_al"]').forEach(function (cb) {
+      cb.checked = alValues.indexOf(cb.value) >= 0;
+    });
+    consultaUpdateAdvancedFilterUi();
+  }
+
+  function consultaClearAdvancedFilters() {
+    consultaSetAdvancedFilters([], []);
+  }
+
+  function consultaApplyAdvancedPreset(preset) {
+    if (preset === "misaligned") {
+      consultaSetAdvancedFilters([], ["misaligned"]);
+      return;
+    }
+    if (preset === "not-present-misaligned") {
+      consultaSetAdvancedFilters(["not-present"], ["misaligned"]);
+      return;
+    }
+    if (preset === "not-present-aligned") {
+      consultaSetAdvancedFilters(["not-present"], ["aligned"]);
+      return;
+    }
+    consultaClearAdvancedFilters();
+  }
+
+  function consultaResolveDeviceScope(advancedOnly) {
+    var advDevice = getValue("consulta_advanced_device");
+    var mainDevice = getValue("consulta_device_name");
+    if (advancedOnly) {
+      return advDevice;
+    }
+    return mainDevice || advDevice;
+  }
+
+  function runConsultaAdvanced() {
+    var adv = consultaGetAdvancedFilters();
+    var hasAdv = adv.required_network_state.length > 0 || adv.alignment_state.length > 0;
+    if (!hasAdv) {
+      if (consultaHint) {
+        consultaHint.textContent = "Marcá al menos un estado (RN o alineación) y pulsá Búsqueda avanzada.";
+      }
+      renderConsultaResult({
+        ok: false,
+        message: "Seleccioná al menos un filtro de estado en búsqueda avanzada.",
+      });
+      return;
+    }
+    if (consultaRejectAdvancedActiveAligned()) return;
+    if (getValue("consulta_by_id")) {
+      if (consultaHint) {
+        consultaHint.textContent = "Para Access ID usá Consultar arriba. Búsqueda avanzada usa estados y/o device.";
+      }
+      renderConsultaResult({
+        ok: false,
+        message: "Búsqueda avanzada no combina con Access ID; usá Consultar o quitá el Access ID.",
+      });
+      return;
+    }
+    consultaExecuteSearch({ advancedOnly: true });
+  }
+
+  function runConsultaInp() {
+    consultaExecuteSearch({ advancedOnly: false });
+  }
+
+  function consultaExecuteSearch(opts) {
+    opts = opts || {};
+    var advancedOnly = !!opts.advancedOnly;
+    var device = consultaResolveDeviceScope(advancedOnly);
+    var byId = advancedOnly ? "" : getValue("consulta_by_id");
+    var adv = consultaGetAdvancedFilters();
+    var hasAdv = adv.required_network_state.length > 0 || adv.alignment_state.length > 0;
+    if (consultaHint) consultaHint.textContent = "";
+    if (hasAdv && consultaRejectAdvancedActiveAligned()) return;
+    if (!device && !byId && !hasAdv) {
+      if (consultaHint) {
+        consultaHint.textContent = "Indicá device, Access ID o filtros en búsqueda avanzada.";
+      }
+      renderConsultaResult({
+        ok: false,
+        message: "Indicá device name, Access ID o al menos un filtro de estado.",
+      });
+      return;
+    }
+    if (device && byId) {
+      if (consultaHint) consultaHint.textContent = "Usá un solo criterio: device name o Access ID.";
+      renderConsultaResult({ ok: false, message: "Indicá solo device name o solo Access ID, no ambos." });
+      return;
+    }
+    var bodyPayload = {};
+    if (device) bodyPayload.device_name = device;
+    else if (byId) bodyPayload.by_id = byId;
+    if (hasAdv || advancedOnly) bodyPayload.advanced_filters = adv;
+    lastConsultaCriteria = {
+      device_name: device || "",
+      by_id: byId || "",
+      advanced_filters: hasAdv || advancedOnly ? adv : null,
+    };
+    var busyMsg = hasAdv || advancedOnly ? consultaAdvancedBusyMessage : consultaBusyDefaultMessage;
+    setConsultaBusy(true, busyMsg);
+    fetch("/dashboard/altiplano/consultar-intent", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Accept": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify(bodyPayload),
+    })
+      .then(parseJsonResponse)
+      .then(function (r) {
+        if (r.status === 401) {
+          window.location.reload();
+          return;
+        }
+        renderConsultaResult(r.payload);
+        setConsultaBusy(false);
+      })
+      .catch(function () {
+        renderConsultaResult({ ok: false, message: "Error de red o servidor" });
+        setConsultaBusy(false);
+      })
+      .finally(function () {
+        setConsultaBusy(false);
+      });
+  }
+
+  function clearConsulta() {
+    ["consulta_device_name", "consulta_by_id", "consulta_advanced_device"].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) el.value = "";
+    });
+    consultaClearAdvancedFilters();
+    if (consultaHint) consultaHint.textContent = "";
+    lastConsultaCriteria = null;
+    setConsultaBusy(false);
+    var bodyEl = document.getElementById("consulta-result-body");
+    if (bodyEl) {
+      bodyEl.innerHTML =
+        '<p class="muted">Completá device, Access ID y/o filtros avanzados y pulsá Consultar.</p>';
+    }
+  }
+
+  function parseBorradoBulkText(raw) {
+    var lines = String(raw || "").split(/\r?\n/);
+    var outLines = [];
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i].trim();
+      if (!line || line.charAt(0) === "#") continue;
+      var cell = line;
+      if (line.indexOf(",") !== -1) {
+        cell = line.split(",")[0].replace(/^"|"$/g, "").trim();
+      }
+      if (cell) outLines.push(cell);
+    }
+    return outLines;
+  }
+
+  function setBorradoLotePreview() {
+    if (!borradoLotePreview) return;
+    var n = borradoLoteItems.length;
+    var mode =
+      borradoLoteMode && borradoLoteMode.value === "access" ? "Access ID" : "device name";
+    if (n === 0) {
+      borradoLotePreview.textContent = "Sin archivo cargado.";
+      return;
+    }
+    borradoLotePreview.textContent = n + " fila(s) cargadas · modo " + mode;
+  }
+
+  function applyBorradoFile(buf) {
+    borradoLoteItems = parseBorradoBulkText(buf);
+    if (borradoLoteItems.length > 300) borradoLoteItems = borradoLoteItems.slice(0, 300);
+    setBorradoLotePreview();
+  }
+
+  function renderBorradoLoteResult(payload, okHttp) {
+    if (!borradoOut) return;
+    if (!payload || typeof payload !== "object") {
+      borradoOut.innerHTML = '<p class="muted">Sin datos.</p>';
+      return;
+    }
+    var msg = payload.message ? String(payload.message) : "";
+    var rows = payload.results || [];
+    var html = "";
+    html +=
+      '<p><strong>' +
+      (payload.ok ? "Lote" : "Lote (con errores)") +
+      ":</strong> " +
+      escHtml(msg) +
+      "</p>";
+    if (rows.length) {
+      html += '<div class="altiplano-consulta-table-wrap"><table class="altiplano-consulta-table">';
+      html += "<thead><tr><th>#</th><th>Valor</th><th>Estado</th><th>Detalle / target</th></tr></thead><tbody>";
+      for (var i = 0; i < rows.length; i++) {
+        var row = rows[i] || {};
+        var st = row.ok ? "OK" : "Error";
+        var det = row.message ? String(row.message) : "";
+        if (row.target) det += (det ? " · " : "") + String(row.target);
+        html +=
+          "<tr><td>" +
+          (row.index != null ? escHtml(String(row.index)) : "—") +
+          "</td>";
+        html +=
+          '<td><code class="inline-code">' +
+          (row.input != null ? escHtml(String(row.input)) : "—") +
+          "</code></td>";
+        html += "<td>" + st + "</td>";
+        html += "<td>" + escHtml(det || "—") + "</td></tr>";
+      }
+      html += "</tbody></table></div>";
+    }
+    borradoOut.innerHTML = html;
+  }
+
+  function runBorradoLote() {
+    if (!borradoLoteItems.length) {
+      renderBorradoResult({ message: "Cargá un archivo .txt o .csv con al menos una fila." }, false);
+      return;
+    }
+    var mode = borradoLoteMode ? borradoLoteMode.value : "device";
+    var n = borradoLoteItems.length;
+    altiplanoConfirm({
+      title: "¿Borrado masivo?",
+      message: n + " intent(s) ont-connection en Altiplano.",
+      detail: "Esta acción no se puede deshacer.",
+      variant: "danger",
+      confirmLabel: "Borrar lote",
+    }).then(function (ok) {
+      if (!ok) return;
+      if (btnBorradoLoteRun) btnBorradoLoteRun.disabled = true;
+      if (btnBorrado) btnBorrado.disabled = true;
+      if (borradoOut) borradoOut.innerHTML = '<p class="muted">Procesando lote en Altiplano… <span aria-hidden="true">⏳</span></p>';
+      fetch("/dashboard/altiplano/borrar-intent-lote", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Accept": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ mode: mode, items: borradoLoteItems }),
+      })
+        .then(parseJsonResponse)
+        .then(function (r) {
+          if (r.status === 401) {
+            window.location.reload();
+            return;
+          }
+          renderBorradoLoteResult(r.payload, r.okHttp);
+        })
+        .catch(function () {
+          renderBorradoResult({ message: "Error de red o servidor" }, false);
+        })
+        .finally(function () {
+          if (btnBorradoLoteRun) btnBorradoLoteRun.disabled = false;
+          if (btnBorrado) btnBorrado.disabled = false;
+        });
+    });
+  }
+
+  function runBorradoIntent() {
+    const device_name = getValue("borrado_device_name");
+    const by_id = getValue("borrado_by_id");
+    if (!device_name && !by_id) {
+      renderBorradoResult({ message: "Indicá device name y/o Access ID" }, false);
+      return;
+    }
+    altiplanoConfirm({
+      title: "¿Confirmar borrado en cascada?",
+      message:
+        "Se detectará el VNO (target, inventario o INP). En TASA: servicio HSI, ONT y luego ONT Connection en INP.",
+      detail: "Esta acción no se puede deshacer.",
+      variant: "danger",
+      confirmLabel: "Borrar intent",
+    }).then(function (ok) {
+      if (!ok) return;
+      if (btnBorrado) btnBorrado.disabled = true;
+      if (borradoOut) {
+        borradoOut.innerHTML =
+          '<p class="muted">Borrando en cascada (detectando VNO)… <span aria-hidden="true">⏳</span></p>';
+      }
+      fetch("/dashboard/altiplano/borrar-intent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Accept": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({
+          device_name: device_name,
+          by_id: by_id,
+        }),
+      })
+        .then(parseJsonResponse)
+        .then(function (r) {
+          if (r.status === 401) {
+            window.location.reload();
+            return;
+          }
+          var payloadOk = r.payload && r.payload.ok === true;
+          renderBorradoResult(r.payload, payloadOk);
+        })
+        .catch(function () {
+          renderBorradoResult({ message: "Error de red o servidor" }, false);
+        })
+        .finally(function () {
+          if (btnBorrado) btnBorrado.disabled = false;
+        });
+    });
+  }
+
+  function clearBorrado() {
+    ["borrado_device_name", "borrado_by_id"].forEach(function (id) {
+      const el = document.getElementById(id);
+      if (el) el.value = "";
+    });
+    borradoLoteItems = [];
+    if (borradoLoteFile) borradoLoteFile.value = "";
+    setBorradoLotePreview();
+    if (borradoOut) borradoOut.innerHTML = '<p class="muted">Completá criterios y confirmá el borrado.</p>';
+  }
+
+  if (borradoLoteMode) {
+    borradoLoteMode.addEventListener("change", function () {
+      setBorradoLotePreview();
+    });
+  }
+
+  function wireBorradoLoteDropzone() {
+    if (!borradoLoteDrop || !borradoLoteFile) return;
+    borradoLoteDrop.addEventListener("click", function () {
+      borradoLoteFile.click();
+    });
+    borradoLoteDrop.addEventListener("keydown", function (ev) {
+      if (ev.key === "Enter" || ev.key === " ") {
+        ev.preventDefault();
+        borradoLoteFile.click();
+      }
+    });
+    borradoLoteFile.addEventListener("change", function () {
+      var f = borradoLoteFile.files && borradoLoteFile.files[0];
+      if (!f) return;
+      var reader = new FileReader();
+      reader.onload = function () {
+        applyBorradoFile(reader.result);
+      };
+      reader.readAsText(f, "UTF-8");
+    });
+    ["dragenter", "dragover"].forEach(function (evName) {
+      borradoLoteDrop.addEventListener(evName, function (ev) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        borradoLoteDrop.classList.add("is-dragover");
+      });
+    });
+    ["dragleave", "drop"].forEach(function (evName) {
+      borradoLoteDrop.addEventListener(evName, function (ev) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        borradoLoteDrop.classList.remove("is-dragover");
+      });
+    });
+    borradoLoteDrop.addEventListener("drop", function (ev) {
+      var files = ev.dataTransfer && ev.dataTransfer.files;
+      if (!files || !files.length) return;
+      var f = files[0];
+      var reader = new FileReader();
+      reader.onload = function () {
+        applyBorradoFile(reader.result);
+      };
+      reader.readAsText(f, "UTF-8");
+    });
+  }
+  wireBorradoLoteDropzone();
+
+  const VNO_TAB_BY_CODE = {
+    "1001": "alt-vno-tab-tasa",
+    "3001": "alt-vno-tab-directv",
+    "3950": "alt-vno-tab-iplan",
+    "4000": "alt-vno-tab-metrotel",
+    "4010": "alt-vno-tab-metrotel",
+    "962": "alt-vno-tab-sion",
+    "963": "alt-vno-tab-sion",
+    "2800": "alt-vno-tab-cambio-cto",
+    "2805": "alt-vno-tab-cambio-cto",
+    "2806": "alt-vno-tab-cambio-cto",
+  };
+
+  function getVnoSelectLabel() {
+    const el = document.getElementById("vno");
+    if (!el || el.selectedIndex < 0) return "";
+    const opt = el.options[el.selectedIndex];
+    return opt ? String(opt.textContent || "").trim() : "";
+  }
+
+  function collectInpSnapshotForVno() {
+    return {
+      deviceName: buildDeviceName(),
+      lt: getValue("lt"),
+      pon: getValue("pon"),
+      ont: getValue("ont"),
+      vno: getValue("vno"),
+      vnoLabel: getVnoSelectLabel(),
+      accessId: getValue("access_id"),
+      fiberName: buildFiberName(),
+    };
+  }
+
+  function goToVnoAfterInpSuccess(snapshot) {
+    const vno = snapshot.vno || "";
+    const vnoTab = VNO_TAB_BY_CODE[vno] || "alt-vno-tab-tasa";
+    activateTabs(topTabs, "alt-tab-vno");
+    activateTabs(vnoTabs, vnoTab);
+    const panel = document.getElementById("alt-vno-panel-tasa");
+    if (panel && vnoTab === "alt-vno-tab-tasa") {
+      panel.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+    if (vno === "1001" && window.tasaVnoWizard && window.tasaVnoWizard.prefillFromInp) {
+      window.tasaVnoWizard.prefillFromInp(snapshot);
+      return;
+    }
+    const label = snapshot.vnoLabel || vno || "VNO";
+    window.alert(
+      "Se abrió el panel " +
+        label +
+        ". La carga automática de datos desde INP está disponible hoy solo para TASA (1001)."
+    );
+  }
+
+  function wireInpVnoOffer(snapshot) {
+    const goBtn = document.getElementById("btn-inp-goto-vno");
+    const noBtn = document.getElementById("btn-inp-dismiss-vno");
+    if (goBtn) {
+      goBtn.addEventListener("click", function () {
+        goToVnoAfterInpSuccess(snapshot);
+      });
+    }
+    if (noBtn) {
+      noBtn.addEventListener("click", function () {
+        const offer = document.getElementById("altiplano-inp-vno-offer");
+        if (offer) offer.hidden = true;
+      });
+    }
+  }
+
+  function renderResult(payload, ok, offerVnoContinuation) {
     const msg = payload && payload.message ? payload.message : (ok ? "OK" : "Error");
     const target = payload && payload.target ? payload.target : "";
     let html = "";
-    html += '<p><strong>' + (ok ? "Solicitud exitosa" : "Solicitud fallida") + ":</strong> " + msg + "</p>";
+    html += '<p><strong>' + (ok ? "Solicitud exitosa" : "Solicitud fallida") + ":</strong> " + escHtml(msg) + "</p>";
     if (target) {
-      html += '<p><strong>Target:</strong> <code class="inline-code">' + target + "</code></p>";
+      html += '<p><strong>Target:</strong> <code class="inline-code">' + escHtml(target) + "</code></p>";
+    }
+    if (ok && offerVnoContinuation) {
+      const snap = collectInpSnapshotForVno();
+      const vnoHint = snap.vnoLabel ? escHtml(snap.vnoLabel) : "VNO";
+      html +=
+        '<div id="altiplano-inp-vno-offer" class="altiplano-inp-vno-offer" role="region" aria-label="Continuar en VNO">' +
+        "<p><strong>¿Continuar en el VNO?</strong> Podés crear la ONT y servicios en " +
+        vnoHint +
+        " con los mismos datos (Device Name, LT, PON, ONT).</p>" +
+        '<div class="altiplano-inp-vno-offer__actions">' +
+        '<button type="button" id="btn-inp-goto-vno" class="btn btn-primary">Sí, ir a VNO</button>' +
+        '<button type="button" id="btn-inp-dismiss-vno" class="btn btn-ghost">No, gracias</button>' +
+        "</div></div>";
     }
     out.innerHTML = html;
+    if (ok && offerVnoContinuation) {
+      wireInpVnoOffer(collectInpSnapshotForVno());
+    }
+  }
+
+  function parseFullOltDeviceName(raw) {
+    var s = String(raw || "").trim();
+    if (!s) return null;
+    if (s.indexOf("#") >= 0) s = s.split("#")[0].trim();
+    var m = /^BA_OLTA_(.+)-(\d+)-(\d+)-(\d+)$/i.exec(s);
+    if (!m) return null;
+    return {
+      sitio: m[1],
+      device_name: "BA_OLTA_" + m[1],
+      lt: m[2],
+      pon: m[3],
+      ont: m[4],
+      location_full: s,
+    };
+  }
+
+  function setCreateFormQuickMode(on) {
+    var grid = document.getElementById("altiplano-create-form-grid");
+    if (grid) {
+      grid.classList.toggle("altiplano-create-form--from-full", !!on);
+      grid.classList.toggle("altiplano-form-grid--from-full", !!on);
+    }
+    var details = document.getElementById("altiplano-create-details");
+    if (details) details.open = !on;
+  }
+
+  function showFullDeviceParseFeedback(parsed, raw) {
+    var errEl = document.getElementById("device_location_parse_err");
+    var sumEl = document.getElementById("device_location_summary");
+    if (!errEl || !sumEl) return;
+    if (parsed) {
+      errEl.hidden = true;
+      errEl.textContent = "";
+      sumEl.hidden = false;
+      sumEl.innerHTML =
+        '<span class="altiplano-loc-chip altiplano-loc-chip--target"><code class="inline-code">' +
+        escHtml(parsed.location_full) +
+        "</code></span>" +
+        '<span class="altiplano-loc-chip">Sitio <strong>' +
+        escHtml(parsed.sitio) +
+        "</strong></span>" +
+        '<span class="altiplano-loc-chip">LT <strong>' +
+        escHtml(parsed.lt) +
+        "</strong></span>" +
+        '<span class="altiplano-loc-chip">PON <strong>' +
+        escHtml(parsed.pon) +
+        "</strong></span>" +
+        '<span class="altiplano-loc-chip">ONT <strong>' +
+        escHtml(parsed.ont) +
+        "</strong></span>";
+      return;
+    }
+    sumEl.hidden = true;
+    sumEl.innerHTML = "";
+    if (raw) {
+      errEl.hidden = false;
+      errEl.textContent =
+        "Formato no reconocido. Usá BA_OLTA_SITIO-LT-PON-ONT (ej. BA_OLTA_SF01_04-7-1-26).";
+    } else {
+      errEl.hidden = true;
+      errEl.textContent = "";
+    }
+  }
+
+  function applyParsedFullDeviceName(parsed) {
+    if (!parsed) {
+      setCreateFormQuickMode(false);
+      showFullDeviceParseFeedback(null, "");
+      refreshDerivedFields();
+      return;
+    }
+    var sitioEl = document.getElementById("sitio");
+    var ltEl = document.getElementById("lt");
+    var ponEl = document.getElementById("pon");
+    var ontEl = document.getElementById("ont");
+    if (sitioEl) sitioEl.value = parsed.sitio;
+    if (ltEl) ltEl.value = parsed.lt;
+    if (ponEl) ponEl.value = parsed.pon;
+    if (ontEl) ontEl.value = parsed.ont;
+    setCreateFormQuickMode(true);
+    showFullDeviceParseFeedback(parsed, parsed.location_full);
+    refreshDerivedFields();
+    var vnoEl = document.getElementById("vno");
+    if (vnoEl) {
+      try {
+        vnoEl.focus();
+      } catch (_e) {}
+    }
+  }
+
+  function onFullDeviceLocationInput() {
+    var raw = getValue("device_location_full");
+    var parsed = parseFullOltDeviceName(raw);
+    if (parsed) {
+      applyParsedFullDeviceName(parsed);
+      return;
+    }
+    setCreateFormQuickMode(false);
+    showFullDeviceParseFeedback(null, raw);
+    if (!raw) refreshDerivedFields();
   }
 
   function buildDeviceName() {
@@ -266,9 +2830,41 @@
     const fiberEl = document.getElementById("fiber_name");
     if (deviceEl) deviceEl.value = buildDeviceName();
     if (fiberEl) fiberEl.value = buildFiberName();
+    var fullRaw = getValue("device_location_full");
+    if (fullRaw) {
+      var parsed = parseFullOltDeviceName(fullRaw);
+      if (parsed) {
+        var fullEl = document.getElementById("device_location_full");
+        if (fullEl && fullEl.value.trim() !== parsed.location_full) {
+          fullEl.value = parsed.location_full;
+        }
+      }
+    }
+  }
+
+  function ensureCreateLocationReady() {
+    var fullRaw = getValue("device_location_full");
+    if (fullRaw) {
+      var parsed = parseFullOltDeviceName(fullRaw);
+      if (!parsed) {
+        renderResult(
+          {
+            message:
+              "Device name completo inválido. Ejemplo: BA_OLTA_SF01_04-7-1-26",
+          },
+          false
+        );
+        return false;
+      }
+      applyParsedFullDeviceName(parsed);
+      return true;
+    }
+    return true;
   }
 
   function submitIntent() {
+    if (!ensureCreateLocationReady()) return;
+
     const required = [
       ["sitio", "Sitio"],
       ["lt", "LT"],
@@ -281,7 +2877,11 @@
       const id = required[i][0];
       const label = required[i][1];
       if (!getValue(id)) {
-        renderResult({ message: "Completá el campo requerido: " + label }, false);
+        var hint =
+          getValue("device_location_full") && id !== "vno" && id !== "access_id"
+            ? "Revisá el device name completo o completá: " + label
+            : "Completá el campo requerido: " + label;
+        renderResult({ message: hint }, false);
         return;
       }
     }
@@ -319,7 +2919,7 @@
           window.location.reload();
           return;
         }
-        renderResult(r.payload, r.ok);
+        renderResult(r.payload, r.ok, r.ok);
       })
       .catch(function () {
         renderResult({ message: "Error de red o servidor" }, false);
@@ -330,21 +2930,40 @@
   }
 
   function clearFields() {
-    const toClear = ["sitio", "lt", "pon", "ont", "vno", "access_id"];
+    const toClear = ["device_location_full", "sitio", "lt", "pon", "ont", "vno", "access_id"];
     toClear.forEach(function (id) {
       const el = document.getElementById(id);
       if (!el) return;
       el.value = "";
     });
+    setCreateFormQuickMode(false);
+    showFullDeviceParseFeedback(null, "");
     refreshDerivedFields();
     out.innerHTML = '<p class="muted">Campos limpiados. Completá los datos para crear el intent.</p>';
   }
 
-  ["sitio", "lt", "pon"].forEach(function (id) {
+  var fullDeviceEl = document.getElementById("device_location_full");
+  if (fullDeviceEl) {
+    fullDeviceEl.addEventListener("input", onFullDeviceLocationInput);
+    fullDeviceEl.addEventListener("change", onFullDeviceLocationInput);
+    fullDeviceEl.addEventListener("paste", function () {
+      setTimeout(onFullDeviceLocationInput, 0);
+    });
+  }
+
+  ["sitio", "lt", "pon", "ont"].forEach(function (id) {
     const el = document.getElementById(id);
     if (!el) return;
     if (id === "sitio") {
-      el.addEventListener("change", refreshDerivedFields);
+      el.addEventListener("change", function () {
+        refreshDerivedFields();
+        var fullEl = document.getElementById("device_location_full");
+        if (fullEl && getValue("lt") && getValue("pon") && getValue("ont")) {
+          fullEl.value =
+            buildDeviceName() + "-" + getValue("lt") + "-" + getValue("pon") + "-" + getValue("ont");
+          onFullDeviceLocationInput();
+        }
+      });
     } else {
       el.addEventListener("input", refreshDerivedFields);
     }
@@ -353,15 +2972,65 @@
     const tabEl = document.getElementById(item.tab);
     if (tabEl) tabEl.addEventListener("click", function () { activateTabs(topTabs, item.tab); });
   });
+  inpTabs.forEach(function (item) {
+    const tabEl = document.getElementById(item.tab);
+    if (tabEl) tabEl.addEventListener("click", function () { activateTabs(inpTabs, item.tab); });
+  });
   vnoTabs.forEach(function (item) {
     const tabEl = document.getElementById(item.tab);
     if (tabEl) tabEl.addEventListener("click", function () { activateTabs(vnoTabs, item.tab); });
   });
   activateTabs(topTabs, "alt-tab-inp");
+  activateTabs(inpTabs, "alt-inp-tab-consulta");
   activateTabs(vnoTabs, "alt-vno-tab-tasa");
   refreshDerivedFields();
   btn.addEventListener("click", submitIntent);
   if (btnClear) btnClear.addEventListener("click", clearFields);
+  if (btnConsulta) btnConsulta.addEventListener("click", runConsultaInp);
+  var btnConsultaAdvanced = document.getElementById("btn-consulta-advanced-run");
+  if (btnConsultaAdvanced) btnConsultaAdvanced.addEventListener("click", runConsultaAdvanced);
+  if (btnConsultaClear) btnConsultaClear.addEventListener("click", clearConsulta);
+  consultaWireAdvancedFilterMutex();
+  document.querySelectorAll("[data-consulta-preset]").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      consultaApplyAdvancedPreset(btn.getAttribute("data-consulta-preset") || "");
+      var details = document.getElementById("consulta-advanced-details");
+      if (details) details.open = true;
+    });
+  });
+  if (consultaOut) {
+    consultaOut.addEventListener("click", handleConsultaRowAction);
+  }
+  ["consulta_device_name", "consulta_by_id"].forEach(function (id) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener("keydown", function (ev) {
+      if (ev.key === "Enter") {
+        ev.preventDefault();
+        runConsultaInp();
+      }
+    });
+  });
+  var consultaAdvancedDeviceEl = document.getElementById("consulta_advanced_device");
+  if (consultaAdvancedDeviceEl) {
+    consultaAdvancedDeviceEl.addEventListener("keydown", function (ev) {
+      if (ev.key === "Enter") {
+        ev.preventDefault();
+        runConsultaAdvanced();
+      }
+    });
+  }
+  if (btnBorrado) btnBorrado.addEventListener("click", runBorradoIntent);
+  if (btnBorradoClear) btnBorradoClear.addEventListener("click", clearBorrado);
+  if (btnBorradoLoteRun) btnBorradoLoteRun.addEventListener("click", runBorradoLote);
+  if (btnBorradoLoteClearFile) {
+    btnBorradoLoteClearFile.addEventListener("click", function () {
+      borradoLoteItems = [];
+      if (borradoLoteFile) borradoLoteFile.value = "";
+      setBorradoLotePreview();
+    });
+  }
+  setBorradoLotePreview();
   if (btnLogout) {
     btnLogout.addEventListener("click", function () {
       btnLogout.disabled = true;
@@ -373,6 +3042,270 @@
         .finally(function () {
           window.location.href = "/dashboard/altiplano";
         });
+    });
+  }
+})();
+</script>
+<script>
+(function () {
+  const jsonEl = document.getElementById("tasa-postman-apis-json");
+  const sel = document.getElementById("tasa-postman-api");
+  const titleEl = document.getElementById("tasa-api-title");
+  const noApi = document.getElementById("tasa-no-api");
+  const varsWrap = document.getElementById("tasa-vars-wrap");
+  const grid = document.getElementById("tasa-vars-grid");
+  const btnRun = document.getElementById("tasa-btn-ejecutar");
+  const consoleOut = document.getElementById("tasa-console-out");
+  const btnCopy = document.getElementById("tasa-btn-copy");
+  const btnClear = document.getElementById("tasa-btn-clear");
+  const modeIndividual = document.getElementById("tasa-mode-individual");
+  if (!jsonEl || !sel || !titleEl || !grid || !btnRun || !consoleOut) return;
+
+  let apisById = {};
+  try {
+    const list = JSON.parse(jsonEl.textContent || "[]");
+    if (Array.isArray(list)) {
+      list.forEach(function (a) {
+        if (a && a.id) apisById[a.id] = a;
+      });
+    }
+  } catch (_e) {
+    apisById = {};
+  }
+
+  function escAttr(s) {
+    return String(s || "")
+      .replace(/&/g, "&amp;")
+      .replace(/"/g, "&quot;")
+      .replace(/</g, "&lt;");
+  }
+
+  function appendConsole(text) {
+    let cur = consoleOut.textContent || "";
+    if (/^Esperando ejecución/.test(cur.trim())) cur = "";
+    consoleOut.textContent = cur ? cur + "\n\n" + text : text;
+  }
+
+  function clearConsole() {
+    consoleOut.textContent = "Esperando ejecución…";
+  }
+
+  function renderVars(api) {
+    grid.innerHTML = "";
+    const keys = (api && api.form_variables) || [];
+    keys.forEach(function (key) {
+      const id = "tasa-var-" + key.replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-|-$/g, "");
+      const wrap = document.createElement("div");
+      wrap.className = "altiplano-tasa-field";
+      const lab = document.createElement("label");
+      lab.className = "t altiplano-tasa-field__label";
+      lab.setAttribute("for", id);
+      lab.textContent = key;
+      const inp = document.createElement("input");
+      inp.type = "text";
+      inp.className = "field";
+      inp.id = id;
+      inp.name = key;
+      inp.setAttribute("data-var-key", key);
+      inp.setAttribute("autocomplete", "off");
+      inp.placeholder =
+        key === "Serial Number"
+          ? "Vacío → ALCL00+LT+PON+ONT"
+          : "Valor para " + key;
+      wrap.appendChild(lab);
+      wrap.appendChild(inp);
+      grid.appendChild(wrap);
+    });
+  }
+
+  function collectVariables() {
+    const out = {};
+    grid.querySelectorAll("[data-var-key]").forEach(function (el) {
+      const k = el.getAttribute("data-var-key");
+      if (k) out[k] = el.value != null ? String(el.value) : "";
+    });
+    if (!String(out["Serial Number"] || "").trim()) {
+      const sn = defaultTasaSerial(out.LT, out.PON, out.ONT);
+      if (sn) out["Serial Number"] = sn;
+    }
+    return out;
+  }
+
+  const TASA_COMPOSITE_API_ID = "configure-create-ont-plus-services";
+
+  function defaultTasaSerial(lt, pon, ont) {
+    function part2(v) {
+      const s = String(v != null ? v : "").trim();
+      if (!/^\d+$/.test(s)) return "";
+      const n = parseInt(s, 10);
+      if (isNaN(n) || n < 0) return "";
+      return n < 100 ? (n < 10 ? "0" + String(n) : String(n)) : String(n);
+    }
+    const a = part2(lt);
+    const b = part2(pon);
+    const c = part2(ont);
+    if (!a || !b || !c) return "";
+    return "ALCL00" + a + b + c;
+  }
+
+  function readGridVar(key) {
+    const el = grid.querySelector('[data-var-key="' + key + '"]');
+    return el ? String(el.value || "").trim() : "";
+  }
+
+  function refreshDefaultSerial() {
+    const snEl = grid.querySelector('[data-var-key="Serial Number"]');
+    if (!snEl || snEl.dataset.serialManual === "1") return;
+    const sn = defaultTasaSerial(readGridVar("LT"), readGridVar("PON"), readGridVar("ONT"));
+    if (sn) {
+      snEl.value = sn;
+      snEl.dataset.serialAuto = "1";
+    }
+  }
+
+  function wireSerialAutoFields() {
+    grid.querySelectorAll("[data-var-key]").forEach(function (el) {
+      const k = el.getAttribute("data-var-key");
+      if (k === "LT" || k === "PON" || k === "ONT") {
+        el.addEventListener("input", refreshDefaultSerial);
+      }
+      if (k === "Serial Number") {
+        el.addEventListener("input", function () {
+          if (String(el.value || "").trim()) {
+            el.dataset.serialManual = "1";
+            delete el.dataset.serialAuto;
+          } else {
+            delete el.dataset.serialManual;
+            refreshDefaultSerial();
+          }
+        });
+      }
+    });
+  }
+
+  function applyVarValues(values) {
+    if (!values || typeof values !== "object") return;
+    grid.querySelectorAll("[data-var-key]").forEach(function (el) {
+      const k = el.getAttribute("data-var-key");
+      if (k && Object.prototype.hasOwnProperty.call(values, k)) {
+        el.value = values[k] != null ? String(values[k]) : "";
+      }
+    });
+  }
+
+  function syncFromSelect(initialValues) {
+    const id = sel.value;
+    const api = apisById[id];
+    if (!api) {
+      titleEl.textContent = "—";
+      noApi.hidden = false;
+      varsWrap.hidden = true;
+      return;
+    }
+    titleEl.textContent = api.label || api.id;
+    noApi.hidden = true;
+    varsWrap.hidden = false;
+    renderVars(api);
+    if (initialValues) applyVarValues(initialValues);
+    wireSerialAutoFields();
+    refreshDefaultSerial();
+  }
+
+  function prefillFromInp(snapshot) {
+    if (!snapshot || typeof snapshot !== "object") return;
+    const apiId =
+      apisById[TASA_COMPOSITE_API_ID] ? TASA_COMPOSITE_API_ID : sel.value || "";
+    if (apiId) sel.value = apiId;
+    const values = {
+      "Device Name": snapshot.deviceName || "",
+      LT: snapshot.lt || "",
+      PON: snapshot.pon || "",
+      ONT: snapshot.ont || "",
+    };
+    const aid = String(snapshot.accessId || "").trim();
+    if (/^ALCL/i.test(aid) && aid.length > 6) {
+      values["Serial Number"] = aid.toUpperCase();
+    }
+    syncFromSelect(values);
+    const snEl = grid.querySelector('[data-var-key="Serial Number"]');
+    if (snEl && values["Serial Number"]) {
+      snEl.dataset.serialManual = "1";
+    } else {
+      refreshDefaultSerial();
+    }
+    clearConsole();
+    consoleOut.textContent =
+      "Datos importados desde creación INP. Serial Number por defecto: ALCL00+LT+PON+ONT (editable). Completá SVLAN/CVLAN y ejecutá.";
+    const first = grid.querySelector("[data-var-key]");
+    if (first) first.focus();
+  }
+
+  window.tasaVnoWizard = { prefillFromInp: prefillFromInp };
+
+  sel.addEventListener("change", function () {
+    syncFromSelect();
+  });
+  syncFromSelect();
+
+  btnRun.addEventListener("click", function () {
+    const id = sel.value;
+    if (!id || !apisById[id]) return;
+    btnRun.disabled = true;
+    const variables = collectVariables();
+    fetch("/dashboard/altiplano/vno/tasa/ejecutar", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ api_id: id, variables: variables }),
+    })
+      .then(function (r) {
+        return r.text().then(function (txt) {
+          var j = {};
+          try {
+            j = JSON.parse(txt || "{}");
+          } catch (_e) {
+            j = { message: (txt || "").slice(0, 800), response_text: "" };
+          }
+          return { okHttp: r.ok, status: r.status, body: j };
+        });
+      })
+      .then(function (pack) {
+        const j = pack.body || {};
+        const ts = new Date().toISOString();
+        const lines = [
+          "[" + ts + "] " + (pack.okHttp ? "OK" : "HTTP " + pack.status),
+          (j.request_method || "") + " " + (j.request_url || ""),
+          "—",
+          "message: " + (j.message != null ? j.message : ""),
+          "status_code: " + (j.status_code != null ? j.status_code : ""),
+          "—",
+          j.response_text != null ? String(j.response_text) : "",
+        ];
+        appendConsole(lines.join("\n"));
+      })
+      .catch(function (err) {
+        appendConsole("[error] " + (err && err.message ? err.message : String(err)));
+      })
+      .finally(function () {
+        btnRun.disabled = false;
+      });
+  });
+
+  if (btnClear) {
+    btnClear.addEventListener("click", clearConsole);
+  }
+  if (btnCopy) {
+    btnCopy.addEventListener("click", function () {
+      const t = consoleOut.textContent || "";
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(t).catch(function () {});
+      }
+    });
+  }
+
+  if (modeIndividual) {
+    modeIndividual.addEventListener("click", function (e) {
+      e.preventDefault();
     });
   }
 })();

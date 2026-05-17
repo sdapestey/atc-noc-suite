@@ -1,6 +1,3 @@
-from urllib.parse import quote_plus
-
-
 def _mock_cto_rows():
     return [
         {
@@ -16,7 +13,7 @@ def _mock_cto_rows():
     ]
 
 
-def test_index_cto_shows_google_maps_link_when_coords_exist(client, monkeypatch):
+def test_index_cto_renders_cto_head_and_embedded_map_when_coords_exist(client, monkeypatch):
     import web.routes as routes
 
     monkeypatch.setattr(routes, "consultar_cto_estructura", lambda _cto: _mock_cto_rows())
@@ -28,15 +25,20 @@ def test_index_cto_shows_google_maps_link_when_coords_exist(client, monkeypatch)
     assert r.status_code == 200
 
     html = r.get_data(as_text=True)
-    expected_query = quote_plus("-34.429816,-58.661158")
-    expected_href = f"https://www.google.com/maps/search/?api=1&amp;query={expected_query}"
-    assert "CTO consultada" in html
-    assert "Ver en Google Maps" in html
-    assert expected_href in html
-    assert 'target="_blank"' in html
-    assert 'rel="noopener noreferrer"' in html
+    assert "Sitio principal" in html
+    assert "consulta-cto-ficha" in html
+    assert "consulta-cto-ficha__row" in html
+    assert html.index("Sitio principal") < html.index("Dirección")
+    assert html.index("RAMA (path ATC)") < html.index("Dirección")
+    assert "consulta-ubicacion-card" not in html
+    assert "Ver en Google Maps" not in html
+    assert "Google Maps" not in html
+    assert "consulta-cto-head-row" in html
+    assert "rama-row-kind--cto" in html
+    assert "TG01-FATC-8-601814" in html
     assert "Ubicación (CTO)" in html
-    assert "Dirección: Alvear 2464 (BA San Fernando)" in html
+    assert "consulta-cto-ficha__value" in html
+    assert "Alvear 2464 (BA San Fernando)" in html
     assert "data-consulta-cto-map" in html
     assert "noc-map-tiles.js" in html
     assert "consulta-index-map.js" in html
@@ -54,10 +56,14 @@ def test_index_cto_shows_no_coords_when_missing(client, monkeypatch):
     assert r.status_code == 200
 
     html = r.get_data(as_text=True)
-    assert "CTO consultada" in html
-    assert "Sin coordenadas" in html
+    assert "Sitio principal" in html
+    assert "consulta-cto-head-row" in html
+    assert "Google Maps" not in html
+    assert "consulta-cto-no-ext-maps" not in html
     assert "Ver en Google Maps" not in html
     assert "Dirección:" not in html
+    assert "data-consulta-cto-postal-fetch" in html
+    assert "Buscando dirección" in html
     assert "data-consulta-cto-map" in html
 
 
@@ -74,4 +80,4 @@ def test_index_cto_search_no_ver_mapa_beside_rama_in_breadcrumb(client, monkeypa
     html = r.get_data(as_text=True)
     assert "consultaToggleMapaRama" not in html
     assert "panel-mapa-rama" not in html
-    assert "Ver historico" not in html
+    assert "/dashboard/potencias-historico?ratc=" not in html

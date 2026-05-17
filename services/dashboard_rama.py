@@ -9,7 +9,7 @@ from .dashboard_cache import get_cached_rama, get_cached_rama_inventario, get_ca
 from .domain import (
     SITIO_PRINCIPAL_DEFAULT,
     SITIO_PRINCIPAL_POR_REGION,
-    clasificar_rx_dbm,
+    resumen_semaforo_desde_rx_values,
     natural_sort_key_str,
     principal_sort_key,
     region_desde_rama,
@@ -135,9 +135,7 @@ def consultar_dashboard_rama(rama):
         pot_by_aid = {p["AID"]: p for p in plist}
 
         resultado = {}
-        rojas = 0
-        amarillas = 0
-        verdes = 0
+        rx_values = []
 
         for cto, rows in inv.items():
             resultado[cto] = {}
@@ -146,19 +144,9 @@ def consultar_dashboard_rama(rama):
                 tx = pot_by_aid.get(aid, {}).get("TX")
                 rx = pot_by_aid.get(aid, {}).get("RX")
                 resultado[cto][aid] = {"TX": tx, "RX": rx}
-                estado = clasificar_rx_dbm(rx)
-                if estado == "rojo":
-                    rojas += 1
-                elif estado == "amarillo":
-                    amarillas += 1
-                elif estado == "verde":
-                    verdes += 1
+                rx_values.append(rx)
 
-        resultado["__dashboard_resumen__"] = {
-            "ROJAS": rojas,
-            "AMARILLAS": amarillas,
-            "VERDES": verdes,
-        }
+        resultado["__dashboard_resumen__"] = resumen_semaforo_desde_rx_values(rx_values)
         return resultado
 
     ttl = get_dashboard_rama_power_cache_seconds()

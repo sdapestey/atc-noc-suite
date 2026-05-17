@@ -354,6 +354,15 @@ def consultar_ci_op_por_rama(rama: str) -> dict[str, Any]:
 
         where_sql = "(" + " OR ".join(conds) + ")"
         out = _rows_to_feature_collection(cur, schema, table, where_sql, tuple(params))
+        if out.get("ok") and out.get("geojson"):
+            for feat in out["geojson"].get("features") or []:
+                if not isinstance(feat, dict):
+                    continue
+                props = feat.get("properties")
+                if not isinstance(props, dict):
+                    props = {}
+                    feat["properties"] = props
+                props["camino_rama"] = rama
         return out
 
 

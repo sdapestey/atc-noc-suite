@@ -38,6 +38,41 @@
   color: var(--fg-muted, #8b949e);
 }
 
+/* Misma marca que dashboard RAMA / CTO: <p class="hint rama-cto-address"> */
+.hint.rama-cto-address {
+  margin: 0 0 0.5rem;
+  max-width: 100%;
+}
+
+html[data-theme="light"] .rama-cto-address {
+  background: #f6f8fa;
+  border: 1px solid #d8dee4;
+  border-radius: 6px;
+  box-shadow: none;
+  padding: 8px 10px;
+  gap: 6px 12px;
+}
+
+html[data-theme="light"] .rama-cto-address__label {
+  color: #0969da;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+}
+
+html[data-theme="light"] .rama-cto-address__value {
+  color: #1f2328;
+  font-weight: 600;
+}
+
+html[data-theme="light"] .rama-cto-address__value.muted {
+  color: #57606a;
+  font-weight: 500;
+}
+
+html[data-theme="light"] .rama-cto-address__loading {
+  color: #57606a;
+}
+
 .rama-cto-map-msg {
   margin-bottom: 0.35rem;
   min-height: 1.25em;
@@ -51,9 +86,22 @@
   border: 1px solid var(--border-default, #30363d);
 }
 
+/* Mapa por CTO (colapsable con Ver mapa) */
+.rama-cto-map-panel {
+  margin: 0.5rem 0 0.75rem;
+}
+
+.rama-cto-map-panel.hidden {
+  display: none !important;
+}
+
 /* Mapa por RAMA (varias CTO) */
 .rama-branch-map-panel {
   margin-bottom: 0.85rem;
+}
+
+.rama-branch-map-panel.hidden {
+  display: none !important;
 }
 
 .rama-mapa-kicker {
@@ -189,12 +237,11 @@ html[data-theme="light"] .consulta-mapa-cto-card .consulta-mapa-cto-leaflet.rama
   margin-bottom: 10px;
 }
 
-.consulta-mapa-rama-title {
-  display: block;
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  color: var(--fg-default, #e6edf3);
+.consulta-rama-card-historico {
+  margin: 0 0 10px;
+  text-align: right;
+  font-size: 12px;
+  font-weight: 500;
 }
 
 .consulta-mapa-rama-card .consulta-rama-mapa-msg {
@@ -224,4 +271,72 @@ html[data-theme="light"] .consulta-mapa-cto-card .consulta-mapa-cto-leaflet.rama
 
 html[data-theme="light"] .consulta-mapa-rama-card .consulta-mapa-rama-leaflet.rama-mapa-canvas {
   box-shadow: inset 0 1px 2px rgba(31, 35, 40, 0.06);
+}
+
+/* Mapas plegados por defecto (Consulta índice, alineado a dashboard RAMA) */
+details.consulta-mapa-cto-details.consulta-mapa-cto-details--until-ver-mapa:not([data-consulta-mapa-revealed]) {
+  display: none;
+}
+
+.consulta-mapa-rama-details.consulta-mapa-rama-details--until-ver-mapa:not([data-consulta-mapa-revealed]) {
+  display: none;
+}
+
+.consulta-mapa-rama-details,
+details.consulta-mapa-cto-details {
+  margin: 10px 16px 12px;
+  border: 1px solid var(--border-default, #30363d);
+  border-radius: var(--radius-lg, 12px);
+  background: var(--canvas-subtle, #161b22);
+  box-shadow: var(--shadow-md, 0 8px 24px rgba(1, 4, 9, 0.55));
+  overflow: hidden;
+}
+
+details.consulta-mapa-cto-details > summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg-default, #e6edf3);
+  user-select: none;
+  border-bottom: 1px solid transparent;
+}
+
+details.consulta-mapa-cto-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+details.consulta-mapa-cto-details[open] > summary {
+  border-bottom-color: var(--border-muted, #21262d);
+}
+
+.consulta-mapa-rama-details .consulta-mapa-rama-card,
+details.consulta-mapa-cto-details .consulta-mapa-cto-card {
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  padding-top: 12px;
+}
+
+details.consulta-mapa-cto-details[open] .consulta-mapa-details__chev {
+  transform: rotate(90deg);
+}
+
+.consulta-mapa-details__chev {
+  display: inline-block;
+  font-size: 10px;
+  transition: transform 0.18s ease;
+  flex-shrink: 0;
+}
+
+.page-consulta-index .consulta-section--multi .consulta-mapa-rama-details,
+.page-consulta-index .consulta-section--multi details.consulta-mapa-cto-details {
+  margin-left: 12px;
+  margin-right: 12px;
 }

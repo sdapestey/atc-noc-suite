@@ -2,10 +2,47 @@ import services.dashboard_calidad_inventario as calidad
 
 
 def test_norm_limit_bounds():
-    assert calidad._norm_limit(None) == 500
-    assert calidad._norm_limit("x") == 500
+    assert calidad._norm_limit(None) == calidad.DEFAULT_PAGE_SIZE
+    assert calidad._norm_limit("x") == calidad.DEFAULT_PAGE_SIZE
     assert calidad._norm_limit(0) == 1
-    assert calidad._norm_limit(999999) == 5000
+    assert calidad._norm_limit(999999) == calidad.MAX_PAGE_SIZE
+
+
+def test_rules_include_superset_parity():
+    assert "casos_rotos_rack" in calidad.RULES
+    assert "fat_sin_tag_nfc" in calidad.RULES
+    assert "fat_tag_nfc_duplicado" in calidad.RULES
+    assert len(calidad.RULES) == 7
+
+
+def test_fat_nfc_duplicados_tabla_order_by_select_list_compatible():
+    """SELECT DISTINCT exige que ORDER BY use columnas del SELECT (posiciones)."""
+    import inspect
+
+    src = inspect.getsource(calidad.dashboard_calidad_fat_nfc_duplicados_tabla)
+    assert "ORDER BY 2, 1" in src
+    assert "ORDER BY nfc_tag_id" not in src
+
+
+def test_historico_days_clamped(monkeypatch):
+    class _Cur:
+        def execute(self, *_a, **_k):
+            return None
+
+        def fetchall(self):
+            return []
+
+    from contextlib import contextmanager
+
+    @contextmanager
+    def _fake_db():
+        yield _Cur()
+
+    monkeypatch.setattr(calidad, "db_cursor", _fake_db)
+    payload = calidad.dashboard_calidad_inventario_historico(days=9999)
+    assert payload["days"] == 365
+    payload_min = calidad.dashboard_calidad_inventario_historico(days=1)
+    assert payload_min["days"] == 7
 
 
 def test_missing_serial_rule_has_ui_description():

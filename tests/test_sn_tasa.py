@@ -1,4 +1,4 @@
-from services.sn_tasa import normalize_tasa_change_sn
+from services.sn_tasa import default_tasa_serial_from_lt_pon_ont, normalize_tasa_change_sn
 
 
 def test_normalize_hex_asky_prefix_to_asky_plus_last8():
@@ -33,3 +33,16 @@ def test_normalize_short_string_upper_only():
 
 def test_normalize_alcl_style_serial_upper():
     assert normalize_tasa_change_sn("alclf00000066") == "ALCLF00000066"
+
+
+def test_default_serial_lt_pon_ont_example():
+    assert default_tasa_serial_from_lt_pon_ont("10", "6", "99") == "ALCL00100699"
+
+
+def test_default_serial_pads_single_digits():
+    assert default_tasa_serial_from_lt_pon_ont("1", "1", "1") == "ALCL00010101"
+
+
+def test_default_serial_empty_if_invalid():
+    assert default_tasa_serial_from_lt_pon_ont("", "6", "99") == ""
+    assert default_tasa_serial_from_lt_pon_ont("x", "6", "99") == ""

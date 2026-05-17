@@ -23,3 +23,10 @@ def test_dashboard_tree_cache_seconds_default_is_1800(monkeypatch):
     monkeypatch.delenv("DASHBOARD_TREE_CACHE_SECONDS", raising=False)
     assert config_module.get_dashboard_tree_cache_seconds_default() == 1800
 
+
+def test_get_altiplano_inp_wide_search_http_timeout_s_default_and_floor(monkeypatch):
+    monkeypatch.delenv("ALTIPLANO_INP_WIDE_SEARCH_HTTP_TIMEOUT_S", raising=False)
+    assert config_module.get_altiplano_inp_wide_search_http_timeout_s() == 300
+    monkeypatch.setenv("ALTIPLANO_INP_WIDE_SEARCH_HTTP_TIMEOUT_S", "10")
+    assert config_module.get_altiplano_inp_wide_search_http_timeout_s() == 75
+

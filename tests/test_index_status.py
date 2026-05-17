@@ -26,6 +26,39 @@ def test_index_access_id_renders_estado_field(client, monkeypatch):
     assert "(aux.bajada_inventario)" in html
 
 
+def test_index_alphanumeric_access_id_resolves(client, monkeypatch):
+    """Access ID alfanumérico (p. ej. VNO ATC) debe resolverse en Consulta, no solo dígitos."""
+    import web.routes as routes
+
+    monkeypatch.setattr(
+        routes,
+        "consultar_access_id_detalle_desde_bajada_inventario",
+        lambda aid: (
+            {
+                "AID": aid,
+                "OPERADOR": "ATC",
+                "Status": "IN SERVICE",
+                "CTO": "SF01-FATC-8-100001",
+                "RAMA": "SF01-RATC-0-000100",
+                "ONT": "BA_OLTA_SF01_01-1-1-1",
+                "SN": "SN1",
+                "TX": None,
+                "RX": None,
+                "fuente_detalle": "bajada_inventario",
+            }
+            if aid == "fes_a5_23"
+            else None
+        ),
+    )
+    monkeypatch.setattr(routes, "consultar_cto_coordenadas", lambda _cto: None)
+
+    r = client.post("/", data={"value": "fes_a5_23"})
+    assert r.status_code == 200
+    html = r.get_data(as_text=True)
+    assert "fes_a5_23" in html
+    assert "SF01-FATC-8-100001" in html
+
+
 def test_index_cto_table_renders_estado_column(client, monkeypatch):
     import web.routes as routes
 
@@ -82,3 +115,6 @@ def test_index_rama_table_renders_estado_column(client, monkeypatch):
     html = r.get_data(as_text=True)
     assert "<th>AID</th>" in html and "<th>TX</th>" in html and "<th>ESTADO</th>" in html
     assert "id=\"s0-st-105\"" in html
+    assert "consulta-cto-block" in html
+    assert "consulta-cto-head-row--subrama" in html
+    assert "Consultar RX" in html

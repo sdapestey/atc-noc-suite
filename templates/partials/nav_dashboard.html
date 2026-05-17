@@ -16,17 +16,33 @@
       <a class="global-nav-dd-link global-tab{% if nav_tab == 'historico' %} global-nav-dd-link--current{% endif %}" role="menuitem" href="{{ url_for('dash_potencias_historico') }}">Historico Potencias</a>
       <a class="global-nav-dd-link global-tab{% if nav_tab == 'calidad' %} global-nav-dd-link--current{% endif %}" role="menuitem" href="{{ url_for('dash_calidad_inventario') }}">Calidad Inventario</a>
       <a class="global-nav-dd-link global-tab{% if nav_tab == 'altiplano' %} global-nav-dd-link--current{% endif %}" role="menuitem" href="{{ url_for('dash_altiplano') }}">Orquestador</a>
+      <a
+        class="global-nav-dd-link global-tab global-tab--external"
+        role="menuitem"
+        href="{{ noc_wiki_url }}"
+        target="_blank"
+        rel="noopener noreferrer"
+      >NOC Wiki</a>
     </div>
   </div>
-  <nav class="global-tabs" aria-label="Secciones de dashboard">
-    <a class="global-tab{% if nav_tab == 'index' %} active{% endif %}" href="{{ url_for('index') }}">Consulta</a>
-    <a class="global-tab{% if nav_tab == 'rama' %} active{% endif %}" href="{{ url_for('dash_rama') }}">RAMA / CTO</a>
-    <a class="global-tab{% if nav_tab == 'olt' %} active{% endif %}" href="{{ url_for('dash_olt') }}">OLT / LT</a>
-    <a class="global-tab{% if nav_tab == 'camino' %} active{% endif %}" href="{{ url_for('dash_camino_optico') }}">Camino Optico</a>
-    <a class="global-tab{% if nav_tab == 'historico' %} active{% endif %}" href="{{ url_for('dash_potencias_historico') }}">Historico Potencias</a>
-    <a class="global-tab{% if nav_tab == 'calidad' %} active{% endif %}" href="{{ url_for('dash_calidad_inventario') }}">Calidad Inventario</a>
-    <a class="global-tab{% if nav_tab == 'altiplano' %} active{% endif %}" href="{{ url_for('dash_altiplano') }}">Orquestador</a>
-  </nav>
+  <div class="global-tabs-row">
+    <nav class="global-tabs" aria-label="Secciones de dashboard">
+      <a class="global-tab{% if nav_tab == 'index' %} active{% endif %}" href="{{ url_for('index') }}">Consulta</a>
+      <a class="global-tab{% if nav_tab == 'rama' %} active{% endif %}" href="{{ url_for('dash_rama') }}">RAMA / CTO</a>
+      <a class="global-tab{% if nav_tab == 'olt' %} active{% endif %}" href="{{ url_for('dash_olt') }}">OLT / LT</a>
+      <a class="global-tab{% if nav_tab == 'camino' %} active{% endif %}" href="{{ url_for('dash_camino_optico') }}">Camino Optico</a>
+      <a class="global-tab{% if nav_tab == 'historico' %} active{% endif %}" href="{{ url_for('dash_potencias_historico') }}">Historico Potencias</a>
+      <a class="global-tab{% if nav_tab == 'calidad' %} active{% endif %}" href="{{ url_for('dash_calidad_inventario') }}">Calidad Inventario</a>
+      <a class="global-tab{% if nav_tab == 'altiplano' %} active{% endif %}" href="{{ url_for('dash_altiplano') }}">Orquestador</a>
+    </nav>
+    <a
+      class="global-tab global-tab--external global-tab--wiki"
+      href="{{ noc_wiki_url }}"
+      target="_blank"
+      rel="noopener noreferrer"
+      title="Abrir NOC Wiki en una pestaña nueva"
+    >NOC Wiki</a>
+  </div>
   </div>
   <p class="dashboard-tab-nav-loading-caption" aria-hidden="true">Cargando</p>
 </div>

@@ -1,0 +1,283 @@
+﻿/* Dashboard Historico Potencias: tarjetas KPI */
+.page-historico-potencias .metrics-grid {
+  margin: 14px 16px 0;
+  display: grid;
+  /* 5 cols: PON ocupa 2 + ONTs + Mediana + Estado = una sola fila en desktop */
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+/* Puerto PON: más ancho para mostrar OLT-B-P completo sin truncar */
+.page-historico-potencias .metric-card--pon {
+  grid-column: span 2;
+}
+
+.page-historico-potencias .metric-card {
+  min-height: 84px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius);
+  background: var(--canvas-inset);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.02) inset;
+}
+
+.page-historico-potencias .metric-card .label {
+  margin: 0 0 6px;
+  color: var(--fg-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.page-historico-potencias .metric-card .value {
+  margin: 0;
+  color: var(--fg-default);
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.1;
+  word-break: break-word;
+}
+
+.page-historico-potencias #kpi-pon {
+  white-space: nowrap;
+  overflow: visible;
+  text-overflow: clip;
+  font-size: clamp(12px, 1vw, 22px);
+  letter-spacing: 0;
+}
+
+.page-historico-potencias .metric-card .hint {
+  margin-top: 6px;
+  color: var(--fg-muted);
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.page-historico-potencias #kpi-status.status-ok {
+  color: var(--success-text);
+}
+
+.page-historico-potencias #kpi-status.status-warn {
+  color: var(--warning-text);
+}
+
+.page-historico-potencias #kpi-status.status-neutral {
+  color: var(--fg-muted);
+}
+
+.page-historico-potencias .historico-range {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.page-historico-potencias .historico-range .btn {
+  min-width: 56px;
+}
+
+.page-historico-potencias .historico-range .btn.is-active {
+  background: var(--accent-emphasis);
+  border-color: var(--accent-emphasis);
+  color: #fff;
+}
+
+.page-historico-potencias .historico-chart-shell {
+  margin-top: 16px;
+  min-height: 0;
+  padding: 12px;
+}
+
+.page-historico-potencias .historico-chart-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.page-historico-potencias .historico-chart-stage {
+  position: relative;
+  width: 100%;
+  height: 420px;
+  min-height: 320px;
+}
+
+.page-historico-potencias .historico-chart-stage.is-hidden,
+.page-historico-potencias .historico-chart-stage[hidden],
+.page-historico-potencias .historico-legend-wrap.is-hidden,
+.page-historico-potencias .historico-legend-wrap[hidden] {
+  display: none !important;
+}
+
+.page-historico-potencias .historico-chart-stage canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.page-historico-potencias #no-data {
+  min-height: 110px;
+  display: flex;
+  align-items: center;
+}
+
+.page-historico-potencias .historico-legend-wrap {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-muted);
+  overflow-x: hidden;
+}
+
+.page-historico-potencias .historico-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  width: 100%;
+}
+
+.page-historico-potencias .historico-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fg-muted);
+  font-size: 12px;
+  white-space: normal;
+  line-height: 1.2;
+  padding: 2px 0;
+}
+
+.page-historico-potencias .historico-legend-dot {
+  width: 18px;
+  height: 0;
+  border-top: 2px solid var(--fg-muted);
+  opacity: 0.95;
+}
+
+.page-historico-potencias .historico-legend-check {
+  margin: 0;
+  width: 13px;
+  height: 13px;
+  accent-color: var(--accent-emphasis);
+}
+
+.page-historico-potencias .historico-legend-item[data-threshold="1"] {
+  opacity: 0.75;
+}
+
+/* Tabla comparación después de Consultar RX */
+.page-historico-potencias .historico-snapshot-compare {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-muted);
+}
+
+.page-historico-potencias .historico-snapshot-compare__title {
+  margin-top: 0;
+}
+
+.page-historico-potencias .historico-snapshot-compare__title h2 {
+  font-size: 12px;
+}
+
+.page-historico-potencias .historico-snapshot-compare__table-wrap {
+  margin-top: 8px;
+}
+
+.page-historico-potencias .historico-snapshot-compare__note {
+  margin: 10px 0 0;
+  padding: 0 2px;
+}
+
+/* Tabla CTO + ONT: cabeceras de grupo; fila resaltada solo en amarillo/rojo (umbrales RX como clasificar_rx_dbm: < −27 / −27 < x ≤ −25) */
+.page-historico-potencias .historico-cto-summary #ont-cto-summary-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.page-historico-potencias .historico-cto-summary .historico-cto-summary__th-spacer {
+  width: 1.25rem;
+  padding: 0;
+}
+
+.page-historico-potencias .historico-cto-summary tr.historico-cto-summary__group td {
+  font-weight: 600;
+  font-size: 0.8125rem;
+  letter-spacing: 0.01em;
+  padding: 0.55rem 0.65rem;
+  background: var(--surface-muted, rgba(148, 163, 184, 0.12));
+  border-bottom: 1px solid var(--border-muted, rgba(148, 163, 184, 0.35));
+  color: var(--text-primary, inherit);
+}
+
+.page-historico-potencias .historico-cto-summary tr.historico-cto-summary__group + tr.historico-cto-summary__ont td {
+  border-top: none;
+}
+
+.page-historico-potencias .historico-cto-summary tr.historico-cto-summary__ont td {
+  padding: 0.45rem 0.55rem;
+  vertical-align: middle;
+}
+
+.page-historico-potencias .historico-cto-summary .historico-cto-summary__spacer {
+  width: 1.25rem;
+  padding: 0;
+  border-right: none;
+  background: transparent;
+}
+
+/* Fila completa amarillo / rojo (mismos tonos leves que consulta índice); sin resaltado en verde */
+.page-historico-potencias .historico-cto-summary tr.historico-cto-summary__ont--rx-warn > td {
+  background: rgba(234, 179, 8, 0.11);
+}
+
+.page-historico-potencias .historico-cto-summary tr.historico-cto-summary__ont--rx-bad > td {
+  background: rgba(239, 68, 68, 0.075);
+}
+
+.page-historico-potencias .historico-cto-summary tr.historico-cto-summary__ont--rx-warn > td.historico-cto-summary__spacer,
+.page-historico-potencias .historico-cto-summary tr.historico-cto-summary__ont--rx-bad > td.historico-cto-summary__spacer {
+  background: transparent;
+}
+
+@media (max-width: 960px) {
+  .page-historico-potencias .metrics-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .page-historico-potencias .metric-card--estado {
+    grid-column: 1 / -1;
+  }
+
+  .page-historico-potencias .historico-chart-stage {
+    height: 360px;
+    min-height: 300px;
+  }
+}
+
+@media (max-width: 640px) {
+  .page-historico-potencias .metrics-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .page-historico-potencias .metric-card--pon {
+    grid-column: span 1;
+  }
+
+  .page-historico-potencias .metric-card .value {
+    font-size: 20px;
+  }
+
+  .page-historico-potencias .historico-range {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .page-historico-potencias .historico-chart-stage {
+    height: 300px;
+    min-height: 260px;
+  }
+
+  .page-historico-potencias #no-data {
+    min-height: 260px;
+  }
+}

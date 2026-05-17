@@ -105,6 +105,126 @@ def get_altiplano_nbi_target(operator: str) -> tuple[str, str, str]:
     return host, port, base
 
 
+def get_altiplano_inp_intent_restconf_paths() -> list[str]:
+    """
+    Rutas RESTCONF relativas a ``.../rest/restconf/data/`` para listar intents en INP.
+
+    Prioridad: ``ALTIPLANO_INP_INTENT_DATA_PATHS`` (coma-separado; definido por release/NBI),
+    luego valores habituales. Si el AC devuelve *Module ibn does not exist*, probá sin
+    ``altiplano-target`` (ya alternamos en código) o consultá el Northbound Guide para la
+    ruta exacta de tu versión y configurá la variable de entorno.
+    """
+    raw = os.environ.get("ALTIPLANO_INP_INTENT_DATA_PATHS", "").strip()
+    paths: list[str] = []
+    if raw:
+        paths.extend(p.strip() for p in raw.split(",") if p.strip())
+    paths.extend(
+        (
+            "ibn:intent",
+            "ibn:ibn/intent",
+            "ibn:ibn",
+        )
+    )
+    seen: set[str] = set()
+    out: list[str] = []
+    for p in paths:
+        if p not in seen:
+            seen.add(p)
+            out.append(p)
+    return out
+
+
+def get_altiplano_tasa_intent_restconf_paths() -> list[str]:
+    """
+    Rutas RESTCONF relativas a ``.../rest/restconf/data/`` para listar intents en TASA.
+
+    Override: ``ALTIPLANO_TASA_INTENT_DATA_PATHS`` (coma-separado).
+    """
+    raw = os.environ.get("ALTIPLANO_TASA_INTENT_DATA_PATHS", "").strip()
+    paths: list[str] = []
+    if raw:
+        paths.extend(p.strip() for p in raw.split(",") if p.strip())
+    paths.extend(
+        (
+            "ibn:ibn",
+            "ibn:ibn/intent",
+            "ibn:intent",
+        )
+    )
+    seen: set[str] = set()
+    out: list[str] = []
+    for p in paths:
+        if p not in seen:
+            seen.add(p)
+            out.append(p)
+    return out
+
+
+def get_altiplano_tasa_discovery_search_timeout_s() -> int:
+    """Timeout por POST ``ibn:search-intents`` al detectar SVLAN en borrado TASA (default 20 s)."""
+    return _int_env_at_least("ALTIPLANO_TASA_DISCOVERY_SEARCH_TIMEOUT_S", 20, 5)
+
+
+def get_altiplano_tasa_discovery_wide_list_enabled() -> bool:
+    """
+    Si True, tras ``search-intents`` intenta un GET acotado del árbol IBN (lento en muchos AC).
+
+    Default **False** — el listado global ``ibn:ibn`` suele tardar minutos y bloquea el borrado.
+    Variable: ``ALTIPLANO_TASA_DISCOVERY_WIDE_LIST`` = ``1`` / ``true`` / ``yes``.
+    """
+    raw = os.environ.get("ALTIPLANO_TASA_DISCOVERY_WIDE_LIST", "").strip().lower()
+    return raw in ("1", "true", "yes", "on")
+
+
+def get_altiplano_tasa_discovery_wide_list_timeout_s() -> int:
+    """Timeout del GET opcional de listado IBN en discovery TASA (default 12 s)."""
+    return _int_env_at_least("ALTIPLANO_TASA_DISCOVERY_WIDE_LIST_TIMEOUT_S", 12, 5)
+
+
+def get_altiplano_inp_search_http_timeout_s() -> int:
+    """
+    Timeout en segundos para cada GET RESTCONF de **búsqueda** de intents INP (Orquestador).
+
+    Los listados ``ibn:ibn`` / ``ibn:intent`` pueden tardar bastante en AC lentos o redes congestionadas.
+    Variable de entorno: ``ALTIPLANO_INP_SEARCH_HTTP_TIMEOUT_S`` (default **75**, mínimo **15**).
+    """
+    return _int_env_at_least("ALTIPLANO_INP_SEARCH_HTTP_TIMEOUT_S", 75, 15)
+
+
+def get_altiplano_inp_wide_search_http_timeout_s() -> int:
+    """
+    Timeout en segundos para el GET RESTCONF del **listado global** de intents cuando la
+    consulta INP es solo Access ID (sin device/target): el árbol ``ibn:ibn`` / ``ibn:intent``
+    puede tardar bastante más que un GET por instancia.
+
+    Variable: ``ALTIPLANO_INP_WIDE_SEARCH_HTTP_TIMEOUT_S`` (default **300**, mínimo **75**).
+    """
+    return _int_env_at_least("ALTIPLANO_INP_WIDE_SEARCH_HTTP_TIMEOUT_S", 300, 75)
+
+
+def get_altiplano_inp_intent_probe_http_timeout_s() -> int:
+    """
+    Timeout por GET para **sondas** de alineación (``content=all``, leafs RESTCONF, ``ibn/yang/…``).
+
+    La consulta INP encadena muchas peticiones opcionales; si comparten el timeout largo de
+    búsqueda, un AC lento puede dejar la UI minutos en «Consultando…». Variable de entorno:
+    ``ALTIPLANO_INP_INTENT_PROBE_HTTP_TIMEOUT_S`` (default **15**, mínimo **5**).
+    """
+    return _int_env_at_least("ALTIPLANO_INP_INTENT_PROBE_HTTP_TIMEOUT_S", 15, 5)
+
+
+def get_altiplano_inp_intent_metadata_yang_version() -> str:
+    """
+    Segmento de versión YANG en la URL de metadata IBN que usa la GUI Altiplano, p. ej.::
+
+        .../rest/ibn/yang/metadata/ont-connection/11/data/ont-connection:ont-connection-state
+
+    Default **11**. Override: ``ALTIPLANO_INP_INTENT_METADATA_YANG_VERSION``.
+    """
+    raw = os.environ.get("ALTIPLANO_INP_INTENT_METADATA_YANG_VERSION", "").strip()
+    return raw if raw else "11"
+
+
 def _int_env_positive_or_zero(name: str, default: int) -> int:
     raw = os.environ.get(name, "").strip()
     if not raw:
@@ -207,6 +327,13 @@ def get_altiplano_token_cache_max_age_seconds() -> int:
 def get_altiplano_power_workers() -> int:
     """Cantidad máxima de workers para consultar potencias en paralelo."""
     return _int_env_at_least("ALTIPLANO_POWER_WORKERS", 8, 1)
+
+
+def get_noc_wiki_url() -> str:
+    """URL del wiki NOC (pestaña externa en la barra de dashboards)."""
+    default = "http://10.90.1.196:6875/"
+    raw = os.environ.get("NOC_WIKI_URL", default).strip()
+    return raw or default
 
 
 class Config:

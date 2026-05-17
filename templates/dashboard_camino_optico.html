@@ -4,10 +4,7 @@
 <meta charset="UTF-8">
 <title>Camino óptico · ATC NOC Suite</title>
 {% include 'partials/noc_head.html' %}
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-<script src="{{ url_for('static', filename='js/noc-map-tiles.js') }}"></script>
-<script src="{{ url_for('static', filename='js/leaflet-scroll-guard.js') }}"></script>
+{% include 'partials/head_leaflet.html' %}
 <script src="{{ url_for('static', filename='js/noc-tools.js') }}"></script>
 </head>
 <body class="theme-devops page-camino">
@@ -19,8 +16,7 @@
         <h1>ATC NOC Suite</h1>
       </div>
       <p class="page-lead">
-        <strong>Camino óptico</strong> — inventario <code class="inline-code">cm.inventory_fat_occupation</code> +
-        <code class="inline-code">cm.cm_report_isp</code>. Un solo campo: identificador <code class="inline-code">…-FATC-…</code>, rama <code class="inline-code">…-RATC-…</code> o Access ID (solo dígitos).
+        <strong>Camino óptico</strong> — Un solo campo: Access ID, CTO (<code class="inline-code">…-FATC-…</code>), rama (<code class="inline-code">…-RATC-…</code>), LT o sitio/región. Obtenés inventario, reporte ISP y mapa de la rama con CTOs.
       </p>
     </div>
     {% include 'partials/noc_topbar.html' %}
@@ -34,19 +30,19 @@
     <div class="row camino-row">
       <div class="camino-field-wrap">
         <label class="t" for="q">Valor</label>
-        <input type="text" id="q" placeholder="Ej: ES01-RATC-0-000001  ·  TG01-FATC-8-110066  ·  1052404324" autocomplete="off">
+        <input type="text" id="q" placeholder="Access ID · CTO · Rama RATC · LT · sitio" autocomplete="off">
       </div>
       <button type="button" class="btn btn-primary" id="btn">Buscar</button>
       <button type="button" class="btn btn-ghost" onclick="limpiarBusquedaCamino()">Limpiar</button>
     </div>
     </div>
     <p class="muted camino-leyenda" role="note">
-      Ingresá un identificador con <span class="kbd">FATC</span> (CTO), <span class="kbd">RATC</span> (RAMA) o solo dígitos (Access ID) y tocá <strong>Buscar</strong>. El sistema detecta el tipo automáticamente.
-      Para <span class="kbd">RAMA</span>, <span class="kbd">CTO</span> o <span class="kbd">Access ID</span>: tocá <strong>Buscar</strong> y se abre el mapa (trazado <code class="inline-code">ci_op</code> de la rama) arriba del resumen; en búsqueda por CTO/Access ID la FATC asociada se resalta respecto del resto. Coordenadas de CTO desde inventario o capa <code class="inline-code">ci_sfat_mfat_bfat</code> en <code class="inline-code">cm</code>.
+      <strong>Buscar</strong> infiere el tipo de valor. En cada resultado, la ruta <strong>Sitio › LT › Rama › CTO › Access ID</strong> cambia mapa y detalle sin reescribir el campo.
     </p>
     </div>
   </div>
 
+  <div class="camino-consulta-stack">
   <div class="panel camino-gis-panel" id="camino-rama-map-panel" hidden>
     <div class="camino-gis-head">
       <h2 id="camino-gis-map-title">Mapa · rama</h2>
@@ -54,13 +50,46 @@
         Línea verde: trazado <code class="inline-code">ci_op</code> (PostGIS). Puntos naranja: CTO (FATC) con coordenadas.
       </p>
     </div>
-    <div class="camino-gis-map-wrap">
+    <div id="camino-lt-overlay-controls" class="camino-lt-overlay-controls" hidden>
+      <p class="muted camino-lt-overlay-lead" id="camino-lt-overlay-lead"></p>
+      <div id="camino-lt-overlay-checkboxes" class="camino-lt-overlay-grid" role="group" aria-label="Superponer otros LT"></div>
+    </div>
+    <div class="camino-gis-map-wrap" id="camino-gis-map-wrap">
+      <button
+        type="button"
+        id="camino-gis-fs-toggle"
+        class="camino-gis-fs-btn"
+        aria-pressed="false"
+        aria-label="Ver mapa en pantalla completa"
+        title="Pantalla completa"
+      >
+        <svg class="camino-gis-fs-icon camino-gis-fs-icon--open" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path fill="currentColor" d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
+        </svg>
+        <svg class="camino-gis-fs-icon camino-gis-fs-icon--close" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path fill="currentColor" d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"/>
+        </svg>
+      </button>
+      <div
+        id="camino-gis-loading"
+        class="camino-gis-loading"
+        hidden
+        aria-live="polite"
+        aria-busy="false"
+      >
+        <div class="camino-gis-loading-backdrop" aria-hidden="true"></div>
+        <div class="camino-gis-loading-inner">
+          <span class="camino-gis-loading-spinner" aria-hidden="true"></span>
+          <p class="camino-gis-loading-msg" id="camino-gis-loading-msg">Cargando…</p>
+        </div>
+      </div>
       <div id="camino-gis-map" role="application" aria-label="Mapa camino óptico por rama"></div>
     </div>
     <div id="camino-gis-side" class="camino-gis-kv-wrap" aria-live="polite"></div>
   </div>
 
   <div id="out" class="camino-out"></div>
+  </div>
 </div>
 
 <script>
@@ -118,9 +147,147 @@
     return html;
   }
 
+  function scrollCaminoJerarquiaToFoco(root) {
+    var track = root && root.querySelector ? root.querySelector(".camino-jerarquia-track") : null;
+    var cur = track && track.querySelector(".camino-jerarquia-pill--current");
+    if (!track || !cur) return;
+    var target = cur.offsetLeft - track.clientWidth / 2 + cur.offsetWidth / 2;
+    track.scrollTo({ left: Math.max(0, target), behavior: "smooth" });
+  }
+
+  function mountCaminoResult(html, data) {
+    out.innerHTML = html;
+    requestAnimationFrame(function () {
+      scrollCaminoJerarquiaToFoco(out);
+    });
+    if (data && window.loadCaminoRamaMap) window.loadCaminoRamaMap(data);
+  }
+
+  function renderJerarquiaNavBar(data) {
+    var j = data.jerarquia_nav;
+    if (!j || !j.pasos || !j.pasos.length) return "";
+    var foco = j.foco || {};
+    var html = '<div class="camino-jerarquia-wrap" role="navigation" aria-label="Ruta de red">';
+    html += '<div class="camino-jerarquia-wrap__head">';
+    html += '<h3 class="camino-jerarquia-wrap__title">Ruta de red</h3>';
+    html +=
+      '<p class="camino-jerarquia-wrap__hint">Equipo → cliente · tocá un paso para cambiar mapa y detalle</p>';
+    html += "</div>";
+    html += '<div class="camino-jerarquia-track" tabindex="0">';
+    html += '<ol class="camino-jerarquia-list">';
+    j.pasos.forEach(function (p) {
+      var active = p.tipo === foco.tipo && String(p.valor) === String(foco.valor);
+      var tipoSlug = String(p.tipo || "paso").replace(/[^a-z0-9_-]/gi, "");
+      var displayVal =
+        p.titulo != null && String(p.titulo).trim() !== "" ? String(p.titulo).trim() : p.valor;
+      var pillCls =
+        "camino-jerarquia-pill camino-jerarquia-pill--tipo-" +
+        tipoSlug +
+        (p.tipo === "equipo" ? " camino-jerarquia-pill--equipo" : "") +
+        (active ? " camino-jerarquia-pill--current" : " camino-jerarquia-pill--action");
+      html += '<li class="camino-jerarquia-list__step" role="listitem">';
+      if (active) {
+        html +=
+          '<span class="' +
+          pillCls +
+          '" aria-current="step"><span class="camino-jerarquia-pill__lbl">' +
+          esc(p.rotulo) +
+          '</span><span class="camino-jerarquia-pill__val mono">' +
+          esc(displayVal) +
+          "</span></span>";
+      } else {
+        html +=
+          '<button type="button" class="' +
+          pillCls +
+          '" data-camino-nav-tipo="' +
+          esc(p.tipo) +
+          '" data-camino-nav-valor="' +
+          esc(p.valor) +
+          '"><span class="camino-jerarquia-pill__lbl">' +
+          esc(p.rotulo) +
+          '</span><span class="camino-jerarquia-pill__val mono">' +
+          esc(displayVal) +
+          "</span></button>";
+      }
+      html += "</li>";
+    });
+    html += "</ol></div></div>";
+    return html;
+  }
+
+  function renderCaminoContextoDetailHtml(ctx, fallbackCto) {
+    ctx = ctx || {};
+    var hasCtx =
+      (ctx.ramas && ctx.ramas.length) ||
+      ctx.lt ||
+      (ctx.lts && ctx.lts.length) ||
+      ctx.sitio_principal ||
+      ctx.site_fullname ||
+      ctx.physical_path;
+    if (!hasCtx) return "";
+    var html = '<div class="camino-contexto-path" role="region" aria-label="Camino óptico">';
+    html += '<p class="camino-contexto-path__kicker">Camino óptico</p>';
+    html += '<ol class="camino-contexto-path__list">';
+    html +=
+      '<li class="camino-contexto-path__item"><span class="camino-contexto-path__lbl">CTO</span> <span class="camino-path-badge">' +
+      esc(String(ctx.cto || fallbackCto || "")) +
+      "</span></li>";
+    (ctx.ramas || []).forEach(function (r) {
+      html +=
+        '<li class="camino-contexto-path__item"><span class="camino-contexto-path__lbl">Rama</span> <span class="camino-path-badge">' +
+        esc(r) +
+        "</span></li>";
+    });
+    if (ctx.lts && ctx.lts.length > 1) {
+      ctx.lts.forEach(function (lt) {
+        html +=
+          '<li class="camino-contexto-path__item"><span class="camino-contexto-path__lbl">LT / equipo</span> <span class="camino-path-badge">' +
+          esc(lt) +
+          "</span></li>";
+      });
+    } else if (ctx.lt) {
+      html +=
+        '<li class="camino-contexto-path__item"><span class="camino-contexto-path__lbl">LT / equipo</span> <span class="camino-path-badge">' +
+        esc(ctx.lt) +
+        "</span></li>";
+    }
+    if (ctx.sitio_principal || ctx.sitio_codigo) {
+      html +=
+        '<li class="camino-contexto-path__item"><span class="camino-contexto-path__lbl">Sitio</span> <span class="camino-contexto-path__sitio">';
+      if (ctx.sitio_principal) {
+        html += '<span class="camino-contexto-path__sitio-name">' + esc(ctx.sitio_principal) + "</span>";
+      }
+      if (ctx.sitio_principal && ctx.sitio_codigo) {
+        html += ' <span class="camino-contexto-path__sitio-sep" aria-hidden="true">·</span> ';
+      }
+      if (ctx.sitio_codigo) {
+        html += '<span class="camino-path-badge">' + esc(ctx.sitio_codigo) + "</span>";
+      }
+      html += "</span></li>";
+    }
+    if (ctx.site_fullname) {
+      html +=
+        '<li class="camino-contexto-path__item camino-contexto-path__item--plain"><span class="camino-contexto-path__lbl">Nombre sitio (CM)</span> <span class="camino-contexto-path__plain-val">' +
+        esc(ctx.site_fullname) +
+        "</span></li>";
+    }
+    if (ctx.physical_path) {
+      html +=
+        '<li class="camino-contexto-path__item camino-contexto-path__item--plain"><span class="camino-contexto-path__lbl">Physical path</span> <span class="camino-contexto-path__plain-val">' +
+        esc(ctx.physical_path) +
+        "</span></li>";
+    }
+    html += "</ol></div>";
+    return html;
+  }
+
   function renderFatOntRow(o){
     return (
-      "<tr><td>" + esc(o.access_id) + "</td>" +
+      '<tr><td><button type="button" class="camino-aid-nav btn-link t" data-camino-nav-tipo="access_id" data-camino-nav-valor="' +
+      esc(String(o.access_id)) +
+      '">' +
+      esc(o.access_id) +
+      "</button></td>" +
       "<td>" + esc(o.object_name_ui || "—") + "</td>" +
       "<td>" + esc(o.OPERADOR || "—") + "</td>" +
       "<td>" + esc(o.path_atc || "—") + "</td>" +
@@ -138,7 +305,8 @@
     }
     if (data.tipo === "rama") {
       const r = data.resumen || {};
-      let html = '<div class="panel camino-result"><div class="camino-result-head camino-result-head--rama">';
+      let html = '<div class="panel camino-result">' + renderJerarquiaNavBar(data);
+      html += '<div class="camino-result-head camino-result-head--rama">';
       html += '<h2 class="camino-result-title">Rama ' + esc(data.rama) + "</h2>";
       html += '<div class="camino-stat-chips" role="list">';
       html +=
@@ -157,25 +325,27 @@
         html += "<tr><td>" + esc(c.cto) + "</td><td>" + esc(c.onts) + "</td></tr>";
       });
       html += "</tbody></table></div></div>";
-      out.innerHTML = html;
-      if (window.loadCaminoRamaMap) window.loadCaminoRamaMap(data);
+      mountCaminoResult(html, data);
       return;
     }
     if (data.tipo === "cto") {
       const res = data.resumen || {};
-      const mapsUrlCto = data.cto_maps_url || "";
       let html = '<div class="panel camino-result">';
+      html += renderJerarquiaNavBar(data);
       html += '<div class="camino-result-head">';
       html += '<h2 class="camino-result-title">CTO ' + esc(data.cto) + "</h2>";
-      if (mapsUrlCto) {
+      html += "</div>";
+      html += '<div class="camino-ubicacion-cto">';
+      html += '<p class="camino-ubicacion-cto__title">Ubicación (CTO)</p>';
+      if (data.direccion_postal) {
         html +=
-          '<a class="dash-link" href="' +
-          esc(mapsUrlCto) +
-          '" target="_blank" rel="noopener noreferrer">Ver en Google Maps</a>';
+          '<p class="camino-ubicacion-cto__addr">Dirección: ' + esc(data.direccion_postal) + "</p>";
       } else {
-        html += '<span class="muted">Sin coordenadas</span>';
+        html +=
+          '<p class="camino-ubicacion-cto__addr camino-ubicacion-cto__addr--empty">Dirección: sin datos en CM para esta CTO.</p>';
       }
       html += "</div>";
+      html += renderCaminoContextoDetailHtml(data.camino_contexto || {}, data.cto);
       html += '<div class="stats">';
       html += '<div class="stat"><b>' + esc(String(res.ont_count)) + '</b><span>ONT</span></div>';
       html += '<div class="stat"><b>' + esc(String(res.rama_count)) + '</b><span>Ramas distintas</span></div>';
@@ -195,26 +365,119 @@
       html += '<div class="table-wrap"><table><thead><tr><th>Access ID</th><th>ONT</th><th>Operador</th><th>Rama</th><th>Puerto</th><th>Componente</th><th>Cadena instalaciones</th></tr></thead><tbody>';
       (data.onts || []).forEach(function(o){ html += renderFatOntRow(o); });
       html += "</tbody></table></div></div>";
-      out.innerHTML = html;
-      if (window.loadCaminoRamaMap) window.loadCaminoRamaMap(data);
+      mountCaminoResult(html, data);
+      return;
+    }
+    if (data.tipo === "lt") {
+      const r = data.resumen || {};
+      const ramas = r.ramas || [];
+      let html = '<div class="panel camino-result">' + renderJerarquiaNavBar(data);
+      html += '<div class="camino-result-head camino-result-head--rama">';
+      html += '<h2 class="camino-result-title">LT ' + esc(data.lt) + "</h2>";
+      html += '<div class="camino-stat-chips" role="list">';
+      html +=
+        '<div class="camino-stat-chip" role="listitem"><span class="camino-stat-chip__val">' +
+        esc(String(ramas.length)) +
+        '</span><span class="camino-stat-chip__lbl">Ramas</span></div>';
+      html += "</div></div>";
+      html += "<p class=\"muted\">Trazados <code class=\"inline-code\">ci_op</code> de todas las ramas de este LT (ONT en servicio en inventario).</p>";
+      html += '<details class="det"><summary>Lista de ramas (' + esc(String(ramas.length)) + ")</summary>";
+      html += '<ul class="camino-rama-list">';
+      ramas.forEach(function (x) {
+        html += '<li><code class="inline-code">' + esc(x) + "</code></li>";
+      });
+      html += "</ul></details></div>";
+      mountCaminoResult(html, data);
+      return;
+    }
+    if (data.tipo === "equipo") {
+      const r = data.resumen || {};
+      const ramas = r.ramas || [];
+      const lts = data.lts_mismo_olt || [];
+      let html = '<div class="panel camino-result">' + renderJerarquiaNavBar(data);
+      html += '<div class="camino-result-head camino-result-head--rama">';
+      html += '<h2 class="camino-result-title">Equipo ' + esc(data.olt_logico) + "</h2>";
+      if (data.sitio_codigo) {
+        html +=
+          '<p class="muted camino-equipo-sub">Código en sitio: <code class="inline-code">' +
+          esc(data.sitio_codigo) +
+          "</code></p>";
+      }
+      html += '<div class="camino-stat-chips" role="list">';
+      html +=
+        '<div class="camino-stat-chip" role="listitem"><span class="camino-stat-chip__val">' +
+        esc(String(ramas.length)) +
+        '</span><span class="camino-stat-chip__lbl">Ramas</span></div>';
+      html +=
+        '<div class="camino-stat-chip" role="listitem"><span class="camino-stat-chip__val">' +
+        esc(String(lts.length)) +
+        '</span><span class="camino-stat-chip__lbl">LT</span></div>';
+      html += "</div></div>";
+      html +=
+        "<p class=\"muted\">Trazados <code class=\"inline-code\">ci_op</code> de todas las ramas de todos los LT de este equipo (inventario en servicio).</p>";
+      html += '<details class="det"><summary>Lista de ramas (' + esc(String(ramas.length)) + ")</summary>";
+      html += '<ul class="camino-rama-list">';
+      ramas.forEach(function (x) {
+        html += '<li><code class="inline-code">' + esc(x) + "</code></li>";
+      });
+      html += "</ul></details>";
+      html += '<details class="det"><summary>LT del equipo (' + esc(String(lts.length)) + ")</summary>";
+      html += '<ul class="camino-rama-list">';
+      lts.forEach(function (x) {
+        html += '<li><code class="inline-code">' + esc(x) + "</code></li>";
+      });
+      html += "</ul></details></div>";
+      mountCaminoResult(html, data);
+      return;
+    }
+    if (data.tipo === "sitio") {
+      const r = data.resumen || {};
+      const ramas = r.ramas || [];
+      const modo = data.sitio_modo === "region" ? "Región" : "Sitio";
+      let html = '<div class="panel camino-result">' + renderJerarquiaNavBar(data);
+      html += '<div class="camino-result-head camino-result-head--rama">';
+      html +=
+        '<h2 class="camino-result-title">' +
+        modo +
+        " " +
+        esc(data.sitio) +
+        "</h2>";
+      html += '<div class="camino-stat-chips" role="list">';
+      html +=
+        '<div class="camino-stat-chip" role="listitem"><span class="camino-stat-chip__val">' +
+        esc(String(ramas.length)) +
+        '</span><span class="camino-stat-chip__lbl">Ramas</span></div>';
+      html += "</div></div>";
+      html +=
+        "<p class=\"muted\">Mapa agregado según inventario (región <code class=\"inline-code\">MR01</code> o nombre de sitio como en dashboard OLT/LT).</p>";
+      html += '<details class="det"><summary>Lista de ramas (' + esc(String(ramas.length)) + ")</summary>";
+      html += '<ul class="camino-rama-list">';
+      ramas.forEach(function (x) {
+        html += '<li><code class="inline-code">' + esc(x) + "</code></li>";
+      });
+      html += "</ul></details></div>";
+      mountCaminoResult(html, data);
       return;
     }
     if (data.tipo === "access_id") {
       const d = data.detalle || {};
       const isp = d.camino_isp;
-      const mapsUrl = data.cto_maps_url || "";
-
-      let html = '<div class="panel camino-result"><h2 class="camino-result-title">Access ID ' + esc(d.access_id) + "</h2>";
-      html += '<p class="camino-meta-line">';
-      html += "<strong>CTO:</strong> <span class=\"camino-meta-val\">" + esc(d.location_description) + "</span> ";
-      if (mapsUrl) {
+      let html = '<div class="panel camino-result">';
+      html += renderJerarquiaNavBar(data);
+      html += '<h2 class="camino-result-title">Access ID ' + esc(d.access_id) + "</h2>";
+      html += '<div class="camino-ubicacion-cto">';
+      html += '<p class="camino-ubicacion-cto__title">Ubicación (CTO)</p>';
+      if (data.direccion_postal) {
         html +=
-          '<a class="dash-link" href="' +
-          esc(mapsUrl) +
-          '" target="_blank" rel="noopener noreferrer">Ver en Google Maps</a>';
+          '<p class="camino-ubicacion-cto__addr">Dirección: ' + esc(data.direccion_postal) + "</p>";
       } else {
-        html += '<span class="muted">Sin coordenadas</span>';
+        html +=
+          '<p class="camino-ubicacion-cto__addr camino-ubicacion-cto__addr--empty">Dirección: sin datos en CM para esta CTO.</p>';
       }
+      html += "</div>";
+      html += renderCaminoContextoDetailHtml(data.camino_contexto || {}, d.location_description);
+      html += '<p class="camino-meta-line">';
+      html += "<strong>CTO:</strong> <span class=\"camino-meta-val\">" + esc(d.location_description) + "</span>";
       html += ' <span class="camino-meta-sep" aria-hidden="true">·</span> ';
       html += "<strong>Rama:</strong> <span class=\"camino-meta-val\">" + esc(d.path_atc) + "</span>";
       html += "</p>";
@@ -236,8 +499,7 @@
         if (kv[1]) html += "<div>" + esc(kv[0]) + "</div><div>" + esc(kv[1]) + "</div>";
       });
       html += "</div></details></div>";
-      out.innerHTML = html;
-      if (window.loadCaminoRamaMap) window.loadCaminoRamaMap(data);
+      mountCaminoResult(html, data);
       return;
     }
     if (window.clearCaminoRamaMap) window.clearCaminoRamaMap();
@@ -252,40 +514,85 @@
   }
   window.limpiarBusquedaCamino = limpiarBusquedaCamino;
 
-  function buscar(){
-    const valor = q.value.trim();
+  function consultarCamino(opts) {
+    var valor = opts && opts.valor != null ? String(opts.valor).trim() : "";
+    var tipo = opts && opts.tipo ? opts.tipo : "auto";
     if (!valor) {
       out.innerHTML = '<div class="err">Ingresá un valor.</div>';
       return;
     }
     btn.disabled = true;
-    out.innerHTML = '<p class="muted">Consultando… <span class="camino-spin" aria-hidden="true"></span></p>';
+    btn.setAttribute("aria-busy", "true");
+    out.innerHTML =
+      '<p class="muted camino-consulta-loading" role="status">' +
+      "Consultando datos… " +
+      '<span class="camino-spin" aria-hidden="true"></span>' +
+      "</p>";
     fetch("/dashboard/camino-optico/consultar", {
       method: "POST",
       headers: { "Content-Type": "application/json", "Accept": "application/json" },
-      body: JSON.stringify({ valor: valor }),
+      body: JSON.stringify({ valor: valor, tipo: tipo }),
+      credentials: "same-origin",
     })
-      .then(function(res){ return res.json().then(function(j){ return { ok: res.ok, j: j }; }); })
+      .then(function(res){
+        return res.text().then(function(text){
+          var j = null;
+          try {
+            j = text ? JSON.parse(text) : null;
+          } catch (_e) {
+            j = {
+              error:
+                "Respuesta inválida del servidor (HTTP " +
+                res.status +
+                "). Si persiste, revisá logs del backend.",
+            };
+          }
+          return { ok: res.ok, status: res.status, j: j };
+        });
+      })
       .then(function(x){
         if (!x.ok && x.j && x.j.error) {
           render(x.j);
           return;
         }
         if (!x.ok) {
-          out.innerHTML = '<div class="err">Error HTTP</div>';
+          var detail =
+            x.j && x.j.error
+              ? x.j.error
+              : "Error HTTP " + (x.status || "") + ". Reintentá o revisá que la app y la DB estén disponibles.";
+          out.innerHTML = '<div class="err">' + esc(detail) + "</div>";
           if (window.clearCaminoRamaMap) window.clearCaminoRamaMap();
           return;
         }
         render(x.j);
       })
       .catch(function(){
-        out.innerHTML = '<div class="err">Error de red o servidor.</div>';
+        out.innerHTML =
+          '<div class="err">No se pudo contactar al servidor (red, timeout o certificado). Verificá que la app esté en ejecución.</div>';
       })
-      .finally(function(){ btn.disabled = false; });
+      .finally(function(){
+        btn.disabled = false;
+        btn.removeAttribute("aria-busy");
+      });
+  }
+
+  function buscar(){
+    consultarCamino({ valor: q.value.trim(), tipo: "auto" });
   }
 
   btn.addEventListener("click", buscar);
   q.addEventListener("keydown", function(e){ if (e.key === "Enter") buscar(); });
+
+  out.addEventListener("click", function (ev) {
+    var navEl = ev.target && ev.target.closest ? ev.target.closest("[data-camino-nav-tipo]") : null;
+    if (!navEl || !out.contains(navEl)) return;
+    var nt = navEl.getAttribute("data-camino-nav-tipo");
+    var nv = navEl.getAttribute("data-camino-nav-valor");
+    if (!nt || nv == null) return;
+    ev.preventDefault();
+    q.value = nv;
+    consultarCamino({ valor: nv, tipo: nt });
+  });
 })();
 </script>
 <script>
@@ -295,9 +602,299 @@
   var mapEl = document.getElementById("camino-gis-map");
   var mapTitleEl = document.getElementById("camino-gis-map-title");
   var mapLeadEl = document.getElementById("camino-gis-map-lead");
+  var mapLoadingEl = document.getElementById("camino-gis-loading");
+  var mapLoadingMsgEl = document.getElementById("camino-gis-loading-msg");
+  var fsWrap = document.getElementById("camino-gis-map-wrap");
+  var fsBtn = document.getElementById("camino-gis-fs-toggle");
   var gisMap = null;
   var gisPathLayer = null;
   var gisCtoLayer = null;
+  /** Timeout para evitar parpadeo al mover el cursor entre tramos de la misma rama. */
+  var caminoPathHoverClearTid = null;
+  /** Capas Leaflet de otros LT superpuestos (clave = string LT pedido al API). */
+  var ltOverlayLayers = {};
+  /** Permite varias operaciones async (mapa principal + overlay LT) sin cerrar el spinner antes de tiempo. */
+  var caminoMapLoadingDepth = 0;
+
+  function showCaminoMapLoading(msg) {
+    caminoMapLoadingDepth++;
+    if (mapLoadingMsgEl) mapLoadingMsgEl.textContent = msg || "Cargando…";
+    if (mapLoadingEl) {
+      mapLoadingEl.hidden = false;
+      mapLoadingEl.removeAttribute("hidden");
+      mapLoadingEl.setAttribute("aria-busy", "true");
+    }
+  }
+
+  function hideCaminoMapLoading() {
+    caminoMapLoadingDepth = Math.max(0, caminoMapLoadingDepth - 1);
+    if (caminoMapLoadingDepth > 0) return;
+    if (mapLoadingEl) {
+      mapLoadingEl.hidden = true;
+      mapLoadingEl.setAttribute("aria-busy", "false");
+    }
+  }
+
+  function resetCaminoMapLoading() {
+    caminoMapLoadingDepth = 0;
+    if (mapLoadingEl) {
+      mapLoadingEl.hidden = true;
+      mapLoadingEl.setAttribute("aria-busy", "false");
+    }
+  }
+
+  function normalizeLtKeyClient(lt) {
+    var s = String(lt || "").trim();
+    var m = s.match(/^(.+)\.LT(\d+)$/i);
+    if (!m) return s.toUpperCase();
+    return m[1].toUpperCase() + ".LT" + parseInt(m[2], 10);
+  }
+
+  function hideLtSiblingUi() {
+    var wrap = document.getElementById("camino-lt-overlay-controls");
+    var grid = document.getElementById("camino-lt-overlay-checkboxes");
+    if (grid) grid.innerHTML = "";
+    if (wrap) wrap.hidden = true;
+  }
+
+  function clearLtSiblingOverlays() {
+    if (!gisMap) {
+      ltOverlayLayers = {};
+      return;
+    }
+    Object.keys(ltOverlayLayers).forEach(function (k) {
+      var o = ltOverlayLayers[k];
+      if (o && o.path) {
+        try {
+          gisMap.removeLayer(o.path);
+        } catch (_e) {}
+      }
+      if (o && o.ctos) {
+        try {
+          gisMap.removeLayer(o.ctos);
+        } catch (_e2) {}
+      }
+    });
+    ltOverlayLayers = {};
+  }
+
+  function pathStyleOverlay(feature) {
+    var t = feature && feature.geometry && feature.geometry.type;
+    if (t === "Point" || t === "MultiPoint") {
+      return {
+        radius: 5,
+        fillColor: "#6366f1",
+        color: "#fff",
+        weight: 1,
+        opacity: 1,
+        fillOpacity: 0.9,
+      };
+    }
+    return {
+      color: "#3b82f6",
+      weight: 5,
+      opacity: 0.92,
+      lineCap: "round",
+      lineJoin: "round",
+      dashArray: "10 6",
+    };
+  }
+
+  var ctoMarkerOptsOverlay = {
+    radius: 8,
+    fillColor: "#818cf8",
+    color: "#e0e7ff",
+    weight: 2,
+    opacity: 1,
+    fillOpacity: 0.9,
+  };
+
+  function refitMapAllLayers() {
+    if (!gisMap) return;
+    var b = L.latLngBounds([]);
+    function extBounds(layer) {
+      if (!layer) return;
+      try {
+        if (layer.getBounds) {
+          var bb = layer.getBounds();
+          if (bb && bb.isValid()) b.extend(bb);
+        } else if (layer.getLatLng) {
+          b.extend(layer.getLatLng());
+        }
+      } catch (_e) {}
+    }
+    if (gisPathLayer) extBounds(gisPathLayer);
+    if (gisCtoLayer)
+      gisCtoLayer.eachLayer(function (ly) {
+        extBounds(ly);
+      });
+    Object.keys(ltOverlayLayers).forEach(function (k) {
+      var o = ltOverlayLayers[k];
+      if (o && o.path) extBounds(o.path);
+      if (o && o.ctos)
+        o.ctos.eachLayer(function (ly) {
+          extBounds(ly);
+        });
+    });
+    if (b.isValid()) {
+      try {
+        gisMap.fitBounds(b, { padding: [48, 48], maxZoom: 17, animate: false });
+      } catch (_e2) {}
+    }
+  }
+
+  function removeLtOverlay(ltKey) {
+    if (!gisMap) return;
+    var o = ltOverlayLayers[ltKey];
+    if (!o) return;
+    if (o.path) {
+      try {
+        gisMap.removeLayer(o.path);
+      } catch (_e) {}
+    }
+    if (o.ctos) {
+      try {
+        gisMap.removeLayer(o.ctos);
+      } catch (_e2) {}
+    }
+    delete ltOverlayLayers[ltKey];
+    refitMapAllLayers();
+  }
+
+  function drawLtOverlayLayers(ltKey, payload) {
+    var prev = ltOverlayLayers[ltKey];
+    if (gisMap && prev) {
+      if (prev.path) {
+        try {
+          gisMap.removeLayer(prev.path);
+        } catch (_r0) {}
+      }
+      if (prev.ctos) {
+        try {
+          gisMap.removeLayer(prev.ctos);
+        } catch (_r1) {}
+      }
+      delete ltOverlayLayers[ltKey];
+    }
+    var gj = payload.gis && payload.gis.ok ? payload.gis.geojson : null;
+    var markers = payload.cto_markers || [];
+    var map = gisMap || ensureMap();
+    var pathLayer = null;
+    if (gj && gj.features && gj.features.length) {
+      try {
+        pathLayer = L.geoJSON(gj, {
+          style: pathStyleOverlay,
+          filter: function (feature) {
+            return !!(feature && feature.geometry && caminoCiOpFeatEsTrazado(feature));
+          },
+          pointToLayer: function (feature, latlng) {
+            return L.circleMarker(latlng, pathStyleOverlay(feature));
+          },
+        });
+        pathLayer.addTo(map);
+        attachCaminoPathHover(pathLayer, pathStyleOverlay, "#c4b5fd");
+      } catch (_e) {}
+    }
+    var mLayer = L.layerGroup();
+    markers.forEach(function (m) {
+      if (m.lat == null || m.lon == null) return;
+      var ll = normalizeCtoLatLon(m.lat, m.lon);
+      var cm = L.circleMarker([ll.lat, ll.lon], ctoMarkerOptsOverlay);
+      var addrRaw = m.direccion_postal && String(m.direccion_postal).trim();
+      var addrBlock = "";
+      if (addrRaw) {
+        addrBlock =
+          '<div class="camino-popup-cto__addr"><span class="camino-popup-addr">' +
+          esc(addrRaw) +
+          "</span></div>";
+      }
+      var pop =
+        '<div class="camino-popup-cto camino-popup-cto--lt-overlay">' +
+        '<div class="camino-popup-cto__lt muted">' +
+        esc(ltKey) +
+        "</div>" +
+        '<div class="camino-popup-cto__id"><strong>' +
+        esc(String(m.cto)) +
+        "</strong></div>" +
+        addrBlock +
+        '<div class="camino-popup-cto__ont">' +
+        esc(String(m.onts)) +
+        " ONT</div></div>";
+      wireCaminoCtoMarker(cm, pop, ctoMarkerOptsOverlay);
+      cm.addTo(mLayer);
+    });
+    mLayer.addTo(map);
+    ltOverlayLayers[ltKey] = { path: pathLayer, ctos: mLayer };
+    refitMapAllLayers();
+  }
+
+  function fetchAndAddLtOverlay(lt) {
+    if (ltOverlayLayers[lt]) return;
+    showCaminoMapLoading("Cargando…");
+    fetch("/dashboard/camino-optico/gis-por-lt", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ lt: lt }),
+    })
+      .then(function (res) {
+        return res.text().then(function (t) {
+          try {
+            return JSON.parse(t);
+          } catch (_e) {
+            return { ok: false };
+          }
+        });
+      })
+      .then(function (payload) {
+        if (!payload || !payload.ok) return;
+        drawLtOverlayLayers(lt, payload);
+      })
+      .finally(function () {
+        hideCaminoMapLoading();
+      });
+  }
+
+  function setupLtSiblingUi(data) {
+    var wrap = document.getElementById("camino-lt-overlay-controls");
+    var lead = document.getElementById("camino-lt-overlay-lead");
+    var grid = document.getElementById("camino-lt-overlay-checkboxes");
+    if (!wrap || !lead || !grid) return;
+    var list = data.lts_mismo_olt || [];
+    var olt = data.olt_logico || "";
+    var curNorm = normalizeLtKeyClient(data.lt);
+    if (!olt || list.length <= 1) {
+      hideLtSiblingUi();
+      return;
+    }
+    lead.textContent =
+      "Superponer otros LT del mismo equipo (" +
+      olt +
+      "). Líneas azules / violetas; el LT buscado sigue en verde.";
+    grid.innerHTML = "";
+    list.forEach(function (lt, idx) {
+      if (normalizeLtKeyClient(lt) === curNorm) return;
+      var id = "camino-lt-ov-" + idx + "-" + String(lt).replace(/[^a-zA-Z0-9]/g, "_");
+      var lab = document.createElement("label");
+      lab.className = "camino-lt-overlay-label";
+      var cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.id = id;
+      cb.dataset.lt = lt;
+      cb.addEventListener("change", function () {
+        if (cb.checked) fetchAndAddLtOverlay(lt);
+        else removeLtOverlay(lt);
+      });
+      lab.appendChild(cb);
+      var span = document.createElement("span");
+      span.innerHTML = "<code class=\"inline-code\">" + esc(lt) + "</code>";
+      lab.appendChild(span);
+      lab.setAttribute("for", id);
+      grid.appendChild(lab);
+    });
+    wrap.hidden = false;
+    wrap.removeAttribute("hidden");
+  }
 
   var GIS_HEAD_RAMA = {
     title: "Mapa · rama",
@@ -314,10 +911,36 @@
     lead:
       "Línea verde: trazado <code class=\"inline-code\">ci_op</code> de la rama del Access ID. Punto <strong>cyan</strong>: CTO del Access ID; <strong>naranja</strong>: otras CTO de la rama.",
   };
+  var GIS_HEAD_LT = {
+    title: "Mapa · LT",
+    lead:
+      "Todas las ramas de este LT: líneas verdes <code class=\"inline-code\">ci_op</code> (PostGIS). Puntos naranja: CTO con coordenadas.",
+  };
+  var GIS_HEAD_SITIO = {
+    title: "Mapa · sitio / región",
+    lead:
+      "Ramas agregadas del criterio elegido. Línea verde: <code class=\"inline-code\">ci_op</code>. Puntos naranja: CTO.",
+  };
+  var GIS_HEAD_EQUIPO = {
+    title: "Mapa · equipo (OLT)",
+    lead:
+      "Todas las ramas de todos los LT de este equipo. Línea verde: <code class=\"inline-code\">ci_op</code> (PostGIS). Puntos naranja: CTO con coordenadas.",
+  };
 
   function esc(s){
     if (s === null || s === undefined) return "";
     return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  }
+
+  /** ci_op suele traer hilos como LineString; Polygon/MultiPolygon suelen ser extens/envolvente y dibujan un rectángulo molesto. */
+  function caminoCiOpFeatEsTrazado(feature) {
+    var t = feature && feature.geometry && feature.geometry.type;
+    return (
+      t === "LineString" ||
+      t === "MultiLineString" ||
+      t === "Point" ||
+      t === "MultiPoint"
+    );
   }
 
   function pathStyle(feature){
@@ -334,6 +957,140 @@
     };
   }
 
+  function caminoRamaKeyFromFeature(feature, layer) {
+    var p = feature && feature.properties;
+    if (p && p.camino_rama != null && String(p.camino_rama).trim() !== "") {
+      return String(p.camino_rama).trim();
+    }
+    if (layer && layer._leaflet_id != null) return "_seg_" + layer._leaflet_id;
+    return "_seg_0";
+  }
+
+  function syncCaminoPathHoverState(geoJsonLayer, activeKey, baseStyleFn, hoverLineColor) {
+    hoverLineColor = hoverLineColor || "#facc15";
+    if (!geoJsonLayer || !geoJsonLayer.eachLayer) return;
+    baseStyleFn = baseStyleFn || pathStyle;
+    geoJsonLayer.eachLayer(function (ly) {
+      var feat = ly.feature;
+      if (!feat || !feat.geometry) return;
+      var gt = feat.geometry.type;
+      var rk = caminoRamaKeyFromFeature(feat, ly);
+      var on = activeKey != null && rk === activeKey;
+      var base = baseStyleFn(feat);
+      if (gt === "Point" || gt === "MultiPoint") {
+        if (on) {
+          ly.setStyle({
+            radius: (base.radius || 6) + 3,
+            fillColor: base.fillColor,
+            color: "#fff",
+            weight: 2,
+            opacity: 1,
+            fillOpacity: 1,
+          });
+        } else {
+          ly.setStyle(base);
+        }
+        return;
+      }
+      if (on) {
+        ly.setStyle({
+          color: hoverLineColor,
+          weight: Math.min((base.weight || 6) + 5, 14),
+          opacity: 1,
+          lineCap: base.lineCap || "round",
+          lineJoin: base.lineJoin || "round",
+          dashArray: base.dashArray,
+        });
+        try {
+          if (ly.bringToFront) ly.bringToFront();
+        } catch (_bf) {}
+      } else {
+        ly.setStyle(base);
+      }
+    });
+  }
+
+  function caminoPathTooltipHtml(ramaLabel, latlng) {
+    var lat = typeof latlng.lat === "number" ? latlng.lat.toFixed(6) : "—";
+    var lng = typeof latlng.lng === "number" ? latlng.lng.toFixed(6) : "—";
+    var coordLine =
+      '<div class="camino-rama-tip__coords mono">' +
+      lat +
+      '<span class="camino-rama-tip__sep"> · </span>' +
+      lng +
+      "</div>";
+    if (ramaLabel) {
+      return (
+        '<div class="camino-rama-tip__name">' + esc(ramaLabel) + "</div>" + coordLine
+      );
+    }
+    return coordLine;
+  }
+
+  function attachCaminoPathHover(geoJsonLayer, baseStyleFn, hoverLineColor) {
+    if (!geoJsonLayer || !geoJsonLayer.eachLayer) return;
+    baseStyleFn = baseStyleFn || pathStyle;
+    geoJsonLayer.eachLayer(function (ly) {
+      var feat = ly.feature;
+      if (!feat || !feat.geometry) return;
+      var gt = feat.geometry.type;
+      var isLine =
+        gt === "LineString" ||
+        gt === "MultiLineString" ||
+        gt === "Polygon" ||
+        gt === "MultiPolygon";
+      var tipTxt =
+        feat.properties && feat.properties.camino_rama != null
+          ? String(feat.properties.camino_rama).trim()
+          : "";
+      var tipAnchor =
+        ly.getBounds && ly.getBounds().isValid && ly.getBounds().isValid()
+          ? ly.getBounds().getCenter()
+          : null;
+      if (isLine) {
+        ly.bindTooltip(caminoPathTooltipHtml(tipTxt, tipAnchor || L.latLng(0, 0)), {
+          sticky: true,
+          direction: "top",
+          opacity: 0.95,
+          className: "camino-rama-path-tooltip",
+        });
+        ly.on("mousemove", function (e) {
+          if (!e.latlng) return;
+          try {
+            if (ly.getTooltip()) ly.setTooltipContent(caminoPathTooltipHtml(tipTxt, e.latlng));
+          } catch (_st) {}
+        });
+      } else if (tipTxt) {
+        ly.bindTooltip(caminoPathTooltipHtml(tipTxt, tipAnchor || L.latLng(0, 0)), {
+          sticky: true,
+          direction: "top",
+          opacity: 0.95,
+          className: "camino-rama-path-tooltip",
+        });
+        ly.on("mousemove", function (e) {
+          if (!e.latlng) return;
+          try {
+            if (ly.getTooltip()) ly.setTooltipContent(caminoPathTooltipHtml(tipTxt, e.latlng));
+          } catch (_st2) {}
+        });
+      }
+      ly.on("mouseover", function () {
+        if (caminoPathHoverClearTid) {
+          clearTimeout(caminoPathHoverClearTid);
+          caminoPathHoverClearTid = null;
+        }
+        var rk = caminoRamaKeyFromFeature(feat, ly);
+        syncCaminoPathHoverState(geoJsonLayer, rk, baseStyleFn, hoverLineColor);
+      });
+      ly.on("mouseout", function () {
+        caminoPathHoverClearTid = setTimeout(function () {
+          caminoPathHoverClearTid = null;
+          syncCaminoPathHoverState(geoJsonLayer, null, baseStyleFn, hoverLineColor);
+        }, 70);
+      });
+    });
+  }
+
   /** Misma heurística que el backend: columnas lat/lon invertidas en inventario. */
   function normalizeCtoLatLon(lat, lon){
     var la = Number(lat);
@@ -345,7 +1102,7 @@
   }
 
   var ctoMarkerOpts = {
-    radius: 9,
+    radius: 10,
     fillColor: "#f97316",
     color: "#fff",
     weight: 2,
@@ -354,13 +1111,54 @@
   };
 
   var ctoMarkerFocalOpts = {
-    radius: 12,
+    radius: 13,
     fillColor: "#22d3ee",
     color: "#f8fafc",
     weight: 3,
     opacity: 1,
     fillOpacity: 0.98,
   };
+
+  function caminoCtoMarkerHoverStyle(base) {
+    return {
+      radius: Math.min((base.radius || 9) + 5, 22),
+      fillColor: base.fillColor,
+      color: base.color,
+      weight: Math.min((base.weight || 2) + 2, 5),
+      opacity: base.opacity,
+      fillOpacity: Math.min(
+        (base.fillOpacity != null ? base.fillOpacity : 0.95) + 0.04,
+        1
+      ),
+    };
+  }
+
+  function wireCaminoCtoMarker(cm, popHtml, styleBase) {
+    var base = {};
+    for (var k in styleBase) {
+      if (Object.prototype.hasOwnProperty.call(styleBase, k)) {
+        base[k] = styleBase[k];
+      }
+    }
+    cm._caminoCtoBaseOpts = base;
+    cm._caminoCtoHoverOpts = caminoCtoMarkerHoverStyle(base);
+    cm.bindPopup(popHtml);
+    cm.bindTooltip(popHtml, {
+      direction: "top",
+      opacity: 0.96,
+      className: "camino-popup-cto camino-cto-hover-tip",
+      interactive: false,
+    });
+    cm.on("mouseover", function () {
+      cm.setStyle(cm._caminoCtoHoverOpts);
+      try {
+        cm.bringToFront();
+      } catch (_b) {}
+    });
+    cm.on("mouseout", function () {
+      cm.setStyle(cm._caminoCtoBaseOpts);
+    });
+  }
 
   function ensureMap(){
     if (gisMap || !mapEl || !window.L) return gisMap;
@@ -380,6 +1178,81 @@
       window.NocLeafletMap.attachScrollActivation(gisMap, mapEl);
     }
     return gisMap;
+  }
+
+  function caminoFsElActive() {
+    return (
+      document.fullscreenElement ||
+      document.webkitFullscreenElement ||
+      document.msFullscreenElement ||
+      null
+    );
+  }
+
+  function caminoIsMapFullscreen() {
+    return fsWrap && caminoFsElActive() === fsWrap;
+  }
+
+  function caminoEnterMapFullscreen() {
+    if (!fsWrap) return;
+    var req =
+      fsWrap.requestFullscreen ||
+      fsWrap.webkitRequestFullscreen ||
+      fsWrap.msRequestFullscreen;
+    if (req) {
+      try {
+        var ret = req.call(fsWrap);
+        if (ret && typeof ret.then === "function") ret.catch(function () {});
+      } catch (_e) {}
+    }
+  }
+
+  function caminoExitMapFullscreen() {
+    var ex =
+      document.exitFullscreen ||
+      document.webkitExitFullscreen ||
+      document.msExitFullscreen;
+    if (ex) {
+      try {
+        var ret = ex.call(document);
+        if (ret && typeof ret.then === "function") ret.catch(function () {});
+      } catch (_e2) {}
+    }
+  }
+
+  function caminoFullscreenSyncUi() {
+    var on = caminoIsMapFullscreen();
+    if (fsBtn) {
+      fsBtn.setAttribute("aria-pressed", on ? "true" : "false");
+      fsBtn.setAttribute(
+        "aria-label",
+        on ? "Salir de pantalla completa" : "Ver mapa en pantalla completa"
+      );
+      fsBtn.title = on ? "Salir de pantalla completa" : "Pantalla completa";
+      fsBtn.classList.toggle("camino-gis-fs-btn--active", on);
+    }
+    if (gisMap) {
+      setTimeout(function () {
+        try {
+          gisMap.invalidateSize();
+        } catch (_i) {}
+      }, 50);
+      setTimeout(function () {
+        try {
+          gisMap.invalidateSize();
+        } catch (_i2) {}
+      }, 350);
+    }
+  }
+
+  if (fsBtn && fsWrap) {
+    fsBtn.addEventListener("click", function () {
+      if (caminoIsMapFullscreen()) caminoExitMapFullscreen();
+      else caminoEnterMapFullscreen();
+    });
+    document.addEventListener("fullscreenchange", caminoFullscreenSyncUi);
+    document.addEventListener("webkitfullscreenchange", caminoFullscreenSyncUi);
+    document.addEventListener("MSFullscreenChange", caminoFullscreenSyncUi);
   }
 
   /** Recorre GeoJSON (orden [lon, lat]) y arma bounds Leaflet [lat, lon]. */
@@ -408,6 +1281,7 @@
     (gj && gj.features ? gj.features : []).forEach(function(f){
       var g = f && f.geometry;
       if (!g || !g.coordinates) return;
+      if (g.type === "Polygon" || g.type === "MultiPolygon") return;
       var d = depthByType[g.type];
       if (d != null) scan(g.coordinates, d);
     });
@@ -431,6 +1305,14 @@
   }
 
   window.clearCaminoRamaMap = function(){
+    if (caminoPathHoverClearTid) {
+      clearTimeout(caminoPathHoverClearTid);
+      caminoPathHoverClearTid = null;
+    }
+    if (caminoIsMapFullscreen()) caminoExitMapFullscreen();
+    resetCaminoMapLoading();
+    clearLtSiblingOverlays();
+    hideLtSiblingUi();
     if (mapPanel) mapPanel.hidden = true;
     if (gisMap && gisPathLayer) {
       gisMap.removeLayer(gisPathLayer);
@@ -449,11 +1331,27 @@
   }
 
   window.loadCaminoRamaMap = function(data){
-    if (!data || (data.tipo !== "rama" && data.tipo !== "cto" && data.tipo !== "access_id")) return;
+    if (
+      !data ||
+      (data.tipo !== "rama" &&
+        data.tipo !== "cto" &&
+        data.tipo !== "access_id" &&
+        data.tipo !== "lt" &&
+        data.tipo !== "sitio" &&
+        data.tipo !== "equipo")
+    ) {
+      return;
+    }
     if (data.tipo === "rama") {
       setCaminoGisHead(GIS_HEAD_RAMA);
     } else if (data.tipo === "access_id") {
       setCaminoGisHead(GIS_HEAD_ACCESS);
+    } else if (data.tipo === "lt") {
+      setCaminoGisHead(GIS_HEAD_LT);
+    } else if (data.tipo === "equipo") {
+      setCaminoGisHead(GIS_HEAD_EQUIPO);
+    } else if (data.tipo === "sitio") {
+      setCaminoGisHead(GIS_HEAD_SITIO);
     } else {
       setCaminoGisHead(GIS_HEAD_CTO);
     }
@@ -461,11 +1359,19 @@
       mapPanel.hidden = false;
       mapPanel.removeAttribute("hidden");
     }
+    clearLtSiblingOverlays();
+    if (data.tipo === "lt" || data.tipo === "equipo") {
+      setupLtSiblingUi(data);
+    } else {
+      hideLtSiblingUi();
+    }
     if (!gisSide) return;
     if (!window.L) {
       gisSide.innerHTML = '<div class="err">Leaflet no cargó.</div>';
       return;
     }
+
+    showCaminoMapLoading("Cargando…");
 
     var gis = data.gis || {};
     var markers = data.cto_markers || [];
@@ -494,6 +1400,7 @@
     }
 
     function drawOnMap(map){
+      try {
       if (!map) {
         gisSide.innerHTML = '<div class="err">No se pudo inicializar el mapa.</div>';
         return;
@@ -513,12 +1420,13 @@
           gisPathLayer = L.geoJSON(gj, {
             style: pathStyle,
             filter: function(feature){
-              return !!(feature && feature.geometry);
+              return !!(feature && feature.geometry && caminoCiOpFeatEsTrazado(feature));
             },
             pointToLayer: function(feature, latlng){
               return L.circleMarker(latlng, pathStyle(feature));
             },
           }).addTo(map);
+          attachCaminoPathHover(gisPathLayer, pathStyle, "#facc15");
         } catch (e) {
           gisPathLayer = null;
         }
@@ -531,15 +1439,27 @@
         var focal = !!m.focal;
         var opts = focal ? ctoMarkerFocalOpts : ctoMarkerOpts;
         var cm = L.circleMarker([ll.lat, ll.lon], opts);
+        var addrRaw =
+          (m.direccion_postal && String(m.direccion_postal).trim()) ||
+          (focal && data.direccion_postal && String(data.direccion_postal).trim()) ||
+          "";
+        var addrBlock = "";
+        if (addrRaw) {
+          addrBlock =
+            '<div class="camino-popup-cto__addr"><span class="camino-popup-addr">' +
+            esc(addrRaw) +
+            "</span></div>";
+        }
         var pop =
-          "<strong>" +
+          '<div class="camino-popup-cto">' +
+          '<div class="camino-popup-cto__id"><strong>' +
           esc(m.cto) +
-          "</strong>" +
-          (focal ? " <span style=\"opacity:.85\">(buscada)</span>" : "") +
-          "<br>" +
+          "</strong></div>" +
+          addrBlock +
+          '<div class="camino-popup-cto__ont">' +
           esc(String(m.onts)) +
-          " ONT";
-        cm.bindPopup(pop);
+          " ONT</div></div>";
+        wireCaminoCtoMarker(cm, pop, opts);
         cm.addTo(gisCtoLayer);
       });
       gisCtoLayer.addTo(map);
@@ -579,12 +1499,20 @@
       setTimeout(afterLayout, 250);
       setTimeout(afterLayout, 600);
 
-      if (mapPanel) {
+      var consultaStack = document.querySelector(".camino-consulta-stack");
+      if (consultaStack) {
+        try {
+          consultaStack.scrollIntoView({ behavior: "smooth", block: "start" });
+        } catch (_e3) {}
+      } else if (mapPanel) {
         try {
           mapPanel.scrollIntoView({ behavior: "smooth", block: "start" });
-        } catch (_e3) {}
+        } catch (_e4) {}
       }
       finishSidePanel();
+      } finally {
+        hideCaminoMapLoading();
+      }
     }
 
     if (mapPanel) {
@@ -596,14 +1524,29 @@
     if (!gisMap) {
       requestAnimationFrame(function(){
         requestAnimationFrame(function(){
-          if (mapPanel) void mapPanel.offsetHeight;
-          drawOnMap(ensureMap());
+          try {
+            if (mapPanel) void mapPanel.offsetHeight;
+            drawOnMap(ensureMap());
+          } catch (_mapErr) {
+            hideCaminoMapLoading();
+            if (gisSide) {
+              gisSide.innerHTML =
+                '<div class="err">No se pudo inicializar el mapa (error inesperado).</div>';
+            }
+          }
         });
       });
     } else {
-      drawOnMap(gisMap);
+      try {
+        drawOnMap(gisMap);
+      } catch (_mapErr2) {
+        hideCaminoMapLoading();
+      }
     }
   };
+
+  window.caminoAddLtMapOverlay = fetchAndAddLtOverlay;
+  window.caminoRemoveLtMapOverlay = removeLtOverlay;
 })();
 </script>
 <script>

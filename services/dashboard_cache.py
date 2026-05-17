@@ -1,7 +1,8 @@
 """Caché en memoria con TTL para dashboards y consultas de potencia."""
 import threading
 import time
-from typing import Callable, TypeVar
+from collections.abc import Callable
+from typing import TypeVar
 
 T = TypeVar("T")
 

@@ -42,7 +42,7 @@ def test_access_id_potencias_retorna_none_si_status_free(monkeypatch):
     monkeypatch.setattr(
         inv,
         "consultar_access_id_estructura",
-        lambda _aid: {"CTO": "C1", "Status": "IN SERVICE"},
+        lambda _aid: {"AID": "99", "CTO": "C1", "Status": "IN SERVICE"},
     )
 
     @contextmanager
@@ -70,3 +70,49 @@ def test_access_id_potencias_retorna_none_si_status_free(monkeypatch):
     out = inv.consultar_access_id_potencias("99")
     assert out == {"AID": "99", "TX": None, "RX": None}
     assert calls == []
+
+
+def test_access_id_potencias_usa_aid_canonico_para_lookup(monkeypatch):
+    """El dict de Altiplano usa el access_id tal como viene en inventario; el input puede ir en minúsculas."""
+    monkeypatch.setattr(
+        inv,
+        "consultar_access_id_estructura",
+        lambda _aid: {
+            "AID": "FES_A5_23",
+            "CTO": "SM01-FATC-8-101444",
+            "Status": "IN SERVICE",
+        },
+    )
+
+    @contextmanager
+    def fake_cursor():
+        class FakeCur:
+            def execute(self, *_):
+                pass
+
+            def fetchall(self):
+                return [
+                    (
+                        "FES_A5_23",
+                        "IN SERVICE",
+                        "SM01-FATC-8-101444",
+                        "SM01-RATC-0-001592",
+                        "BA_OLTA_SM01_05-10-3-21:1-1",
+                        "BA_OLTA_SM01_05-10-3-21",
+                        "SN1",
+                        2800,
+                    ),
+                ]
+
+        yield FakeCur()
+
+    monkeypatch.setattr(inv, "db_cursor", fake_cursor)
+
+    def fake_potencias(ne, onts):
+        assert onts and onts[0][0] == "FES_A5_23"
+        return {"FES_A5_23": (2.5, -19.3)}
+
+    monkeypatch.setattr(inv, "obtener_potencias_por_cto", fake_potencias)
+
+    out = inv.consultar_access_id_potencias("fes_a5_23")
+    assert out == {"AID": "FES_A5_23", "TX": 2.5, "RX": -19.3}

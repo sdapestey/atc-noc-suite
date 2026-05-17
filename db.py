@@ -5,8 +5,6 @@ import logging
 import threading
 import time
 from contextlib import contextmanager
-from typing import Optional
-
 from psycopg2 import InterfaceError, OperationalError
 from psycopg2.pool import ThreadedConnectionPool
 
@@ -14,7 +12,7 @@ from config import Config, get_db_params
 
 logger = logging.getLogger(__name__)
 
-_pool: Optional[ThreadedConnectionPool] = None
+_pool: ThreadedConnectionPool | None = None
 _last_healthcheck_ok_monotonic = 0.0
 _healthcheck_lock = threading.Lock()
 

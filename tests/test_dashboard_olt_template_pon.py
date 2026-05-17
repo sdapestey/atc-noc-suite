@@ -7,3 +7,6 @@ def test_dashboard_olt_template_contains_pon_node_builder():
     assert "noc-tools.js" in tpl
     assert "olt-pon-selected-kicker" in tpl
     assert "dashboard-olt.js" in tpl
+    assert "dashboard-tree-panel" in tpl
+    assert "dashboard-tree-controls" in tpl
+    assert "dashboard-metric-pill" in tpl

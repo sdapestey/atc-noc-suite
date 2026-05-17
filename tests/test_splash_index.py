@@ -11,6 +11,12 @@ def test_index_includes_splash_partial(client):
     assert "noc-splash-inner" in html
     assert "splash.js" in html
     assert "splash.css" in html
+    assert "Consultando" in html
+    assert "NOC Wiki" in html
+    assert "global-tabs-row" in html
+    assert "global-tab--wiki" in html
+    assert 'target="_blank"' in html
+    assert "10.90.1.196:6875" in html
 
 
 def test_dashboard_rama_does_not_include_splash_overlay(client, monkeypatch):

@@ -9,7 +9,7 @@
 <script src="{{ url_for('static', filename='js/dashboard-olt.js') }}"></script>
 </head>
 
-<body class="theme-devops page-olt">
+<body class="theme-devops page-tree-dashboard page-olt">
 
 <div class="container">
   <div class="topbar">
@@ -25,22 +25,33 @@
 
   {% include 'partials/nav_dashboard.html' %}
 
-  <div class="controls-olt">
-    <input type="search" id="bus-olt" placeholder="Buscar sitio, OLT, LT, código (ej. MR01, Moreno, BA_OLTA)…" autocomplete="off" aria-label="Filtrar árbol OLT">
-    <div class="toolbar-actions" role="toolbar" aria-label="Exportar y copiar">
-      <div class="olt-export-operator-field">
-        <label for="olt-export-operador" class="olt-export-operator-label">Operador</label>
-        <select id="olt-export-operador" class="olt-export-operador-select" title="Filtra copiar / CSV por operador (solo filas IN SERVICE); ‘Todos’ incluye todos los operadores de la selección">
-          <option value="">Todos los operadores</option>
-        </select>
+  <div class="panel dashboard-tree-panel">
+    <div class="controls dashboard-tree-controls">
+      <div class="field" role="search">
+        <span class="search-icon" aria-hidden="true">⌕</span>
+        <input type="search" id="bus-olt" placeholder="Buscar sitio, OLT, LT, código (ej. MR01, Moreno, BA_OLTA)…" autocomplete="off" aria-label="Filtrar árbol OLT">
       </div>
-      <button type="button" class="btn" onclick="copiarPonesSeleccionados()" title="Copiar filas IN SERVICE (TSV): solo Access ID en estado IN SERVICE">Copiar PON seleccionados</button>
-      <button type="button" class="btn" onclick="exportarPonesSeleccionadosCsv()" title="CSV local UTF-8: solo Access ID en estado IN SERVICE">Exportar PON seleccionados CSV</button>
-      <button type="button" class="btn btn-ghost" onclick="colapsarTodoOlt()">Colapsar todo</button>
+      <div class="toolbar-actions" role="toolbar" aria-label="Exportar y copiar">
+        <div class="olt-export-operator-field">
+          <label for="olt-export-operador" class="olt-export-operator-label">Operador</label>
+          <select id="olt-export-operador" class="olt-export-operador-select" title="Filtra copiar / CSV por operador (solo filas IN SERVICE); ‘Todos’ incluye todos los operadores de la selección">
+            <option value="">Todos los operadores</option>
+          </select>
+        </div>
+        <button type="button" class="btn" onclick="copiarPonesSeleccionados()" title="Copiar filas IN SERVICE (TSV): solo Access ID en estado IN SERVICE">Copiar PON seleccionados</button>
+        <button type="button" class="btn" onclick="exportarPonesSeleccionadosCsv()" title="CSV local UTF-8: solo Access ID en estado IN SERVICE">Exportar PON seleccionados CSV</button>
+        <button type="button" class="btn btn-ghost" onclick="colapsarTodoOlt()">Colapsar todo</button>
+      </div>
     </div>
-    <p class="controls-hint olt-controls-hint" id="pon-selection-summary"><span class="olt-selection-summary-label">Seleccionados:</span> <span class="olt-pon-selected-kicker olt-pon-selected-kicker--empty" title="PON marcados; copiar/exportar incluye solo AID IN SERVICE"><span class="olt-pon-selected-count">0</span> <span class="olt-pon-selected-label">PON</span></span> <span class="olt-summary-sep" aria-hidden="true">·</span> <span class="olt-metric-pill olt-metric-pill--ramas olt-metric-pill--empty" title="RAMAs únicas con al menos un AID IN SERVICE en la selección"><span class="olt-metric-pill__n">0</span> <span class="olt-metric-pill__l">RAMAs</span></span> <span class="olt-summary-sep" aria-hidden="true">·</span> <span class="olt-metric-pill olt-metric-pill--cto olt-metric-pill--empty" title="CTO únicas con al menos un AID IN SERVICE en la selección"><span class="olt-metric-pill__n">0</span> <span class="olt-metric-pill__l">CTO</span></span> <span class="olt-summary-sep" aria-hidden="true">·</span> <span class="olt-metric-pill olt-metric-pill--ont olt-metric-pill--empty" title="Filas de inventario con estado IN SERVICE (copiar / exportar)"><span class="olt-metric-pill__n">0</span> <span class="olt-metric-pill__l">ONT</span></span></p>
-    <p class="controls-hint olt-controls-hint"><strong class="hint-kicker">NOC</strong> Marcá PON (o “Seleccionar todos los PON de este LT”) y usá copiar / exportar CSV (solo Access ID <strong>IN SERVICE</strong>; descarga local UTF‑8).</p>
-  </div>
+    <div class="controls-hint dashboard-tree-hint dashboard-tree-hint--metrics">
+      <div class="dashboard-tree-hint__text">
+        <strong class="hint-kicker">NOC</strong>
+        Marcá PON (o “Seleccionar todos los PON de este LT”) y usá copiar / exportar CSV (solo Access ID <strong>IN SERVICE</strong>; descarga local UTF‑8).
+      </div>
+      <div class="dashboard-tree-metrics">
+        <p class="dashboard-tree-selection" id="pon-selection-summary"><span class="olt-selection-summary-label">Seleccionados:</span> <span class="olt-pon-selected-kicker olt-pon-selected-kicker--empty" title="PON marcados; copiar/exportar incluye solo AID IN SERVICE"><span class="olt-pon-selected-count">0</span> <span class="olt-pon-selected-label">PON</span></span> <span class="olt-summary-sep" aria-hidden="true">·</span> <span class="dashboard-metric-pill olt-metric-pill olt-metric-pill--ramas olt-metric-pill--empty" title="RAMAs únicas con al menos un AID IN SERVICE en la selección"><span class="dashboard-metric-pill__n olt-metric-pill__n">0</span> <span class="dashboard-metric-pill__l olt-metric-pill__l">RAMAs</span></span> <span class="olt-summary-sep" aria-hidden="true">·</span> <span class="dashboard-metric-pill olt-metric-pill olt-metric-pill--cto olt-metric-pill--empty" title="CTO únicas con al menos un AID IN SERVICE en la selección"><span class="dashboard-metric-pill__n olt-metric-pill__n">0</span> <span class="dashboard-metric-pill__l olt-metric-pill__l">CTO</span></span> <span class="olt-summary-sep" aria-hidden="true">·</span> <span class="dashboard-metric-pill olt-metric-pill olt-metric-pill--ont olt-metric-pill--empty" title="Filas de inventario con estado IN SERVICE (copiar / exportar)"><span class="dashboard-metric-pill__n olt-metric-pill__n">0</span> <span class="dashboard-metric-pill__l olt-metric-pill__l">ONT</span></span></p>
+      </div>
+    </div>
 
 {% for bloque in olts %}
 {% set pid = 'p' ~ loop.index0 %}
@@ -67,7 +78,8 @@
       </div>
     </div>
 
-    <table class="hidden indent2" data-parent="{{ oid }}">
+    <div class="table-wrap olt-lt-table-shell hidden indent2" data-parent="{{ oid }}">
+    <table class="olt-lt-summary-table">
     <tr>
     <th></th><th>LT</th><th>RAMAs</th><th>PON</th><th>CTO</th><th>ONT</th>
     <th>🔴</th><th>🟡</th><th>🟢</th><th>Peor RX</th>
@@ -103,10 +115,13 @@
     <tr id="detail-{{ uid }}" class="hidden" data-parent="{{ uid }}"><td colspan="10"></td></tr>
     {% endfor %}
     </table>
+    </div>
   </div>
   {% endfor %}
 </div>
 {% endfor %}
+
+  </div>
 
 </div>
 

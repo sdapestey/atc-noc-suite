@@ -4,16 +4,13 @@
 <meta charset="UTF-8">
 <title>RAMA / CTO · ATC NOC Suite</title>
 {% include 'partials/noc_head.html' %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/rama-cto-map.css') }}">
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-<script src="{{ url_for('static', filename='js/noc-map-tiles.js') }}"></script>
-<script src="{{ url_for('static', filename='js/leaflet-scroll-guard.js') }}"></script>
+{% set leaflet_rama_map_css = true %}
+{% include 'partials/head_leaflet.html' %}
 <script src="{{ url_for('static', filename='js/noc-tools.js') }}"></script>
 <script src="{{ url_for('static', filename='js/dashboard-rama.js') }}"></script>
 </head>
 
-<body class="theme-devops">
+<body class="theme-devops page-tree-dashboard page-rama">
 
 <div class="container">
   <div class="topbar">
@@ -22,22 +19,17 @@
         {% include 'partials/brand_logo.html' %}
         <h1>ATC NOC Suite</h1>
       </div>
-      <small><strong>RAMA / CTO</strong> — expandí nodos y consultá potencias por rama (Altiplano)</small>
+      <p class="page-lead page-lead--one-line"><strong>RAMA / CTO</strong> — expandí nodos y consultá potencias por rama (Altiplano)</p>
     </div>
     <div class="topbar-meta">
-      <div class="topbar-metrics-row" aria-label="Totales inventario y RAMAs visibles">
-        <span id="visibleCount" class="count" title="RAMAs que coinciden con el filtro">—</span>
-        <span class="count count--inventory-total" title="CTO distintas (suma por RAMA, IN SERVICE)">{{ ram_totales.CTO }} CTO</span>
-        <span class="count count--inventory-total" title="ONT en inventario FAT con estado IN SERVICE">{{ ram_totales.ONT }} ONT</span>
-      </div>
       {% include 'partials/noc_topbar.html' %}
     </div>
   </div>
 
   {% include 'partials/nav_dashboard.html' %}
 
-  <div class="panel">
-    <div class="controls">
+  <div class="panel dashboard-tree-panel">
+    <div class="controls dashboard-tree-controls">
       <div class="field" role="search">
         <span class="search-icon" aria-hidden="true">⌕</span>
         <input id="q" placeholder="Buscar por sitio, RAMA o CTO… (ej: San Fernando / SF01-RATC / SF01-FATC-8-202018)" autocomplete="off" aria-label="Filtrar árbol">
@@ -48,9 +40,25 @@
         <button class="btn btn-ghost" type="button" onclick="colapsarTodoYLimpiarRama()">Colapsar todo</button>
       </div>
     </div>
-    <div class="controls-hint">
-      <strong class="hint-kicker">NOC</strong>
-      Marcá CTO (o “todas en esta RAMA”) y usá copiar / exportar CSV seleccionadas (UTF‑8, descarga local).
+    <div class="controls-hint dashboard-tree-hint dashboard-tree-hint--metrics">
+      <div class="dashboard-tree-hint__text">
+        <strong class="hint-kicker">NOC</strong>
+        Marcá CTO (o “todas en esta RAMA”) y usá copiar / exportar CSV seleccionadas (UTF‑8, descarga local).
+      </div>
+      <div class="dashboard-tree-metrics" aria-label="Totales inventario y RAMAs visibles">
+        <span id="visibleCount" class="dashboard-metric-pill dashboard-metric-pill--ramas dashboard-metric-pill--pending" title="RAMAs que coinciden con el filtro">
+          <span class="dashboard-metric-pill__n" data-metric="n">—</span>
+          <span class="dashboard-metric-pill__l">RAMAs</span>
+        </span>
+        <span class="dashboard-metric-pill dashboard-metric-pill--cto" title="CTO distintas (suma por RAMA, IN SERVICE)">
+          <span class="dashboard-metric-pill__n">{{ ram_totales.CTO }}</span>
+          <span class="dashboard-metric-pill__l">CTO</span>
+        </span>
+        <span class="dashboard-metric-pill dashboard-metric-pill--ont" title="ONT en inventario FAT con estado IN SERVICE">
+          <span class="dashboard-metric-pill__n">{{ ram_totales.ONT }}</span>
+          <span class="dashboard-metric-pill__l">ONT</span>
+        </span>
+      </div>
     </div>
 
 {% for bloque in ramas %}
@@ -71,7 +79,7 @@
     <span class="badge yellow semaforo-dot" title="-27 a -25 dBm" data-semaforo="amarillo">{{ r.AMARILLAS }}</span>
     <span class="badge green semaforo-dot" title="RX &gt; -25 dBm" data-semaforo="verde">{{ r.VERDES }}</span>
     <span class="rama-row-actions" onclick="event.stopPropagation()">
-      <button class="btn" type="button" onclick="consultarRama('{{ r.RAMA }}', this)">Consultar</button>
+      <button class="btn" type="button" onclick="consultarRama('{{ r.RAMA }}', this)">Consultar RX</button>
       <button
         class="btn btn-ghost"
         type="button"

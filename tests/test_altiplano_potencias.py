@@ -7,6 +7,7 @@ def test_obtener_potencias_por_cto_soporta_operadores_nuevos(monkeypatch):
         ("300", "BA_OLTA_X:1-1-1-1-300", 4000),  # METROTEL
         ("400", "BA_OLTA_X:1-1-1-1-400", 4010),  # METROTEL
         ("500", "BA_OLTA_X:1-1-1-1-500", 3950),  # IPLAN
+        ("600", "BA_OLTA_X:1-1-1-1-600", 2800),  # ATC
         ("999", "BA_OLTA_X:1-1-1-1-999", 9999),  # no soportado
     ]
 
@@ -35,7 +36,7 @@ def test_obtener_potencias_por_cto_soporta_operadores_nuevos(monkeypatch):
 
     out = altiplano.obtener_potencias_por_cto("BA_OLTA_X", onts)
 
-    assert set(out.keys()) == {"100", "200", "300", "400", "500"}
+    assert set(out.keys()) == {"100", "200", "300", "400", "500", "600"}
     for _aid, pair in out.items():
         assert pair == (-18.0, -25.0)
 
@@ -43,6 +44,7 @@ def test_obtener_potencias_por_cto_soporta_operadores_nuevos(monkeypatch):
     assert any("/dtv-altiplano-ac/" in u for u in called_urls)
     assert any("/metro-altiplano-ac/" in u for u in called_urls)
     assert any("/iplan-altiplano-ac/" in u for u in called_urls)
+    assert any("/atc-altiplano-ac/" in u for u in called_urls)
     assert all("999" not in u for u in called_urls)
 
 

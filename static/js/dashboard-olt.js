@@ -19,8 +19,10 @@ function _oltFatSkipPotencias(tr) {
   return st === "FREE" || st === "RESERVED";
 }
 
+const _npOlt = () => window.NocPower;
+
 function _hasPowerOlt(v) {
-  return !(v === null || v === undefined || String(v).trim() === "" || String(v).trim() === "-");
+  return _npOlt() ? _npOlt().hasPowerValue(v) : false;
 }
 
 function _oltRowCellsHtml(o, rama, cto, outNum) {
@@ -309,16 +311,16 @@ function _oltMetricPillHtml(n, label, kind, title) {
   const v = String(Math.max(0, Number(n) || 0));
   const empty = v === "0";
   return (
-    '<span class="olt-metric-pill olt-metric-pill--' +
+    '<span class="dashboard-metric-pill olt-metric-pill olt-metric-pill--' +
     kind +
     (empty ? " olt-metric-pill--empty" : "") +
     '" title="' +
     title +
     '">' +
-    '<span class="olt-metric-pill__n">' +
+    '<span class="dashboard-metric-pill__n olt-metric-pill__n">' +
     v +
     "</span> " +
-    '<span class="olt-metric-pill__l">' +
+    '<span class="dashboard-metric-pill__l olt-metric-pill__l">' +
     label +
     "</span></span>"
   );
@@ -662,11 +664,7 @@ function _esc(s) {
 }
 
 function _formatPowerDbm(v) {
-  if (v === null || v === undefined) return "-";
-  const raw = String(v).trim();
-  if (!raw || raw === "-" || raw === "⏳") return raw || "-";
-  if (/dbm$/i.test(raw)) return raw;
-  return raw + " dBm";
+  return _npOlt() ? _npOlt().formatPowerDbm(v) : "-";
 }
 
 function _addSem(row, res) {
@@ -680,12 +678,7 @@ function _addSem(row, res) {
 }
 
 function _clasif(rx) {
-  if (rx == null || rx === "" || rx === "-") return null;
-  const v = parseFloat(String(rx).replace(",", "."));
-  if (!isFinite(v)) return null;
-  if (v < -27) return "rojo";
-  if (v <= -25) return "amarillo";
-  return "verde";
+  return _npOlt() ? _npOlt().clasificarRxDbm(rx) : null;
 }
 
 function _addSemFromRx(row, rx) {
@@ -702,8 +695,8 @@ function _recomputePeor(wrap, row) {
     if (!rxCell) return;
     const t = rxCell.textContent.trim();
     if (t === "-" || t === "") return;
-    const v = parseFloat(t.replace(",", "."));
-    if (isFinite(v) && (min === null || v < min)) min = v;
+    const v = _npOlt() ? _npOlt().parseRxDbm(t) : null;
+    if (v !== null && (min === null || v < min)) min = v;
   });
   const pe = row.querySelector(".peor");
   if (pe) pe.textContent = min != null ? String(min) : "-";

@@ -24,7 +24,27 @@ QUERIES = {
                ON s.access_id = f.access_id
         LEFT JOIN cm.inventory_olt_occupation o
                ON o.access_id = f.access_id
-        WHERE f.access_id = %s
+        WHERE LOWER(btrim(f.access_id::text)) = LOWER(btrim(%s))
+    """,
+
+    "access_id_serial_y_olt": """
+        SELECT
+            s.object_name AS object_name_raw,
+            REPLACE(s.object_name, ':1-1', '') AS object_name_ui,
+            o.invocator_system
+        FROM altiplano.serial s
+        LEFT JOIN cm.inventory_olt_occupation o
+               ON o.access_id::text = btrim(s.access_id::text)
+        WHERE LOWER(btrim(s.access_id::text)) = LOWER(btrim(%s))
+        LIMIT 1
+    """,
+
+    "access_id_bajada_object": """
+        SELECT b.object_name, b.operatorid
+        FROM aux.bajada_inventario b
+        WHERE LOWER(btrim(b.access_id::text)) = LOWER(btrim(%s))
+        ORDER BY b.reserved_date DESC NULLS LAST, b.provided_date DESC NULLS LAST
+        LIMIT 1
     """,
 
     # ===============================
@@ -115,12 +135,24 @@ QUERIES = {
             -- Serial real de ONT (fuente principal para SN en UI)
             s.serial_number AS serial_number,
 
-            o.invocator_system
+            COALESCE(o.invocator_system, b_aid.operatorid) AS invocator_system
         FROM cm.inventory_fat_occupation f
         LEFT JOIN altiplano.serial s
              ON s.access_id = f.access_id
         LEFT JOIN cm.inventory_olt_occupation o
              ON o.access_id = f.access_id
+        LEFT JOIN LATERAL (
+            SELECT
+                CASE
+                    WHEN trim(b2.operatorid::text) ~ '^[0-9]+$'
+                    THEN trim(b2.operatorid::text)::bigint
+                    ELSE NULL
+                END AS operatorid
+                FROM aux.bajada_inventario b2
+                WHERE LOWER(btrim(b2.access_id::text)) = LOWER(btrim(f.access_id::text))
+                ORDER BY b2.reserved_date DESC NULLS LAST, b2.provided_date DESC NULLS LAST
+                LIMIT 1
+        ) b_aid ON true
         WHERE f.location_description = %s
           AND f.status IN ('IN SERVICE', 'RESERVED', 'FREE')
         -- Orden tipo ConnectMaster (OUT1…OUT8): posición física del splitter en CM viene en
@@ -146,12 +178,24 @@ QUERIES = {
             s.object_name AS object_name_raw,
             REPLACE(COALESCE(s.object_name, ''), ':1-1', '') AS object_name_ui,
             s.serial_number AS serial_number,
-            o.invocator_system
+            COALESCE(o.invocator_system, b_aid.operatorid) AS invocator_system
         FROM cm.inventory_fat_occupation f
         LEFT JOIN altiplano.serial s
              ON s.access_id = f.access_id
         LEFT JOIN cm.inventory_olt_occupation o
              ON o.access_id = f.access_id
+        LEFT JOIN LATERAL (
+            SELECT
+                CASE
+                    WHEN trim(b2.operatorid::text) ~ '^[0-9]+$'
+                    THEN trim(b2.operatorid::text)::bigint
+                    ELSE NULL
+                END AS operatorid
+                FROM aux.bajada_inventario b2
+                WHERE LOWER(btrim(b2.access_id::text)) = LOWER(btrim(f.access_id::text))
+                ORDER BY b2.reserved_date DESC NULLS LAST, b2.provided_date DESC NULLS LAST
+                LIMIT 1
+        ) b_aid ON true
         WHERE f.path_atc = %s
           AND f.status IN ('IN SERVICE', 'RESERVED', 'FREE')
         ORDER BY

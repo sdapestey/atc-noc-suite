@@ -13,4 +13,9 @@ def test_dashboard_rama_js_contains_core_handlers():
     assert "_bindRamaDashboardTabCollapse" in js
     assert "ensureCtoMapForCtoNode" in js
     assert "verMapaRama" in js
+    assert "verMapaCto" in js
+    assert "data-cto-map-panel" in js
     assert "NocMapTiles" in js
+    assert "_sincronizarResaltadoPotenciasEn" in js
+    assert "consulta-fila-sem-amarillo" in js
+    assert "NocPower" in js

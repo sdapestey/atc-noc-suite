@@ -89,6 +89,7 @@
     function (e) {
       var a = e.target.closest("a.global-tab");
       if (!a || !a.href) return;
+      if (a.target === "_blank" || a.classList.contains("global-tab--external")) return;
       if (
         e.defaultPrevented ||
         e.button !== 0 ||

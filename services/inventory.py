@@ -1,10 +1,12 @@
 """Consultas de inventario (índice: ID, CTO, rama)."""
 import logging
 from collections import defaultdict
+from typing import Any
 from datetime import date, datetime
 from itertools import groupby
 
 from db import db_cursor
+from psycopg2.errors import UndefinedColumn
 from queries import QUERIES
 
 from altiplano import obtener_potencias_por_cto
@@ -18,6 +20,18 @@ from .domain import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _access_lookup_token_ok(aid: str) -> bool:
+    """UUID va por otro canal; esto valida Access ID / alias (ALCL…, RES_IP_…, Srvc_loc_…)."""
+    if not aid or len(aid) > 256:
+        return False
+    for c in aid:
+        if c.isalnum() or c in "._-":
+            continue
+        return False
+    return True
+
 
 # Inventario CM: sin lectura Altiplano para estos estados de puerto FAT.
 _SIN_POTENCIAS_STATUS = frozenset({"FREE", "RESERVED"})
@@ -140,40 +154,77 @@ LIMIT 1
 
 _BAJAS_AUX_TABLAS = frozenset({"bajas_de_inventario", "bajas_inventario"})
 
+# None = aún no probado; True/False = esquema con o sin columna cm_description en esa tabla aux.
+_AUX_BAJAS_TIENE_CM_DESC: dict[str, bool | None] = {}
+
+
+def _rollback_aux_bajas_cur(cur: Any, tabla: str) -> None:
+    """Tras un error SQL, PostgreSQL aborta la transacción hasta el siguiente rollback."""
+    conn = getattr(cur, "connection", None)
+    if conn is None:
+        return
+    try:
+        conn.rollback()
+    except Exception:
+        logger.warning("%s: rollback tras error SQL no aplicado", tabla, exc_info=True)
+
 
 def _fetch_row_aux_bajas_tabla(cur, aid: str, tabla: str):
     """
     Lee aux.bajas_de_inventario o aux.bajas_inventario (mismo esquema esperado).
-    Si falta cm_description, reintenta sin ella.
+    Si falta cm_description, reintenta sin ella y memoriza el esquema para no repetir el fallo.
     Retorna (fila o None, tiene_cm_description bool).
     """
     if tabla not in _BAJAS_AUX_TABLAS:
         raise ValueError(f"tabla aux no permitida: {tabla}")
     sql_cm = f"""
-                SELECT operatorid, cancellation_date, reserved_date, provided_date,
+                SELECT access_id, operatorid, cancellation_date, reserved_date, provided_date,
                        cto, cm_description, object_name
                 FROM aux.{tabla}
-                WHERE btrim(access_id) = btrim(%s)
+                WHERE LOWER(btrim(access_id::text)) = LOWER(btrim(%s))
                 {_SQL_BAJAS_DE_ORDER}
                 """
-    try:
-        cur.execute(sql_cm, (aid,))
-        return cur.fetchone(), True
-    except Exception:
-        logger.warning(
-            "%s: consulta con cm_description falló; reintento sin columna",
-            tabla,
-            exc_info=True,
-        )
     sql_plain = f"""
-                SELECT operatorid, cancellation_date, reserved_date, provided_date,
+                SELECT access_id, operatorid, cancellation_date, reserved_date, provided_date,
                        cto, object_name
                 FROM aux.{tabla}
-                WHERE btrim(access_id) = btrim(%s)
+                WHERE LOWER(btrim(access_id::text)) = LOWER(btrim(%s))
                 {_SQL_BAJAS_DE_ORDER}
                 """
-    cur.execute(sql_plain, (aid,))
-    return cur.fetchone(), False
+
+    use_cm = _AUX_BAJAS_TIENE_CM_DESC.get(tabla)
+    if use_cm is False:
+        cur.execute(sql_plain, (aid,))
+        return cur.fetchone(), False
+    if use_cm is True:
+        cur.execute(sql_cm, (aid,))
+        return cur.fetchone(), True
+
+    try:
+        cur.execute(sql_cm, (aid,))
+        _AUX_BAJAS_TIENE_CM_DESC[tabla] = True
+        return cur.fetchone(), True
+    except UndefinedColumn as exc:
+        if "cm_description" not in str(exc).lower():
+            _rollback_aux_bajas_cur(cur, tabla)
+            raise
+        _rollback_aux_bajas_cur(cur, tabla)
+        if _AUX_BAJAS_TIENE_CM_DESC.get(tabla) is not False:
+            logger.info(
+                "aux.%s: columna cm_description ausente; se consulta sin esa columna.",
+                tabla,
+            )
+        _AUX_BAJAS_TIENE_CM_DESC[tabla] = False
+        cur.execute(sql_plain, (aid,))
+        return cur.fetchone(), False
+    except Exception:
+        _rollback_aux_bajas_cur(cur, tabla)
+        logger.debug(
+            "%s: consulta con cm_description falló; reintento sin columna",
+            tabla,
+        )
+        cur.execute(sql_plain, (aid,))
+        return cur.fetchone(), False
 
 
 def _fetch_row_bajas_de_inventario(cur, aid: str):
@@ -196,20 +247,12 @@ def _fetch_row_bajas_inventario(cur, aid: str):
         return None, False
 
 
-def consultar_access_id_detalle_desde_bajada_inventario(access_id: str) -> dict | None:
-    """
-    Detalle tipo índice desde aux.bajada_inventario (primera fuente para búsqueda por AID).
-    LEFT JOIN cm.inventory_fat_occupation para path_atc/status; LEFT JOIN altiplano.serial para SN.
-    CTO en pantalla: preferir cm_description (FATC típico); si vacío, columna cto.
-    """
-    aid = (access_id or "").strip()
-    if not aid:
-        return None
-    try:
-        with db_cursor() as cur:
-            cur.execute(
-                """
+def _fetch_row_bajada_inventario_detalle(cur, aid: str):
+    """Una fila de aux.bajada_inventario + joins (mismo SELECT que el índice)."""
+    cur.execute(
+        """
                 SELECT
+                    b.access_id,
                     b.operatorid,
                     b.reserved_date,
                     b.provided_date,
@@ -221,24 +264,22 @@ def consultar_access_id_detalle_desde_bajada_inventario(access_id: str) -> dict 
                     s.serial_number
                 FROM aux.bajada_inventario b
                 LEFT JOIN cm.inventory_fat_occupation f
-                  ON f.access_id::text = btrim(b.access_id)
+                  ON LOWER(btrim(f.access_id::text)) = LOWER(btrim(b.access_id::text))
                 LEFT JOIN altiplano.serial s
-                  ON s.access_id::text = btrim(b.access_id)
-                WHERE btrim(b.access_id) = btrim(%s)
+                  ON LOWER(btrim(s.access_id::text)) = LOWER(btrim(b.access_id::text))
+                WHERE LOWER(btrim(b.access_id::text)) = LOWER(btrim(%s))
                 ORDER BY b.reserved_date DESC NULLS LAST, b.provided_date DESC NULLS LAST
                 LIMIT 1
                 """,
-                (aid,),
-            )
-            row = cur.fetchone()
-    except Exception:
-        logger.exception("consultar_access_id_detalle_desde_bajada_inventario")
-        return None
+        (aid,),
+    )
+    return cur.fetchone()
 
-    if not row:
-        return None
 
-    op_id, res_dt, prov_dt, cto, cm_desc, obj_raw, path_atc, fat_status, serial_number = row
+def _dict_detalle_desde_bajada_inventario_row(row, aid: str) -> dict:
+    """Arma el dict de detalle índice a partir de la fila de `_fetch_row_bajada_inventario_detalle`."""
+    row_aid, op_id, res_dt, prov_dt, cto, cm_desc, obj_raw, path_atc, fat_status, serial_number = row
+    aid_canon = (str(row_aid).strip() if row_aid is not None else "") or aid
     ont_ui = ""
     if obj_raw:
         ont_ui = str(obj_raw).replace(":1-1", "")
@@ -254,7 +295,7 @@ def consultar_access_id_detalle_desde_bajada_inventario(access_id: str) -> dict 
         status_disp = "Registro aux.bajada_inventario"
 
     return {
-        "AID": str(aid),
+        "AID": aid_canon,
         "OPERADOR": nombre_operador(op_id),
         "Status": status_disp,
         "CTO": cto_display,
@@ -267,12 +308,35 @@ def consultar_access_id_detalle_desde_bajada_inventario(access_id: str) -> dict 
     }
 
 
+def consultar_access_id_detalle_desde_bajada_inventario(access_id: str) -> dict | None:
+    """
+    Detalle tipo índice desde aux.bajada_inventario (primera fuente para búsqueda por AID).
+    LEFT JOIN cm.inventory_fat_occupation para path_atc/status; LEFT JOIN altiplano.serial para SN.
+    CTO en pantalla: preferir cm_description (FATC típico); si vacío, columna cto.
+    """
+    aid = (access_id or "").strip()
+    if not aid:
+        return None
+    try:
+        with db_cursor() as cur:
+            row = _fetch_row_bajada_inventario_detalle(cur, aid)
+    except Exception:
+        logger.exception("consultar_access_id_detalle_desde_bajada_inventario")
+        return None
+
+    if not row:
+        return None
+
+    return _dict_detalle_desde_bajada_inventario_row(row, aid)
+
+
 def _dict_baja_desde_bajas_aux_row(row, has_cm: bool, aid: str, fuente_baja: str) -> dict:
     if has_cm:
-        op_raw, canc, res_txt, prov_txt, cto, cm_description, object_name_raw = row
+        access_canon, op_raw, canc, res_txt, prov_txt, cto, cm_description, object_name_raw = row
     else:
-        op_raw, canc, res_txt, prov_txt, cto, object_name_raw = row
+        access_canon, op_raw, canc, res_txt, prov_txt, cto, object_name_raw = row
         cm_description = None
+    aid_out = (str(access_canon).strip() if access_canon is not None else "") or aid
     ont_ui = ""
     if object_name_raw:
         ont_ui = str(object_name_raw).replace(":1-1", "")
@@ -281,12 +345,23 @@ def _dict_baja_desde_bajas_aux_row(row, has_cm: bool, aid: str, fuente_baja: str
     return {
         "tipo": "baja",
         "fuente_baja": fuente_baja,
-        "AID": aid,
+        "AID": aid_out,
         "OPERADOR": _operador_desde_operatorid_cell(op_raw),
         "fecha_baja_fmt": _fecha_display_desde_textos_aux(canc, res_txt, prov_txt),
         "CTO": cto_ui,
         "ONT": ont_ui or None,
     }
+
+
+def _consultar_access_id_baja_o_ausente_con_cursor(cur, aid: str) -> dict:
+    """Misma resolución que ``consultar_access_id_baja_o_ausente`` usando un cursor ya abierto."""
+    row_bde, has_cm = _fetch_row_bajas_de_inventario(cur, aid)
+    if row_bde:
+        return _dict_baja_desde_bajas_aux_row(row_bde, has_cm, aid, "bajas_de_inventario")
+    row_bi, has_cm_bi = _fetch_row_bajas_inventario(cur, aid)
+    if row_bi:
+        return _dict_baja_desde_bajas_aux_row(row_bi, has_cm_bi, aid, "bajas_inventario")
+    return {"tipo": "no_existe", "AID": aid}
 
 
 def consultar_access_id_baja_o_ausente(access_id: str) -> dict:
@@ -304,16 +379,7 @@ def consultar_access_id_baja_o_ausente(access_id: str) -> dict:
 
     try:
         with db_cursor() as cur:
-            row_bde, has_cm = _fetch_row_bajas_de_inventario(cur, aid)
-            if row_bde:
-                return _dict_baja_desde_bajas_aux_row(
-                    row_bde, has_cm, aid, "bajas_de_inventario"
-                )
-            row_bi, has_cm_bi = _fetch_row_bajas_inventario(cur, aid)
-            if row_bi:
-                return _dict_baja_desde_bajas_aux_row(
-                    row_bi, has_cm_bi, aid, "bajas_inventario"
-                )
+            return _consultar_access_id_baja_o_ausente_con_cursor(cur, aid)
     except Exception:
         logger.exception(
             "consultar_access_id_baja_o_ausente: fallo aux.bajas_de_inventario / bajas_inventario"
@@ -333,8 +399,12 @@ def consultar_access_id_estructura(access_id):
         Retorna `None` cuando el AID no existe en inventario activo.
     """
     with db_cursor() as cur:
-        cur.execute(QUERIES["access_id_topologia"], (access_id,))
-        row = cur.fetchone()
+        return _consultar_access_id_estructura_con_cursor(cur, access_id)
+
+
+def _consultar_access_id_estructura_con_cursor(cur, access_id) -> dict | None:
+    cur.execute(QUERIES["access_id_topologia"], (access_id,))
+    row = cur.fetchone()
 
     if not row:
         return None
@@ -352,6 +422,175 @@ def consultar_access_id_estructura(access_id):
         "SN": sn,
         "TX": None,
         "RX": None,
+    }
+
+
+def clasificar_access_id_bajada_bajas_fat_cur(cur, access_id: str) -> dict[str, str]:
+    """
+    Una transacción: bajada_inventario → bajas aux → inventario FAT (misma lógica que el índice).
+
+    Retorna claves: access_id, tabla_aux (aux.bajada_inventario | aux.bajas_* | ninguna),
+    bajada_inventario, bajas_tabla, inventario_fat_activo, ubicacion_resumen.
+    """
+    aid = (access_id or "").strip()
+    if not aid:
+        return {
+            "access_id": "",
+            "tabla_aux": "ninguna",
+            "bajada_inventario": "no",
+            "bajas_tabla": "no",
+            "inventario_fat_activo": "no",
+            "ubicacion_resumen": "ninguna",
+        }
+
+    try:
+        row_b = _fetch_row_bajada_inventario_detalle(cur, aid)
+    except Exception:
+        logger.exception("clasificar_access_id_bajada_bajas_fat_cur: aux.bajada_inventario")
+        row_b = None
+
+    en_bajada = row_b is not None
+    fuente_bajas = ""
+    if not en_bajada:
+        try:
+            b = _consultar_access_id_baja_o_ausente_con_cursor(cur, aid)
+        except Exception:
+            logger.exception("clasificar_access_id_bajada_bajas_fat_cur: bajas aux")
+            b = {"tipo": "no_existe"}
+        if b.get("tipo") == "baja":
+            fuente_bajas = str(b.get("fuente_baja") or "")
+
+    try:
+        en_fat = _consultar_access_id_estructura_con_cursor(cur, aid) is not None
+    except Exception:
+        logger.exception("clasificar_access_id_bajada_bajas_fat_cur: access_id_topologia")
+        en_fat = False
+
+    if en_bajada:
+        ubicacion = "bajada_inventario"
+        tabla_aux = "aux.bajada_inventario"
+    elif fuente_bajas:
+        ubicacion = fuente_bajas
+        tabla_aux = f"aux.{fuente_bajas}"
+    else:
+        ubicacion = "ninguna"
+        tabla_aux = "ninguna"
+
+    return {
+        "access_id": aid,
+        "tabla_aux": tabla_aux,
+        "bajada_inventario": "si" if en_bajada else "no",
+        "bajas_tabla": fuente_bajas if fuente_bajas else ("-" if en_bajada else "no"),
+        "inventario_fat_activo": "si" if en_fat else "no",
+        "ubicacion_resumen": ubicacion,
+    }
+
+
+def resolver_target_ont_connection_por_access_id(access_id: str) -> dict:
+    """
+    Arma el prefijo/target para consultar un intent ``ont-connection`` en el NBI cuando solo se
+    conoce el Access ID.
+
+    El RESTCONF de Altiplano indexa por ``target`` (location#VNO#gpon), no por access-id; esta
+    función usa inventario ATC (``object_name`` en ``altiplano.serial`` y ``invocator_system``
+    en ocupación OLT) para derivar el mismo string que muestra la UI de Altiplano.
+
+    Returns:
+        Dict con ``ok`` True y ``device_name_for_query`` listo para ``buscar_intents_*``, u
+        ``ok`` False y ``message`` explicando el motivo.
+    """
+    from altiplano import normalizar_object_name
+
+    aid = (access_id or "").strip()
+    if not _access_lookup_token_ok(aid):
+        return {
+            "ok": False,
+            "message": "Identificador de acceso inválido.",
+        }
+
+    obj_raw = None
+    obj_ui = None
+    op_id = None
+    status = None
+    cto = None
+    rama = None
+
+    try:
+        with db_cursor() as cur:
+            cur.execute(QUERIES["access_id_topologia"], (aid,))
+            row = cur.fetchone()
+            if row:
+                _aid, status, cto, rama, obj_raw, obj_ui, _serial, op_id = row
+
+            # FAT sin fila o sin serial: muchos AID siguen en altiplano.serial / bajada aunque
+            # ya no estén en ocupación FAT (estado Not present / borrado en IBN).
+            if not obj_raw or not str(obj_raw).strip():
+                cur.execute(QUERIES["access_id_serial_y_olt"], (aid,))
+                r2 = cur.fetchone()
+                if r2 and r2[0] and str(r2[0]).strip():
+                    obj_raw = r2[0]
+                    obj_ui = r2[1]
+                    if op_id is None:
+                        op_id = r2[2]
+
+            if not obj_raw or not str(obj_raw).strip():
+                cur.execute(QUERIES["access_id_bajada_object"], (aid,))
+                r3 = cur.fetchone()
+                if r3 and r3[0] and str(r3[0]).strip():
+                    obj_raw = r3[0]
+                    obj_ui = str(r3[0]).replace(":1-1", "")
+                    if op_id is None and r3[1] is not None:
+                        op_id = r3[1]
+
+            # Alias no numéricos (prefijo de object_name en serial; mismas columnas que topología).
+            if not obj_raw or not str(obj_raw).strip():
+                cur.execute(QUERIES["access_id_desde_alias"], (aid,))
+                row_alias = cur.fetchone()
+                if row_alias:
+                    _aid, status, cto, rama, obj_raw, obj_ui, _serial, op_id = row_alias
+
+            if not obj_raw or not str(obj_raw).strip():
+                cur.execute(QUERIES["access_id_desde_alias_bajada"], (aid,))
+                row_baj = cur.fetchone()
+                if row_baj:
+                    _aid, status, cto, rama, obj_raw, obj_ui, _serial, op_id = row_baj
+    except Exception:
+        logger.exception("resolver_target_ont_connection_por_access_id")
+        return {
+            "ok": False,
+            "message": "Error consultando inventario ATC.",
+        }
+
+    if not obj_raw or not str(obj_raw).strip():
+        return {
+            "ok": False,
+            "message": "Access ID no encontrado en inventario ATC.",
+        }
+
+    normalized = normalizar_object_name(str(obj_raw).strip())
+    try:
+        vno_int = int(op_id) if op_id is not None else None
+    except (TypeError, ValueError):
+        vno_int = None
+
+    # Una sola consulta NBI si tenemos slice (invocator); si no, ``buscar`` barrerá VNO.
+    device_name_for_query = normalized
+    suggested_target = None
+    if vno_int is not None:
+        suggested_target = f"{normalized}#{vno_int}#gpon"
+        device_name_for_query = suggested_target
+
+    return {
+        "ok": True,
+        "device_name_for_query": device_name_for_query,
+        "device_location_prefix": normalized,
+        "suggested_target": suggested_target,
+        "invocator_system": op_id,
+        "object_name_raw": str(obj_raw).strip(),
+        "cto": cto,
+        "rama": rama,
+        "status": status,
+        "object_name_ui": obj_ui,
     }
 
 
@@ -420,21 +659,22 @@ def consultar_access_id_potencias(access_id):
     if not base:
         return {"AID": access_id, "TX": None, "RX": None}
 
+    aid_canon = str(base["AID"]).strip()
+
     with db_cursor() as cur:
         cur.execute(QUERIES["onts_por_cto"], (base["CTO"],))
         rows = cur.fetchall()
 
     if not rows:
-        return {"AID": access_id, "TX": None, "RX": None}
+        return {"AID": aid_canon, "TX": None, "RX": None}
 
-    aid_key = str(access_id).strip()
     for r in rows:
-        if str(r[0]).strip() == aid_key and _sin_potencias_por_status(r[1]):
-            return {"AID": access_id, "TX": None, "RX": None}
+        if str(r[0]).strip() == aid_canon and _sin_potencias_por_status(r[1]):
+            return {"AID": aid_canon, "TX": None, "RX": None}
 
     ne = _ne_para_potencias_desde_filas_ont(rows)
     if not ne:
-        return {"AID": access_id, "TX": None, "RX": None}
+        return {"AID": aid_canon, "TX": None, "RX": None}
 
     onts = [
         (str(r[0]), r[4], r[7])
@@ -442,12 +682,12 @@ def consultar_access_id_potencias(access_id):
         if r[0] is not None and r[4] and not _sin_potencias_por_status(r[1])
     ]
     if not onts:
-        return {"AID": access_id, "TX": None, "RX": None}
+        return {"AID": aid_canon, "TX": None, "RX": None}
 
     potencias = obtener_potencias_por_cto(ne, onts)
 
-    tx, rx = potencias.get(str(access_id).strip(), (None, None))
-    return {"AID": access_id, "TX": tx, "RX": rx}
+    tx, rx = potencias.get(aid_canon, (None, None))
+    return {"AID": aid_canon, "TX": tx, "RX": rx}
 
 
 def consultar_cto_estructura(cto):
@@ -634,10 +874,22 @@ def consultar_rama_estructura(rama):
             SELECT f.access_id, f.status, f.location_description,
                    s.object_name, REPLACE(COALESCE(s.object_name, ''), ':1-1', ''),
                    s.serial_number,
-                   o.invocator_system
+                   COALESCE(o.invocator_system, b_aid.operatorid)
             FROM cm.inventory_fat_occupation f
             LEFT JOIN altiplano.serial s ON s.access_id = f.access_id
             LEFT JOIN cm.inventory_olt_occupation o ON o.access_id = f.access_id
+            LEFT JOIN LATERAL (
+                SELECT
+                    CASE
+                        WHEN trim(b2.operatorid::text) ~ '^[0-9]+$'
+                        THEN trim(b2.operatorid::text)::bigint
+                        ELSE NULL
+                    END AS operatorid
+                FROM aux.bajada_inventario b2
+                WHERE LOWER(btrim(b2.access_id::text)) = LOWER(btrim(f.access_id::text))
+                ORDER BY b2.reserved_date DESC NULLS LAST, b2.provided_date DESC NULLS LAST
+                LIMIT 1
+            ) b_aid ON true
             WHERE f.path_atc = %s
               AND f.status IN ('IN SERVICE', 'RESERVED', 'FREE')
             """,

@@ -2,11 +2,9 @@
 import atexit
 import logging
 import os
-from datetime import datetime
-
 from flask import Flask, request
 
-from config import Config
+from config import Config, get_noc_wiki_url
 from db import close_pool
 
 _ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -43,10 +41,6 @@ def create_app() -> Flask:
         return resp
 
     @app.context_processor
-    def noc_page_time():
-        return {"page_generated_at": datetime.now().strftime("%d/%m/%Y %H:%M")}
-
-    @app.context_processor
     def inject_nav_tab():
         p = request.path or ""
         if p.startswith("/dashboard/rama"):
@@ -72,7 +66,11 @@ def create_app() -> Flask:
             "calidad": "Calidad Inventario",
             "altiplano": "Orquestador",
         }
-        return {"nav_tab": tab, "nav_tab_label": labels.get(tab, "Consulta")}
+        return {
+            "nav_tab": tab,
+            "nav_tab_label": labels.get(tab, "Consulta"),
+            "noc_wiki_url": get_noc_wiki_url(),
+        }
 
     from . import routes
 

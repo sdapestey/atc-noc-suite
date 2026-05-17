@@ -1,27 +1,34 @@
 import re
+from pathlib import Path
 
 def test_dashboard_potencias_historico_get_renders(client):
     r = client.get("/dashboard/potencias-historico")
     assert r.status_code == 200
     html = r.get_data(as_text=True)
     assert "Historico Potencias" in html
-    assert 'id="rx-snapshot-compare-wrap"' in html
-    assert 'id="rx-snapshot-compare-table"' in html
-    assert 'id="rx-snapshot-compare-tbody"' in html
-    assert "Último Rx histórico (dBm)" in html
-    assert "Comparación · último histórico vs Consultar RX" in html
+    assert 'id="ont-cto-summary-wrap"' in html
+    assert 'id="ont-cto-summary-table"' in html
+    assert 'id="ont-cto-summary-tbody"' in html
+    assert "Último histórico (dBm)" in html
+    assert "Potencias por CTO" in html
+    assert "historico-cto-summary__th-spacer" in html
     assert 'id="ratc-input"' in html
     assert 'id="power-chart"' in html
-    assert "/api/potencias-historico/" in html
+    assert "dashboard-potencias-historico.js" in html
+    assert "dashboard-historico-potencias.css" in html
     assert "btn-toggle-legend" in html
     assert "btn-show-all" in html
     assert "btn-hide-all" in html
     assert 'id="btn-consultar-ahora"' in html
     assert 'id="kpi-snapshot-hint"' in html
-    assert "Snapshot RX sin lecturas válidas" in html
-    assert "RX manual ONT " in html
-
-
+    js = Path("static/js/dashboard-potencias-historico.js").read_text(encoding="utf-8")
+    assert "/api/potencias-historico/" in js
+    assert "Snapshot RX sin lecturas válidas" in js
+    assert "RX manual ONT " in js
+    assert "Umbral -27 dBm" in js
+    assert "Umbral -25 dBm" in js
+    assert "clasificar_rx_dbm" in js
+    assert "Access ID:" in js
 def test_api_potencias_historico_consultar_ahora_success(client, monkeypatch):
     import web.routes as routes
 
@@ -81,6 +88,15 @@ def test_api_potencias_historico_success(client, monkeypatch):
             "status": "Activo",
             "days": days,
             "rows": [],
+            "ont_summary": [
+                {
+                    "ont_key": "1",
+                    "cto": "",
+                    "access_id": "1051999888",
+                    "last_hist_rx": -18.5,
+                    "last_hist_ts": "2026-04-24 20:00",
+                }
+            ],
         },
     )
     r = client.get("/api/potencias-historico/MR01-RATC-0-000200?days=15")
@@ -89,6 +105,8 @@ def test_api_potencias_historico_success(client, monkeypatch):
     assert payload["pon"] == "BA_OLTA_MR01_01-1-1"
     assert payload["total_onts"] == 1
     assert payload["days"] == 15
+    assert payload.get("ont_summary") and payload["ont_summary"][0]["ont_key"] == "1"
+    assert payload["ont_summary"][0].get("access_id") == "1051999888"
 
 
 def test_api_potencias_historico_not_found(client, monkeypatch):
@@ -137,10 +155,10 @@ def test_export_potencias_historico_csv_success(client, monkeypatch):
     monkeypatch.setattr(
         routes,
         "export_csv_potencias_historico_rama",
-        lambda _ratc, days=30: {
+        lambda ratc, days=30: {
             "ok": True,
             "csv": "timestamp,objectname,ont,rx_dbm,pon\r\n2026-04-25 00:00,BA_OLTA_X-1-1-1,1,-18.3,BA_OLTA_X-1-1\r\n",
-            "ratc": _ratc,
+            "ratc": ratc,
             "days": days,
         },
     )
@@ -157,6 +175,14 @@ def test_export_potencias_historico_csv_invalid_days_400(client):
     r = client.get("/dashboard/potencias-historico/export.csv?ratc=MR01-RATC-0-000200&days=9")
     assert r.status_code == 400
     assert "days" in r.get_json()["error"]
+
+
+def test_ont_sort_key_orders_by_cto_then_ont_id():
+    from services.historico_potencias import _ont_sort_key
+
+    m = {"1": "SF-Z-200", "2": "SF-Z-100", "3": "SF-Z-100", "10": "SF-Z-100"}
+    onts = ["1", "2", "3", "10"]
+    assert sorted(onts, key=lambda o: _ont_sort_key(o, m)) == ["2", "3", "10", "1"]
 
 
 def test_api_potencias_historico_internal_error_includes_request_id(client, monkeypatch):

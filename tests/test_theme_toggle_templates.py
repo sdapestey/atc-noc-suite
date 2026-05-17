@@ -7,9 +7,44 @@ def test_noc_head_includes_theme_bootstrap_and_script():
     assert "prefers-color-scheme: dark" in tpl
     assert "data-theme" in tpl
     assert "js/theme-toggle.js" in tpl
+    assert "js/noc-clock.js" in tpl
 
 
 def test_noc_topbar_renders_theme_toggle_button():
     tpl = Path("templates/partials/noc_topbar.html").read_text(encoding="utf-8")
     assert "data-theme-toggle" in tpl
     assert "Modo: Dark" in tpl
+    assert "data-noc-clock" in tpl
+    assert "page_generated_at" not in tpl
+    assert "noc_dashboard_credits" not in tpl
+    assert "noc-dashboard-credits" not in tpl
+    assert "page_attribution" not in tpl
+    assert "page-attribution" not in tpl
+    assert "Gimenez" not in tpl
+    assert "Jeelbert" not in tpl
+    assert "motion.div" not in tpl
+
+
+def test_head_leaflet_partial_in_map_pages(client):
+    for path in ("/", "/dashboard/rama", "/dashboard/camino-optico"):
+        html = client.get(path).get_data(as_text=True)
+        assert "leaflet@1.9.4" in html, path
+        assert "noc-map-tiles.js" in html, path
+        assert "leaflet-scroll-guard.js" in html, path
+
+
+def test_dashboard_pages_have_no_attribution_line(client):
+    paths = [
+        "/",
+        "/dashboard/olt",
+        "/dashboard/calidad-inventario",
+        "/dashboard/rama",
+        "/dashboard/potencias-historico",
+        "/dashboard/camino-optico",
+    ]
+    for path in paths:
+        r = client.get(path)
+        assert r.status_code == 200, path
+        html = r.get_data(as_text=True)
+        assert "page-attribution" not in html, path
+        assert "page_attribution.html" not in html, path

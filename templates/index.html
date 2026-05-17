@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="es">
-{# Celda TX/RX/Estado Altiplano (misma lógica ONUs por CTO y por RAMA) #}
+{# Celda TX/RX/Estado Altiplano (misma lógica CTO y por RAMA) #}
 {% macro index_potencias_cells(sec, aid, st) -%}
             {% if st == 'FREE' %}
             <td id="{{ sec }}-tx-{{ aid }}" class="mono">-</td>
@@ -16,20 +16,106 @@
             <td id="{{ sec }}-st-{{ aid }}" class="mono status-pending">Cargando...</td>
             {% endif %}
 {%- endmacro %}
+
+{# Toolbar de chips Operador (misma marca que abajo; se reutiliza antes de la fila RAMA en consulta por CTO). #}
+{% macro consulta_operador_toolbar_section(c) -%}
+<div class="toolbar toolbar--consulta-filters" aria-label="Filtros por operador">
+  <div class="chip-row">
+    <span class="muted"><strong>Operador</strong></span>
+    <button class="chip" type="button" data-chip-operador="ALL" aria-pressed="true" onclick="filtrarOperador('ALL')">Todos</button>
+    {% if not c.es_rama %}
+    {% for op in sort_consulta_operadores_chips(c.tabla_cto | map(attribute='OPERADOR')) %}
+    <button class="chip" type="button" data-chip-operador="{{ op }}" aria-pressed="false" onclick="filtrarOperador('{{ op }}')">{{ op }}</button>
+    {% endfor %}
+    {% else %}
+    {% set ops = [] %}
+    {% for cx, rows in c.tabla_cto.items() %}
+      {% for r in rows %}
+        {% if r.OPERADOR not in ops %}
+          {% set _ = ops.append(r.OPERADOR) %}
+        {% endif %}
+      {% endfor %}
+    {% endfor %}
+    {% for op in sort_consulta_operadores_chips(ops) %}
+    <button class="chip" type="button" data-chip-operador="{{ op }}" aria-pressed="false" onclick="filtrarOperador('{{ op }}')">{{ op }}</button>
+    {% endfor %}
+    {% endif %}
+  </div>
+</div>
+{%- endmacro %}
+
+{% macro consulta_cto_sitio_rama_rows(tabla_cto) -%}
+{% if tabla_cto and tabla_cto|length > 0 %}
+<div class="consulta-cto-ficha__row">
+  <span class="consulta-cto-ficha__label">Sitio principal</span>
+  <span class="consulta-cto-ficha__value">{{ tabla_cto[0].PRINCIPAL }}</span>
+</div>
+<div class="consulta-cto-ficha__row">
+  <span class="consulta-cto-ficha__label">RAMA (path ATC)</span>
+  {% if tabla_cto[0].RAMA %}
+  <span class="consulta-cto-ficha__value">
+    <form method="POST" class="consulta-cto-ficha__rama-form">
+      <input type="hidden" name="consulta_modo" value="individual">
+      <input type="hidden" name="value" value="{{ tabla_cto[0].RAMA }}">
+      <button class="consulta-cto-ficha__link mono" type="submit" title="Ver todas las ONU bajo esta RAMA">{{ tabla_cto[0].RAMA }}</button>
+    </form>
+  </span>
+  {% else %}
+  <span class="consulta-cto-ficha__value consulta-cto-ficha__value--muted">— sin path ATC en inventario</span>
+  {% endif %}
+</div>
+{% endif %}
+{%- endmacro %}
+
+{% macro consulta_rama_path_row(c, sec, rama_ctx, n_cto, n_ont, mapa_mode) -%}
+<div class="consulta-cto-head-row consulta-rama-path-row" role="region" aria-label="RAMA (path ATC)">
+  <span class="rama-row-head">
+    <span class="rama-row-kind rama-row-kind--rama">RAMA</span>
+    <span class="mono rama-row-label" title="{% if rama_ctx %}{{ rama_ctx }}{% else %}Sin path ATC en inventario{% endif %}">{% if rama_ctx %}{{ rama_ctx }}{% else %}—{% endif %}</span>
+  </span>
+  <span class="consulta-panel__summary-metrics{% if c.semaforo_deferred %} consulta-semaforo-pending{% endif %}">
+    {% if n_cto > 0 %}<span class="badge hide-sm">CTO {{ n_cto }}</span>{% endif %}
+    {% if n_ont > 0 %}<span class="badge hide-sm">ONT {{ n_ont }}</span>{% endif %}
+    {% if c.semaforo_deferred %}
+    <span class="badge red semaforo-dot hide-sm" title="RX &lt; -27 dBm (vía Altiplano…)" data-semaforo="rojo">…</span>
+    <span class="badge yellow semaforo-dot hide-sm" title="-27 a -25 dBm (vía Altiplano…)" data-semaforo="amarillo">…</span>
+    <span class="badge green semaforo-dot hide-sm" title="RX &gt; -25 dBm (vía Altiplano…)" data-semaforo="verde">…</span>
+    {% else %}
+    {% set sem = c.semaforo_resumen %}
+    <span class="badge red semaforo-dot hide-sm" title="RX &lt; -27 dBm" data-semaforo="rojo">{{ sem.ROJAS }}</span>
+    <span class="badge yellow semaforo-dot hide-sm" title="-27 a -25 dBm" data-semaforo="amarillo">{{ sem.AMARILLAS }}</span>
+    <span class="badge green semaforo-dot hide-sm" title="RX &gt; -25 dBm" data-semaforo="verde">{{ sem.VERDES }}</span>
+    {% endif %}
+  </span>
+  <span class="rama-row-actions consulta-cto-head-row__actions">
+    <button type="button" class="btn" title="Recargar TX/RX vía Altiplano" onclick="consultaRecargarPotenciasDesdeBtn(this);">Consultar RX</button>
+    {% if mapa_mode == 'rama' %}
+    <button type="button" class="btn btn-ghost" data-consulta-toggle-rama-mapa="1" title="Mostrar mapa de CTO en la RAMA" onclick="consultaAbrirMapaRama(this);">Ver mapa</button>
+    {% elif mapa_mode == 'cto' %}
+    <button type="button" class="btn btn-ghost" data-consulta-cto-mapa-details-id="consulta-{{ sec }}-cto-map-details" title="Mostrar mapa de la CTO" onclick="consultaAbrirMapaCto(this);">Ver mapa</button>
+    {% endif %}
+    {% if rama_ctx %}
+    <a
+      class="btn btn-ghost"
+      href="/dashboard/potencias-historico?ratc={{ rama_ctx|urlencode }}&days=30"
+      title="Histórico de potencia para esta rama"
+    >Ver historico</a>
+    {% endif %}
+  </span>
+</div>
+{%- endmacro %}
 <head>
 <meta charset="UTF-8">
 <title>Consulta · ATC NOC Suite</title>
 {% include 'partials/noc_head.html' %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/rama-cto-map.css') }}">
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-<script src="{{ url_for('static', filename='js/noc-map-tiles.js') }}"></script>
-<script src="{{ url_for('static', filename='js/leaflet-scroll-guard.js') }}"></script>
+{% set leaflet_rama_map_css = true %}
+{% include 'partials/head_leaflet.html' %}
 <script src="{{ url_for('static', filename='js/consulta-index-map.js') }}"></script>
 
 <script src="{{ url_for('static', filename='js/noc-tools.js') }}"></script>
 <script>
 let _activeOperador = "ALL";
+let _activeFatStatus = "ALL";
 let _toastTimer = null;
 
 function toast(msg) {
@@ -41,29 +127,55 @@ function toast(msg) {
   _toastTimer = setTimeout(() => el.classList.remove("show"), 1800);
 }
 
-function filtrarOperador(op) {
-  _activeOperador = op;
-  document.querySelectorAll("tr[data-operador]").forEach(row => {
-    row.style.display =
-      (op === "ALL" || row.dataset.operador === op) ? "" : "none";
-  });
+function _normFatStatus(s) {
+  return (s || "").trim().toUpperCase();
+}
 
+function aplicarFiltrosConsulta() {
+  const op = _activeOperador;
+  const st = _normFatStatus(_activeFatStatus);
+  document.querySelectorAll("tr[data-operador]").forEach(row => {
+    const rop = row.dataset.operador || "";
+    const rst = _normFatStatus(row.dataset.fatStatus);
+    const opOk = op === "ALL" || rop === op;
+    const stOk = st === "ALL" || rst === st;
+    row.style.display = opOk && stOk ? "" : "none";
+  });
   document.querySelectorAll("[data-chip-operador]").forEach(btn => {
     const v = btn.getAttribute("data-chip-operador");
     btn.setAttribute("aria-pressed", v === op ? "true" : "false");
   });
 }
 
+function filtrarOperador(op) {
+  _activeOperador = op;
+  aplicarFiltrosConsulta();
+}
+
+function consultaRecargarPotenciasDesdeBtn(btn) {
+  const sec = btn && btn.closest ? btn.closest(".consulta-section") : null;
+  if (!sec) return;
+  const tok = sec.getAttribute("data-query-token") || "";
+  if (!tok) return;
+  toast("Actualizando TX/RX…");
+  cargarPotenciasSeccion(tok, sec);
+}
+
+function consultaRecargarPotenciasSubcto(btn) {
+  const cto = ((btn && btn.getAttribute("data-cto")) || "").trim();
+  const sec = btn && btn.closest ? btn.closest(".consulta-section") : null;
+  const block = btn && btn.closest ? btn.closest(".consulta-cto-block") : null;
+  if (!cto || !sec || !block) return;
+  toast("Actualizando TX/RX…");
+  cargarPotenciasSeccion(cto, sec, block);
+}
+
 function _hasPower(v) {
-  return !(v === null || v === undefined || String(v).trim() === "" || String(v).trim() === "-");
+  return window.NocPower.hasPowerValue(v);
 }
 
 function _formatPowerDbm(v) {
-  if (v === null || v === undefined) return "-";
-  const raw = String(v).trim();
-  if (!raw || raw === "-" || raw === "⏳") return raw || "-";
-  if (/dbm$/i.test(raw)) return raw;
-  return raw + " dBm";
+  return window.NocPower.formatPowerDbm(v);
 }
 
 function _setStatusCell(el, mode) {
@@ -98,9 +210,85 @@ function _filaSaltaPotencias(tr) {
   return st === "FREE" || st === "RESERVED";
 }
 
-function cargarPotenciasSeccion(valor, root) {
+function _parseRxDbmJs(rx) {
+  return window.NocPower.parseRxDbm(rx);
+}
+
+function _clasificarRxDbm(rx) {
+  return window.NocPower.clasificarRxDbm(rx);
+}
+
+function _consultaFilaClearSemaforoHighlight(tr) {
+  if (!tr) return;
+  tr.classList.remove("consulta-fila-sem-rojo", "consulta-fila-sem-amarillo");
+}
+
+/** Resalta toda la fila según RX (misma regla que semáforo): solo rojo y amarillo. */
+function _consultaFilaApplySemaforoHighlight(tr, rx) {
+  if (!tr) return;
+  _consultaFilaClearSemaforoHighlight(tr);
+  const cat = _clasificarRxDbm(rx);
+  if (cat === "rojo") tr.classList.add("consulta-fila-sem-rojo");
+  else if (cat === "amarillo") tr.classList.add("consulta-fila-sem-amarillo");
+}
+
+function _consultaFilaClearSemaforoEnRaiz(root) {
+  root.querySelectorAll("tr.consulta-fila-sem-rojo, tr.consulta-fila-sem-amarillo").forEach((tr) => {
+    _consultaFilaClearSemaforoHighlight(tr);
+  });
+}
+
+function _consultaEsPotenciasTokenPrincipal(root, valor) {
+  const tok = (root.getAttribute("data-query-token") || "").trim();
+  return Boolean(tok && (valor || "").trim() === tok);
+}
+
+function _consultaSemaforoSetCounts(root, rojas, amarillas, verdes) {
+  const wrap = root.querySelector(".consulta-semaforo-pending");
+  if (wrap) wrap.classList.remove("consulta-semaforo-pending");
+  const ro = root.querySelector('.semaforo-dot[data-semaforo="rojo"]');
+  const am = root.querySelector('.semaforo-dot[data-semaforo="amarillo"]');
+  const ve = root.querySelector('.semaforo-dot[data-semaforo="verde"]');
+  if (ro) ro.textContent = String(rojas);
+  if (am) am.textContent = String(amarillas);
+  if (ve) ve.textContent = String(verdes);
+}
+
+/** Actualiza badges del panel (consulta masiva) cuando llegan potencias del token principal. */
+function _consultaSemaforoDesdePotenciasPayload(root, valor, data, pfx) {
+  if (!_consultaEsPotenciasTokenPrincipal(root, valor)) return;
+  if (!root.querySelector(".semaforo-dot[data-semaforo]")) return;
+  let rojas = 0;
+  let amarillas = 0;
+  let verdes = 0;
+  if (data && data.AID) {
+    const cat = _clasificarRxDbm(data.RX);
+    if (cat === "rojo") rojas = 1;
+    else if (cat === "amarillo") amarillas = 1;
+    else if (cat === "verde") verdes = 1;
+  } else if (Array.isArray(data)) {
+    const seen = new Set();
+    data.forEach((r) => {
+      if (!r || r.AID == null) return;
+      const aidKey = String(r.AID);
+      if (seen.has(aidKey)) return;
+      seen.add(aidKey);
+      const stEl = document.getElementById(pfx + "st-" + r.AID);
+      const tr = stEl ? stEl.closest("tr") : null;
+      if (tr && _filaSaltaPotencias(tr)) return;
+      const cat = _clasificarRxDbm(r.RX);
+      if (cat === "rojo") rojas += 1;
+      else if (cat === "amarillo") amarillas += 1;
+      else if (cat === "verde") verdes += 1;
+    });
+  }
+  _consultaSemaforoSetCounts(root, rojas, amarillas, verdes);
+}
+
+function cargarPotenciasSeccion(valor, root, scopeEl) {
   const pre = root.getAttribute("data-section-prefix") || "";
   const pfx = pre ? pre + "-" : "";
+  const scope = scopeEl && scopeEl.querySelectorAll ? scopeEl : root;
 
   const detSt = (root.getAttribute("data-detalle-fat-status") || "").trim().toUpperCase();
   if (detSt === "FREE" || detSt === "RESERVED") {
@@ -116,6 +304,11 @@ function cargarPotenciasSeccion(valor, root) {
       rx.classList.remove("loading");
     }
     if (estadoId) _setStatusCell(estadoId, detSt === "FREE" ? "dash" : "down");
+    const aidDetFree = document.getElementById(pfx + "aid-value");
+    if (aidDetFree) _consultaFilaClearSemaforoHighlight(aidDetFree.closest("tr"));
+    if (_consultaEsPotenciasTokenPrincipal(root, valor) && root.querySelector(".consulta-semaforo-pending")) {
+      _consultaSemaforoSetCounts(root, 0, 0, 0);
+    }
     return Promise.resolve();
   }
 
@@ -126,8 +319,8 @@ function cargarPotenciasSeccion(valor, root) {
     });
   };
   addCells([_potCell(pre, "tx"), _potCell(pre, "rx")]);
-  root.querySelectorAll("[id^='" + pfx + "tx-']").forEach((el) => addCells([el]));
-  root.querySelectorAll("[id^='" + pfx + "rx-']").forEach((el) => addCells([el]));
+  scope.querySelectorAll("[id^='" + pfx + "tx-']").forEach((el) => addCells([el]));
+  scope.querySelectorAll("[id^='" + pfx + "rx-']").forEach((el) => addCells([el]));
   const cellsCarga = cells.filter((el) => {
     const tr = el.closest("tr");
     return !tr || !_filaSaltaPotencias(tr);
@@ -136,7 +329,7 @@ function cargarPotenciasSeccion(valor, root) {
   const statusCells = [];
   const eid = _potCell(pre, "estado-id");
   if (eid) statusCells.push(eid);
-  root.querySelectorAll("[id^='" + pfx + "st-']").forEach((el) => statusCells.push(el));
+  scope.querySelectorAll("[id^='" + pfx + "st-']").forEach((el) => statusCells.push(el));
   const statusCarga = statusCells.filter((el) => {
     const tr = el.closest("tr");
     return !tr || !_filaSaltaPotencias(tr);
@@ -165,7 +358,10 @@ function cargarPotenciasSeccion(valor, root) {
             (_hasPower(data.TX) || _hasPower(data.RX)) ? "up" : "down"
           );
         }
+        const aidDet = document.getElementById(pfx + "aid-value");
+        if (aidDet) _consultaFilaApplySemaforoHighlight(aidDet.closest("tr"), data.RX);
         cellsCarga.forEach((el) => el.classList.remove("loading"));
+        _consultaSemaforoDesdePotenciasPayload(root, valor, data, pfx);
         return;
       }
       if (Array.isArray(data)) {
@@ -174,8 +370,9 @@ function cargarPotenciasSeccion(valor, root) {
           const tx = document.getElementById(pfx + "tx-" + r.AID);
           const rx = document.getElementById(pfx + "rx-" + r.AID);
           const st = document.getElementById(pfx + "st-" + r.AID);
-          const tr = tx ? tx.closest("tr") : null;
+          const tr = (tx || rx) ? (tx || rx).closest("tr") : null;
           if (tr && _filaSaltaPotencias(tr)) {
+            _consultaFilaClearSemaforoHighlight(tr);
             if (st) seen.add(st.id);
             return;
           }
@@ -185,22 +382,35 @@ function cargarPotenciasSeccion(valor, root) {
             _setStatusCell(st, (_hasPower(r.TX) || _hasPower(r.RX)) ? "up" : "down");
             seen.add(st.id);
           }
+          _consultaFilaApplySemaforoHighlight(tr, r.RX);
         });
-        root.querySelectorAll("[id^='" + pfx + "st-']").forEach((el) => {
+        scope.querySelectorAll("[id^='" + pfx + "st-']").forEach((el) => {
           if (seen.has(el.id)) return;
           const tr = el.closest("tr");
           if (tr && _filaSaltaPotencias(tr)) return;
-          if (!seen.has(el.id)) _setStatusCell(el, "down");
+          if (!seen.has(el.id)) {
+            _setStatusCell(el, "down");
+            _consultaFilaClearSemaforoHighlight(tr);
+          }
         });
         cellsCarga.forEach((el) => el.classList.remove("loading"));
-        filtrarOperador(_activeOperador);
+        aplicarFiltrosConsulta();
+        _consultaSemaforoDesdePotenciasPayload(root, valor, data, pfx);
         return;
       }
       cellsCarga.forEach((el) => el.classList.remove("loading"));
+      _consultaFilaClearSemaforoEnRaiz(scope);
+      if (_consultaEsPotenciasTokenPrincipal(root, valor) && root.querySelector(".consulta-semaforo-pending")) {
+        _consultaSemaforoSetCounts(root, 0, 0, 0);
+      }
     })
     .catch(() => {
       cellsCarga.forEach((el) => el.classList.remove("loading"));
       statusCarga.forEach((el) => _setStatusCell(el, "down"));
+      _consultaFilaClearSemaforoEnRaiz(scope);
+      if (_consultaEsPotenciasTokenPrincipal(root, valor) && root.querySelector(".consulta-semaforo-pending")) {
+        _consultaSemaforoSetCounts(root, 0, 0, 0);
+      }
       toast("Error al cargar potencias");
     });
 }
@@ -265,38 +475,50 @@ function cambiarSNDesdeUIBtn(btn) {
   );
 }
 
-/* COPIAR TODO */
+/* Copiar todos los resultados (masivo) */
 function copiarTodo() {
   let texto = "";
+
+  function appendTabla(el) {
+    const style = getComputedStyle(el);
+    if (style.display === "none") return;
+
+    el.querySelectorAll("tr").forEach((row) => {
+      const rStyle = getComputedStyle(row);
+      if (rStyle.display === "none") return;
+
+      const fila = [];
+      row.querySelectorAll("th, td").forEach((cell) => {
+        const cleanCell = cell.cloneNode(true);
+        cleanCell.querySelectorAll("button, .btn, a.btn, .consulta-sn-btn").forEach((actionEl) => actionEl.remove());
+        fila.push(cleanCell.innerText.trim());
+      });
+
+      texto += fila.join("\t") + "\n";
+    });
+
+    texto += "\n";
+  }
 
   document.querySelectorAll(".consulta-section").forEach((section) => {
     const secStyle = getComputedStyle(section);
     if (secStyle.display === "none") return;
 
-    section.querySelectorAll(".cto-header, table").forEach((el) => {
+    section.querySelectorAll(".consulta-cto-block").forEach((block) => {
+      const cto = (block.getAttribute("data-cto") || "").trim();
+      if (cto) texto += "CTO " + cto + "\n";
+      block.querySelectorAll("table").forEach(appendTabla);
+    });
+
+    section.querySelectorAll(".cto-header").forEach((el) => {
       const style = getComputedStyle(el);
       if (style.display === "none") return;
+      texto += el.innerText.trim() + "\n";
+    });
 
-      if (el.classList.contains("cto-header")) {
-        texto += el.innerText.trim() + "\n";
-        return;
-      }
-
-      el.querySelectorAll("tr").forEach((row) => {
-        const rStyle = getComputedStyle(row);
-        if (rStyle.display === "none") return;
-
-        const fila = [];
-        row.querySelectorAll("th, td").forEach((cell) => {
-          const cleanCell = cell.cloneNode(true);
-          cleanCell.querySelectorAll("button, .btn, a.btn, .consulta-sn-btn").forEach((actionEl) => actionEl.remove());
-          fila.push(cleanCell.innerText.trim());
-        });
-
-        texto += fila.join("\t") + "\n";
-      });
-
-      texto += "\n";
+    section.querySelectorAll("table").forEach((table) => {
+      if (table.closest(".consulta-cto-block")) return;
+      appendTabla(table);
     });
 
     texto += "\n";
@@ -318,6 +540,9 @@ function copiarTodo() {
 }
 
 window.addEventListener("load", () => {
+  if (document.querySelector("tr[data-operador][data-fat-status]")) {
+    aplicarFiltrosConsulta();
+  }
   const btnCopiar = document.getElementById("btn-copiar");
   const sections = document.querySelectorAll(".consulta-section");
   const jobs = [];
@@ -332,6 +557,9 @@ window.addEventListener("load", () => {
     Promise.all(jobs)
       .then(() => {
         btnCopiar.disabled = false;
+        if (document.querySelector("tr[data-operador][data-fat-status]")) {
+          aplicarFiltrosConsulta();
+        }
       })
       .catch(() => {
         btnCopiar.disabled = false;
@@ -339,18 +567,40 @@ window.addEventListener("load", () => {
   }
 
   const input = document.getElementById("q");
-  if (input && !input.value) input.focus();
-
-  if (window.initNocPage) {
-    initNocPage({
-      page: "index",
-      searchSelector: "#q",
-      onClear: function () {
-        const q = document.getElementById("q");
-        if (q) q.value = "";
-      },
+  const modoEl = document.getElementById("consulta_modo");
+  const panelInd = document.getElementById("consulta-panel-individual");
+  const panelMas = document.getElementById("consulta-panel-masivo");
+  function consultaSetModo(m) {
+    if (!modoEl || !panelInd || !panelMas) return;
+    modoEl.value = m;
+    const indOn = m === "individual";
+    panelInd.hidden = !indOn;
+    panelMas.hidden = indOn;
+    document.querySelectorAll(".consulta-mode-tab").forEach((btn) => {
+      const on = btn.getAttribute("data-modo") === m;
+      btn.setAttribute("aria-selected", on ? "true" : "false");
     });
+    if (window.initNocPage) {
+      initNocPage({
+        page: "index",
+        searchSelector: indOn ? "#q" : "#qm",
+        onClear: function () {
+          const q = document.getElementById("q");
+          const qm = document.getElementById("qm");
+          if (q) q.value = "";
+          if (qm) qm.value = "";
+        },
+      });
+    }
   }
+  document.querySelectorAll(".consulta-mode-tab").forEach((btn) => {
+    btn.addEventListener("click", () => consultaSetModo(btn.getAttribute("data-modo") || "individual"));
+  });
+  if (modoEl && modoEl.value === "masivo") consultaSetModo("masivo");
+  else consultaSetModo("individual");
+
+  const activeInp = (modoEl && modoEl.value === "masivo") ? document.getElementById("qm") : document.getElementById("q");
+  if (activeInp && !activeInp.value) activeInp.focus();
 
   if (window.consultaInitAllCtoMaps) {
     consultaInitAllCtoMaps();
@@ -359,7 +609,7 @@ window.addEventListener("load", () => {
 </script>
 </head>
 
-<body class="theme-devops">
+<body class="theme-devops page-consulta-index">
 {% include 'partials/splash_overlay.html' %}
 <div class="container">
   <div class="topbar">
@@ -372,11 +622,12 @@ window.addEventListener("load", () => {
         <span class="brand-subtitle__line">
           <strong>Consulta</strong>
           <span class="brand-subtitle__dash" aria-hidden="true">—</span>
-          <span class="brand-subtitle__g"><span class="kbd">Access ID</span><span class="brand-subtitle__punct">,</span></span>
-          <span class="kbd">CTO</span>
+          <span class="brand-subtitle__g"><span class="kbd">Individual</span><span class="brand-subtitle__punct">:</span></span>
+          <span class="kbd">un AID</span><span class="brand-subtitle__punct">,</span>
+          <span class="kbd">una CTO</span>
           <span class="brand-subtitle__junc">o</span>
-          <span class="kbd">RAMA</span>
-          <span class="brand-subtitle__hint">(varios separados por coma)</span>
+          <span class="kbd">una RAMA</span>
+          <span class="brand-subtitle__hint">· Masivo: varias líneas</span>
         </span>
       </small>
     </div>
@@ -385,21 +636,95 @@ window.addEventListener("load", () => {
 
   {% include 'partials/nav_dashboard.html' %}
 
-  <div class="card{% if consulta_row_counts %} card--multi-results{% endif %}">
-    <form method="POST" class="search" autocomplete="off">
-      <div class="field" role="search">
-        <span class="search-icon" aria-hidden="true">⌕</span>
-        <input id="q" name="value" value="{{ value }}" placeholder="Uno o varios: 1051234, 1055678 | varias CTO/RAMA separadas por coma" required>
+  <div class="card consulta-index-card{% if consulta_row_counts %} card--multi-results{% endif %}">
+    <form method="POST" class="search consulta-search-form" autocomplete="off">
+      <div class="consulta-search-card">
+        <p class="consulta-search-lead">Buscá por <strong>Access ID</strong>, <strong>CTO</strong> o <strong>RAMA</strong> — en <em>Masivo</em> podés pegar listas (una por línea).</p>
+        <div class="dash-segment dash-segment--sentence" role="tablist" aria-label="Tipo de consulta">
+          <button type="button" class="dash-segment__btn consulta-mode-tab" role="tab" data-modo="individual" aria-selected="{{ 'true' if consulta_modo != 'masivo' else 'false' }}">Individual</button>
+          <button type="button" class="dash-segment__btn consulta-mode-tab" role="tab" data-modo="masivo" aria-selected="{{ 'true' if consulta_modo == 'masivo' else 'false' }}">Masivo</button>
+        </div>
+        <input type="hidden" name="consulta_modo" id="consulta_modo" value="{{ consulta_modo }}">
+
+        <div class="consulta-query-row">
+          <div class="consulta-query-row__field">
+            <div id="consulta-panel-individual" class="consulta-mode-panel" {% if consulta_modo == 'masivo' %}hidden{% endif %}>
+              <div class="field consulta-field" role="search">
+                <span class="search-icon" aria-hidden="true">⌕</span>
+                <input id="q" name="value" value="{{ value_individual }}" placeholder="Ej. 1058516041 · SM01-FATC-8-101444 · SM01-RATC-0-001592" autocomplete="off">
+              </div>
+            </div>
+            <div id="consulta-panel-masivo" class="consulta-mode-panel" {% if consulta_modo != 'masivo' %}hidden{% endif %}>
+              <div class="field consulta-masivo-field consulta-field" role="search">
+                <span class="search-icon" aria-hidden="true">⌕</span>
+                <textarea id="qm" name="value_masivo" rows="10" class="consulta-masivo-input" placeholder="Un valor por línea (RAMA, CTO o AID). También podés separar por comas en una misma línea.">{{ value_masivo }}</textarea>
+              </div>
+            </div>
+          </div>
+
+          <div class="consulta-search-actions">
+            <div class="consulta-search-actions__primary">
+              <button class="btn btn-primary consulta-btn-buscar" type="submit">Buscar</button>
+              <button class="btn btn-ghost" type="button" id="btn-consulta-limpiar">Limpiar</button>
+            </div>
+            <div class="consulta-search-actions__secondary">
+              <button id="btn-copiar" class="btn" type="button" onclick="copiarTodo()" disabled>Copiar todo</button>
+              {% if value %}
+              <a class="btn btn-ghost consulta-btn-export" href="/export/csv?value={{ value|urlencode }}">Exportar CSV</a>
+              {% endif %}
+            </div>
+          </div>
+        </div>
       </div>
-      <button class="btn btn-primary" type="submit">Buscar</button>
-      <button class="btn btn-ghost" type="button" onclick="document.getElementById('q').value=''; document.getElementById('q').focus();">Limpiar</button>
-      <button id="btn-copiar" class="btn" type="button" onclick="copiarTodo()" disabled>Copiar todo</button>
-      {% if value %}
-      <a class="btn" href="/export/csv?value={{ value|urlencode }}">Exportar CSV</a>
-      {% endif %}
     </form>
+    <script>
+      (function () {
+        var btn = document.getElementById("btn-consulta-limpiar");
+        var clearUrlInd = {{ url_for("index") | tojson }};
+        var clearUrlMas = {{ url_for("index", modo="masivo") | tojson }};
+        if (btn) {
+          btn.addEventListener("click", function () {
+            var m = document.getElementById("consulta_modo");
+            var isMasivo = m && m.value === "masivo";
+            window.location.assign(isMasivo ? clearUrlMas : clearUrlInd);
+          });
+        }
+        var form = document.querySelector(".consulta-search-form");
+        var buscar = form && form.querySelector(".consulta-btn-buscar");
+        if (!form || !buscar) return;
+        var submitting = false;
+        form.addEventListener("submit", function (e) {
+          if (submitting) {
+            e.preventDefault();
+            return;
+          }
+          submitting = true;
+          buscar.setAttribute("aria-busy", "true");
+          buscar.classList.add("pot-btn-loading");
+          buscar.innerHTML = "";
+          var inner = document.createElement("span");
+          inner.className = "pot-btn-loading-inner";
+          var sp = document.createElement("span");
+          sp.className = "pot-txrx-spin";
+          sp.setAttribute("aria-hidden", "true");
+          var lab = document.createElement("span");
+          lab.className = "pot-txrx-label";
+          lab.textContent = "Consultando";
+          inner.appendChild(sp);
+          inner.appendChild(lab);
+          buscar.appendChild(inner);
+        });
+      })();
+    </script>
+
+    {% if consulta_error %}
+    <div class="consulta-error-banner" role="alert">
+      {{ consulta_error }}
+    </div>
+    {% endif %}
 
     {% if consultas and consulta_row_counts %}
+    <div class="consulta-results-head">
     <nav class="consulta-quicknav" aria-label="Saltar a un resultado">
       <span class="consulta-quicknav__label">Resultados</span>
       {% for c in consultas %}
@@ -411,7 +736,7 @@ window.addEventListener("load", () => {
       {% endfor %}
     </nav>
     {% if consulta_ops_merged and consulta_ops_merged|length > 0 %}
-    <div class="toolbar toolbar--consulta-global" aria-label="Filtro global por operador">
+    <div class="toolbar toolbar--consulta-global" aria-label="Filtros globales (operador)">
       <div class="chip-row">
         <span class="muted"><strong>Operador</strong> <span class="consulta-toolbar-hint">(todas las tablas)</span></span>
         <button class="chip" type="button" data-chip-operador="ALL" aria-pressed="true" onclick="filtrarOperador('ALL')">Todos</button>
@@ -421,20 +746,78 @@ window.addEventListener("load", () => {
       </div>
     </div>
     {% endif %}
+    </div>
     {% endif %}
 
     {% if consultas %}
     {% for c in consultas %}
     {% set sec = 's' ~ loop.index0 %}
-    {% set nrows = consulta_row_counts[loop.index0] if consulta_row_counts else 0 %}
     <section id="consulta-{{ sec }}" class="consulta-section{% if consulta_row_counts %} consulta-section--multi{% endif %}" data-section-prefix="{{ sec }}" data-query-token="{{ c.token }}"{% if c.resultado %} data-detalle-fat-status="{{ c.resultado.Status }}"{% endif %}>
       {% if consulta_row_counts %}
+      {% set tu = (c.token or '')|upper %}
+      {% set ns_cnt = namespace(cto=0, ont=0) %}
+      {% if c.es_rama and c.tabla_cto %}
+        {% set ns_cnt.cto = c.tabla_cto|length %}
+        {% for _k, rows in c.tabla_cto.items() %}
+          {% set ns_cnt.ont = ns_cnt.ont + (rows|length) %}
+        {% endfor %}
+      {% elif c.tabla_cto and not c.es_rama %}
+        {% set ns_cnt.cto = 1 %}
+        {% set ns_cnt.ont = c.tabla_cto|length %}
+      {% elif c.resultado %}
+        {% set ns_cnt.cto = 1 if (c.resultado.CTO and c.resultado.CTO != '—') else 0 %}
+        {% set ns_cnt.ont = 1 %}
+      {% endif %}
       <details class="consulta-panel" open>
-      <summary class="consulta-panel__summary">
-        <span class="consulta-panel__ix">#{{ loop.index }}</span>
-        <span class="mono consulta-panel__token" title="{{ c.token }}">{{ c.token }}</span>
-        <span class="consulta-panel__count">{{ nrows }} fila{% if nrows != 1 %}s{% endif %}</span>
-        <span class="consulta-panel__hint" aria-hidden="true">Clic para expandir o plegar</span>
+      <summary class="consulta-panel__summary consulta-panel__summary--dash">
+        <span class="rama-row-head">
+          <span class="consulta-panel__summary-ix" aria-hidden="true">#{{ loop.index }}</span>
+          {% if c.es_rama %}
+          <span class="rama-row-kind rama-row-kind--rama">RAMA</span>
+          {% elif c.resultado %}
+          <span class="rama-row-kind rama-row-kind--aid">AID</span>
+          {% elif 'FATC' in tu %}
+          <span class="rama-row-kind rama-row-kind--cto">CTO</span>
+          {% elif 'RATC' in tu %}
+          <span class="rama-row-kind rama-row-kind--rama">RAMA</span>
+          {% else %}
+          <span class="rama-row-kind rama-row-kind--query">CONSULTA</span>
+          {% endif %}
+          <span class="arrow" aria-hidden="true">▶</span>
+          <span class="mono rama-row-label consulta-panel__token" title="{{ c.token }}">{{ c.token }}</span>
+        </span>
+        <span class="consulta-panel__summary-metrics{% if c.semaforo_deferred %} consulta-semaforo-pending{% endif %}">
+          {% if ns_cnt.cto > 0 %}<span class="badge hide-sm">CTO {{ ns_cnt.cto }}</span>{% endif %}
+          {% if ns_cnt.ont > 0 %}<span class="badge hide-sm">ONT {{ ns_cnt.ont }}</span>{% endif %}
+          {% if c.semaforo_deferred %}
+          <span class="badge red semaforo-dot hide-sm" title="RX &lt; -27 dBm (vía Altiplano…)" data-semaforo="rojo">…</span>
+          <span class="badge yellow semaforo-dot hide-sm" title="-27 a -25 dBm (vía Altiplano…)" data-semaforo="amarillo">…</span>
+          <span class="badge green semaforo-dot hide-sm" title="RX &gt; -25 dBm (vía Altiplano…)" data-semaforo="verde">…</span>
+          {% else %}
+          {% set sem = c.semaforo_resumen %}
+          <span class="badge red semaforo-dot hide-sm" title="RX &lt; -27 dBm" data-semaforo="rojo">{{ sem.ROJAS }}</span>
+          <span class="badge yellow semaforo-dot hide-sm" title="-27 a -25 dBm" data-semaforo="amarillo">{{ sem.AMARILLAS }}</span>
+          <span class="badge green semaforo-dot hide-sm" title="RX &gt; -25 dBm" data-semaforo="verde">{{ sem.VERDES }}</span>
+          {% endif %}
+        </span>
+        <span class="consulta-panel__summary-tail">
+          <span class="consulta-panel__hint" aria-hidden="true">Clic para expandir o plegar</span>
+          <span class="rama-row-actions consulta-panel__summary-actions" onclick="event.stopPropagation();">
+            <button type="button" class="btn" title="Recargar TX/RX vía Altiplano" onclick="event.stopPropagation(); consultaRecargarPotenciasDesdeBtn(this);">Consultar RX</button>
+            {% if c.ruta.rama %}
+            {% if consulta_row_counts %}
+            <button type="button" class="btn btn-ghost" data-consulta-toggle-rama-mapa="1" title="Mostrar mapa de CTO en la RAMA" onclick="event.stopPropagation(); consultaAbrirMapaRama(this);">Ver mapa</button>
+            {% endif %}
+            <a
+              class="btn btn-ghost"
+              href="/dashboard/potencias-historico?ratc={{ c.ruta.rama|urlencode }}&days=30"
+              title="Histórico de potencia para esta rama"
+            >Ver historico</a>
+            {% elif c.ruta.cto or (c.resultado and c.resultado.CTO and c.resultado.CTO != '—') %}
+            <button type="button" class="btn btn-ghost" data-consulta-cto-mapa-details-id="consulta-{{ sec }}-cto-map-details" title="Mostrar mapa de la CTO" onclick="event.stopPropagation(); consultaAbrirMapaCto(this);">Ver mapa</button>
+            {% endif %}
+          </span>
+        </span>
       </summary>
       <div class="consulta-panel__body-anim" data-consulta-panel-anim>
       <div class="consulta-panel__body">
@@ -467,6 +850,7 @@ window.addEventListener("load", () => {
         <span>›</span>
 
         <form method="POST">
+          <input type="hidden" name="consulta_modo" value="individual">
           <input type="hidden" name="value" value="{{ c.resultado.CTO }}">
           <button class="crumb-btn" type="submit">{{ c.resultado.CTO }}</button>
         </form>
@@ -474,6 +858,7 @@ window.addEventListener("load", () => {
         <span>›</span>
         {% if c.resultado.RAMA %}
         <form method="POST">
+          <input type="hidden" name="consulta_modo" value="individual">
           <input type="hidden" name="value" value="{{ c.resultado.RAMA }}">
           <button class="crumb-btn" type="submit">{{ c.resultado.RAMA }}</button>
         </form>
@@ -483,140 +868,99 @@ window.addEventListener("load", () => {
       </div>
 
       {% elif c.ruta.cto %}
-      {% if c.tabla_cto and c.tabla_cto|length > 0 %}
-      <div class="ubicacion-cto consulta-ubicacion-card" role="region" aria-label="Ubicación topológica">
-        <div class="consulta-ubicacion-grid">
-          <div class="row">
-            <span class="label">Sitio principal</span>
-            <span class="mono">{{ c.tabla_cto[0].PRINCIPAL }}</span>
-          </div>
-          <div class="row">
-            <span class="label">RAMA (path ATC)</span>
-            {% if c.tabla_cto[0].RAMA %}
-            <form method="POST">
-              <input type="hidden" name="value" value="{{ c.tabla_cto[0].RAMA }}">
-              <button class="crumb-btn mono" type="submit" title="Ver todas las ONU bajo esta RAMA">{{ c.tabla_cto[0].RAMA }}</button>
-            </form>
-            {% else %}
-            <span class="muted">— sin path ATC en inventario</span>
-            {% endif %}
-          </div>
-          <div class="row consulta-ubicacion-row--full">
-            <span class="label">CTO consultada</span>
-            <span class="mono">{{ c.ruta.cto }}</span>
-            {% if c.cto_maps_url %}
-            <a class="dash-link" href="{{ c.cto_maps_url }}" target="_blank" rel="noopener noreferrer">Ver en Google Maps</a>
-            {% else %}
-            <span class="muted">Sin coordenadas</span>
-            {% endif %}
-          </div>
-        </div>
-        <div class="consulta-ubicacion-actions">
-          <a class="dash-link" href="/dashboard/rama?q={{ c.ruta.cto|urlencode }}">Abrir esta CTO en el dashboard RAMA (árbol)</a>
-        </div>
-      </div>
-      {% if c.ruta.cto %}
-      <div class="consulta-mapa-cto-card" data-consulta-cto-map data-cto="{{ c.ruta.cto }}">
-        <div class="consulta-mapa-cto-head">
-          <span class="consulta-mapa-cto-title">Ubicación (CTO)</span>
-        </div>
-        {% if c.cto_postal_address %}
-        <p class="muted">Dirección: {{ c.cto_postal_address }}</p>
+      {% if (c.tabla_cto or c.es_rama) and consulta_ops_merged is none %}
+      {{ consulta_operador_toolbar_section(c) }}
+      {% endif %}
+      <div class="consulta-cto-head-row" role="region" aria-label="Consulta por CTO">
+        <span class="rama-row-head">
+          <span class="rama-row-kind rama-row-kind--cto">CTO</span>
+          <span class="mono rama-row-label">{{ c.ruta.cto }}</span>
+        </span>
+        {% if c.tabla_cto and c.tabla_cto|length > 0 %}
+        <span class="badge hide-sm">ONT {{ c.tabla_cto|length }}</span>
         {% endif %}
-        <p class="consulta-cto-map-msg" aria-live="polite"></p>
-        <div class="rama-cto-map-canvas consulta-mapa-cto-leaflet" data-consulta-cto-mapa-canvas hidden></div>
+        <span class="rama-row-actions consulta-cto-head-row__actions">
+          <button type="button" class="btn" title="Recargar TX/RX vía Altiplano" onclick="consultaRecargarPotenciasDesdeBtn(this);">Consultar RX</button>
+          <button type="button" class="btn btn-ghost" data-consulta-cto-mapa-details-id="consulta-{{ sec }}-cto-map-details" title="Mostrar mapa de la CTO" onclick="consultaAbrirMapaCto(this);">Ver mapa</button>
+          <a class="btn btn-ghost" href="/dashboard/rama?q={{ c.ruta.cto|urlencode }}" title="Árbol RAMA / CTO">Árbol RAMA</a>
+        </span>
       </div>
+      <div class="consulta-cto-ficha" aria-label="Información de la CTO">
+        {{ consulta_cto_sitio_rama_rows(c.tabla_cto) }}
+        {% if c.cto_postal_address %}
+        <div class="consulta-cto-ficha__row">
+          <span class="consulta-cto-ficha__label">Dirección</span>
+          <span class="consulta-cto-ficha__value">{{ c.cto_postal_address }}</span>
+        </div>
+        {% else %}
+        <div class="consulta-cto-ficha__row consulta-cto-ficha__row--loading" data-consulta-cto-postal-fetch data-cto="{{ c.ruta.cto }}" aria-live="polite">
+          <span class="consulta-cto-ficha__label">Dirección</span>
+          <span class="consulta-cto-ficha__value consulta-cto-ficha__value--muted">Buscando dirección…</span>
+        </div>
+        {% endif %}
+      </div>
+      {% if c.tabla_cto and c.tabla_cto|length > 0 %}
+      {% if c.ruta.cto %}
+      <details class="consulta-mapa-cto-details consulta-mapa-cto-details--until-ver-mapa" id="consulta-{{ sec }}-cto-map-details">
+        <summary class="consulta-mapa-details__summary">
+          <span class="consulta-mapa-cto-title">Ubicación (CTO)</span>
+          <span class="consulta-mapa-details__chev muted" aria-hidden="true">▶</span>
+        </summary>
+        <div class="consulta-mapa-cto-card" data-consulta-cto-map data-cto="{{ c.ruta.cto }}">
+          <p class="consulta-cto-map-msg" aria-live="polite"></p>
+          <div class="rama-cto-map-canvas consulta-mapa-cto-leaflet" data-consulta-cto-mapa-canvas hidden></div>
+        </div>
+      </details>
       {% endif %}
       {% else %}
-      <div class="breadcrumb">
-        <strong>CTO:</strong>
-        <span class="mono">{{ c.ruta.cto }}</span>
-        <span class="muted">— sin ONU en inventario para esta CTO.</span>
-      </div>
+      <p class="muted consulta-cto-sin-onu-note">Sin ONU en inventario para esta CTO.</p>
       {% if c.ruta.cto %}
-      <div class="consulta-mapa-cto-card" data-consulta-cto-map data-cto="{{ c.ruta.cto }}">
-        <div class="consulta-mapa-cto-head">
+      <details class="consulta-mapa-cto-details consulta-mapa-cto-details--until-ver-mapa" id="consulta-{{ sec }}-cto-map-details">
+        <summary class="consulta-mapa-details__summary">
           <span class="consulta-mapa-cto-title">Ubicación (CTO)</span>
+          <span class="consulta-mapa-details__chev muted" aria-hidden="true">▶</span>
+        </summary>
+        <div class="consulta-mapa-cto-card" data-consulta-cto-map data-cto="{{ c.ruta.cto }}">
+          <p class="consulta-cto-map-msg" aria-live="polite"></p>
+          <div class="rama-cto-map-canvas consulta-mapa-cto-leaflet" data-consulta-cto-mapa-canvas hidden></div>
         </div>
-        {% if c.cto_postal_address %}
-        <p class="muted">Dirección: {{ c.cto_postal_address }}</p>
-        {% endif %}
-        <p class="consulta-cto-map-msg" aria-live="polite"></p>
-        <div class="rama-cto-map-canvas consulta-mapa-cto-leaflet" data-consulta-cto-mapa-canvas hidden></div>
-      </div>
+      </details>
       {% endif %}
       {% endif %}
 
-      {% elif c.ruta.rama %}
-      <div class="breadcrumb">
-        <strong>Ruta:</strong>
-        <form method="POST">
-          <input type="hidden" name="value" value="{{ c.ruta.rama }}">
-          <button class="crumb-btn" type="submit">{{ c.ruta.rama }}</button>
-        </form>
-        <a
-          class="dash-link"
-          href="/dashboard/potencias-historico?ratc={{ c.ruta.rama|urlencode }}&days=30"
-          title="Histórico de potencia para esta rama"
-        >Ver historico</a>
-      </div>
-      <div
-        class="consulta-mapa-rama-card"
-        data-consulta-rama-search-map
-        data-rama="{{ c.ruta.rama }}"
-        aria-label="Mapa de CTO en la RAMA"
-      >
-        <div class="consulta-mapa-rama-head">
-          <span class="consulta-mapa-rama-title">Mapa — CTO en esta RAMA</span>
-        </div>
-        <p class="consulta-rama-mapa-msg" aria-live="polite"></p>
-        <div class="rama-mapa-canvas consulta-mapa-rama-leaflet" data-consulta-rama-mapa-canvas hidden></div>
-        <p class="consulta-rama-mapa-footer" aria-live="polite"></p>
-      </div>
       {% endif %}
 
       {% if c.tabla_cto or c.es_rama %}
       {% if consulta_ops_merged is none %}
-      <div class="toolbar">
-        <div class="chip-row">
-          <span class="muted"><strong>Operador</strong></span>
-          <button class="chip" type="button" data-chip-operador="ALL" aria-pressed="true" onclick="filtrarOperador('ALL')">Todos</button>
-
-          {% if not c.es_rama %}
-          {% for op in c.tabla_cto | map(attribute='OPERADOR') | unique %}
-          <button class="chip" type="button" data-chip-operador="{{ op }}" aria-pressed="false" onclick="filtrarOperador('{{ op }}')">{{ op }}</button>
-          {% endfor %}
-          {% else %}
-          {% set ops = [] %}
-          {% for cx, rows in c.tabla_cto.items() %}
-            {% for r in rows %}
-              {% if r.OPERADOR not in ops %}
-                {% set _ = ops.append(r.OPERADOR) %}
-              {% endif %}
-            {% endfor %}
-          {% endfor %}
-          {% for op in ops %}
-          <button class="chip" type="button" data-chip-operador="{{ op }}" aria-pressed="false" onclick="filtrarOperador('{{ op }}')">{{ op }}</button>
-          {% endfor %}
-          {% endif %}
-        </div>
-      </div>
+      {% if not c.ruta.cto %}
+      {{ consulta_operador_toolbar_section(c) }}
+      {% endif %}
       {% endif %}
       {% endif %}
 
       <div class="content">
         {% if c.resultado %}
         {% if c.resultado.CTO and c.resultado.CTO != "—" %}
-        <div class="consulta-mapa-cto-card" data-consulta-cto-map data-cto="{{ c.resultado.CTO }}">
-          <div class="consulta-mapa-cto-head">
+        {% if c.cto_postal_address %}
+        <p class="hint rama-cto-address consulta-cto-postal-row" aria-label="Dirección postal">
+          <span class="rama-cto-address__label">Dirección</span>
+          <span class="rama-cto-address__value">{{ c.cto_postal_address }}</span>
+        </p>
+        {% else %}
+        <p class="hint rama-cto-address consulta-cto-postal-row" data-consulta-cto-postal-fetch data-cto="{{ c.resultado.CTO }}" aria-live="polite">
+          <span class="rama-cto-address__loading">Buscando dirección…</span>
+        </p>
+        {% endif %}
+        <details class="consulta-mapa-cto-details consulta-mapa-cto-details--until-ver-mapa" id="consulta-{{ sec }}-cto-map-details">
+          <summary class="consulta-mapa-details__summary">
             <span class="consulta-mapa-cto-title">Ubicación (CTO)</span>
+            <span class="consulta-mapa-details__chev muted" aria-hidden="true">▶</span>
+          </summary>
+          <div class="consulta-mapa-cto-card" data-consulta-cto-map data-cto="{{ c.resultado.CTO }}">
+            <p class="consulta-cto-map-msg" aria-live="polite"></p>
+            <div class="rama-cto-map-canvas consulta-mapa-cto-leaflet" data-consulta-cto-mapa-canvas hidden></div>
           </div>
-          {% if c.cto_postal_address %}
-          <p class="muted">Dirección: {{ c.cto_postal_address }}</p>
-          {% endif %}
-          <p class="consulta-cto-map-msg" aria-live="polite"></p>
-          <div class="rama-cto-map-canvas consulta-mapa-cto-leaflet" data-consulta-cto-mapa-canvas hidden></div>
-        </div>
+        </details>
         {% endif %}
         <div class="section-title">
           <h2>Detalle{% if c.resultado.get('fuente_detalle') == 'bajada_inventario' %} <span class="muted source-note">(aux.bajada_inventario)</span>{% endif %}</h2>
@@ -627,7 +971,7 @@ window.addEventListener("load", () => {
         </div>
         <div class="table-wrap">
         <table class="table-kv">
-          <tr><th>AID</th><td class="mono">{{ c.resultado.AID }}</td></tr>
+          <tr><th>AID</th><td id="{{ sec }}-aid-value" class="mono">{{ c.resultado.AID }}</td></tr>
           <tr><th>Operador</th><td>{{ c.resultado.OPERADOR }}</td></tr>
           <tr><th>Status</th><td>{{ c.resultado.Status }}</td></tr>
           <tr><th>CTO</th><td class="mono">{{ c.resultado.CTO }}</td></tr>
@@ -668,7 +1012,7 @@ window.addEventListener("load", () => {
 
         {% if c.tabla_cto and not c.es_rama %}
         <div class="section-title">
-          <h2>ONUs por CTO</h2>
+          <h2>CTO</h2>
           <span class="muted">{% if consulta_row_counts and consulta_ops_merged and consulta_ops_merged|length > 0 %}Filtro de operador arriba aplica a todas las tablas{% else %}Tip: filtrá por operador arriba{% endif %}</span>
         </div>
         <div class="table-wrap">
@@ -695,27 +1039,79 @@ window.addEventListener("load", () => {
         {% endif %}
 
         {% if c.es_rama %}
+        {% if not consulta_row_counts %}
+        {% set rama_ctx_r = (c.ruta.rama or '')|trim %}
+        {% set nsr = namespace(cto=(c.tabla_cto|length if c.tabla_cto else 0), ont=0) %}
+        {% if c.tabla_cto %}
+        {% for _rk, rows_agg in c.tabla_cto.items() %}
+          {% set nsr.ont = nsr.ont + (rows_agg|length) %}
+        {% endfor %}
+        {% endif %}
+        {{ consulta_rama_path_row(c, sec, rama_ctx_r, nsr.cto, nsr.ont, 'rama') }}
+        {% endif %}
+        {% if c.ruta.rama %}
+        <div
+          class="consulta-mapa-rama-details consulta-mapa-rama-details--until-ver-mapa"
+          id="consulta-{{ sec }}-rama-map-details"
+          aria-label="Mapa — CTO en esta RAMA"
+        >
+          <div
+            class="consulta-mapa-rama-card"
+            data-consulta-rama-search-map
+            data-rama="{{ c.ruta.rama }}"
+          >
+            <p class="consulta-rama-mapa-msg" aria-live="polite"></p>
+            <div class="rama-mapa-canvas consulta-mapa-rama-leaflet" data-consulta-rama-mapa-canvas hidden></div>
+            <p class="consulta-rama-mapa-footer" aria-live="polite"></p>
+          </div>
+        </div>
+        {% endif %}
         {% for cto, rows in c.tabla_cto.items() %}
-        <div class="cto-header">CTO <span class="mono">{{ cto }}</span></div>
-        <div class="table-wrap">
-        <table>
-          <tr>
-            <th>OUT</th><th>AID</th><th>OPERATOR</th><th>SITIO</th><th>ONT</th><th>STATUS</th>
-            <th>TX</th><th>RX</th><th>ESTADO</th>
-          </tr>
-          {% for r in rows %}
-          {% set st = r.STATUS %}
-          <tr data-operador="{{ r.OPERADOR }}" data-aid="{{ r.AID }}" data-fat-status="{{ st }}">
-            <td class="mono">{{ loop.index }}</td>
-            <td class="mono">{% if st == 'FREE' %}-{% else %}{{ r.AID }}{% endif %}</td>
-            <td>{% if st == 'FREE' %}-{% else %}{{ r.OPERADOR }}{% endif %}</td>
-            <td>{{ r.PRINCIPAL or "—" }}</td>
-            <td class="mono">{{ r.ONT }}</td>
-            <td>{{ st }}</td>
-            {{ index_potencias_cells(sec, r.AID, st) }}
-          </tr>
-          {% endfor %}
-        </table>
+        <div class="consulta-cto-block" data-cto="{{ cto }}">
+          <div class="consulta-cto-head-row consulta-cto-head-row--subrama" role="region" aria-label="CTO en esta RAMA">
+            <span class="rama-row-head">
+              <span class="rama-row-kind rama-row-kind--cto">CTO</span>
+              <span class="mono rama-row-label">{{ cto }}</span>
+            </span>
+            <span class="badge hide-sm">ONT {{ rows|length }}</span>
+            <span class="rama-row-actions consulta-cto-head-row__actions">
+              <button type="button" class="btn" data-cto="{{ cto }}" title="Recargar TX/RX de esta CTO" onclick="consultaRecargarPotenciasSubcto(this);">Consultar RX</button>
+              <button type="button" class="btn btn-ghost" data-consulta-cto-mapa-details-id="consulta-{{ sec }}-rama-cto-map-{{ loop.index0 }}" title="Mostrar mapa de la CTO" onclick="consultaAbrirMapaCto(this);">Ver mapa</button>
+            </span>
+          </div>
+          <p class="hint rama-cto-address consulta-cto-postal-row" data-consulta-cto-postal-fetch data-cto="{{ cto }}" aria-live="polite">
+            <span class="rama-cto-address__loading">Buscando dirección…</span>
+          </p>
+          <details class="consulta-mapa-cto-details consulta-mapa-cto-details--until-ver-mapa" id="consulta-{{ sec }}-rama-cto-map-{{ loop.index0 }}">
+            <summary class="consulta-mapa-details__summary">
+              <span class="consulta-mapa-cto-title">Ubicación (CTO)</span>
+              <span class="consulta-mapa-details__chev muted" aria-hidden="true">▶</span>
+            </summary>
+            <div class="consulta-mapa-cto-card" data-consulta-cto-map data-cto="{{ cto }}">
+              <p class="consulta-cto-map-msg" aria-live="polite"></p>
+              <div class="rama-cto-map-canvas consulta-mapa-cto-leaflet" data-consulta-cto-mapa-canvas hidden></div>
+            </div>
+          </details>
+          <div class="table-wrap">
+          <table>
+            <tr>
+              <th>OUT</th><th>AID</th><th>OPERATOR</th><th>SITIO</th><th>ONT</th><th>STATUS</th>
+              <th>TX</th><th>RX</th><th>ESTADO</th>
+            </tr>
+            {% for r in rows %}
+            {% set st = r.STATUS %}
+            <tr data-operador="{{ r.OPERADOR }}" data-aid="{{ r.AID }}" data-fat-status="{{ st }}">
+              <td class="mono">{{ loop.index }}</td>
+              <td class="mono">{% if st == 'FREE' %}-{% else %}{{ r.AID }}{% endif %}</td>
+              <td>{% if st == 'FREE' %}-{% else %}{{ r.OPERADOR }}{% endif %}</td>
+              <td>{{ r.PRINCIPAL or "—" }}</td>
+              <td class="mono">{{ r.ONT }}</td>
+              <td>{{ st }}</td>
+              {{ index_potencias_cells(sec, r.AID, st) }}
+            </tr>
+            {% endfor %}
+          </table>
+          </div>
         </div>
         {% endfor %}
         {% endif %}
@@ -734,13 +1130,16 @@ window.addEventListener("load", () => {
     </section>
     {% endfor %}
 
+    {% elif consulta_error %}
+    {# mensaje ya mostrado arriba #}
     {% elif value %}
     <div class="muted empty-state-note">
       No se interpretó ningún término de búsqueda (revisá comas o espacios).
     </div>
     {% else %}
     <div class="muted empty-state-note">
-      Ingresá uno o más valores separados por coma y tocá <strong>Buscar</strong>. Las potencias TX/RX se cargan automáticamente.
+      <strong>Individual:</strong> un Access ID, una CTO o una RAMA; tocá <strong>Buscar</strong> y se cargan las potencias TX/RX cuando correspondan.
+      <strong>Masivo:</strong> pegá varias líneas en la pestaña «Masivo» (RAMA, CTO o AID).
     </div>
     {% endif %}
   </div>

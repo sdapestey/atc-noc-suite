@@ -51,8 +51,8 @@ def test_index_cto_table_omits_sn_column(client, monkeypatch):
     r = client.post("/", data={"value": "TG01-FATC-8-100987"})
     assert r.status_code == 200
     html = r.get_data(as_text=True)
-    assert "ONUs por CTO" in html
-    start = html.index("ONUs por CTO")
+    assert "<h2>CTO</h2>" in html
+    start = html.index("<h2>CTO</h2>")
     bloque = html[start : start + 4500]
     assert "<th>SN</th>" not in bloque
     assert "04EDFBADD5F81" not in bloque
@@ -89,8 +89,8 @@ def test_index_rama_table_has_sitio_status_without_sn(client, monkeypatch):
     assert "Tigre" in html
     assert "IN SERVICE" in html
     assert "data-consulta-rama-search-map" in html
-    assert "Mapa — CTO en esta RAMA" in html
+    assert 'aria-label="Mapa — CTO en esta RAMA"' in html
     assert "TG01-RATC-0-000308" in html
-    assert "data-consulta-cto-map" not in html
+    assert "data-consulta-cto-map" in html
     assert "Ver historico" in html
     assert "/dashboard/potencias-historico?ratc=TG01-RATC-0-000308" in html

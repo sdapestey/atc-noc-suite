@@ -1,0 +1,562 @@
+{
+    "info": {
+        "_postman_id": "aa52d350-6008-457a-a7a0-27a09c610a85",
+        "name": "TASA - PROD ALTIPLANO",
+        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+        "_exporter_id": "50892776",
+        "_collection_link": "https://go.postman.co/collection/50892776-aa52d350-6008-457a-a7a0-27a09c610a85?source=collection_link"
+    },
+    "item": [
+        {
+            "name": "Configure",
+            "item": [
+                {
+                    "name": "GetAccessToken",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "pm.environment.set(\"access-token\", pm.response.json().accessToken);",
+                                    "pm.environment.set(\"refresh-token\", pm.response.json().refreshToken);",
+                                    "pm.test(\"Status code is 200\", function () {",
+                                    "    pm.response.to.have.status(200);",
+                                    "});"
+                                ],
+                                "type": "text/javascript"
+                            }
+                        }
+                    ],
+                    "request": {
+                        "auth": {
+                            "type": "basic",
+                            "basic": [
+                                {
+                                    "key": "password",
+                                    "value": "{{password}}",
+                                    "type": "string"
+                                },
+                                {
+                                    "key": "username",
+                                    "value": "{{username}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Basic YWRtaW51c2VyOnBhc3N3b3Jk"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": ""
+                        },
+                        "url": {
+                            "raw": "{{protocol}}://{{server1}}:{{port1}}/{{base-url1}}/rest/auth/login",
+                            "protocol": "{{protocol}}",
+                            "host": [
+                                "{{server1}}"
+                            ],
+                            "port": "{{port1}}",
+                            "path": [
+                                "{{base-url1}}",
+                                "rest",
+                                "auth",
+                                "login"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Create ONT",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/yang-data+json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/yang-data+json",
+                                "type": "text"
+                            }
+                        ],
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{access-token}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n\t\"ibn:intent\": {\n\t\t\"target\": \"{{Device Name}}-{{LT}}-{{PON}}-{{ONT}}\",\n\t\t\"intent-type\": \"ont\",\n\t\t\"intent-specific-data\": {\n\t\t\t\"ont:ont\": {\n\t\t\t\t\"fiber-name\": \"{{Device Name}}-{{LT}}-{{PON}}\",\n                \"ont-type\": \"MARCOPOLO\",\n\t\t\t\t\"expected-serial-number\": \"{{Serial Number}}\",\n\t\t\t\t\"onu-service-profile\": \"default\",\n\t\t\t\t\"uni-service-configuration\": {\n\t\t\t\t\t\"uni-id\": \"LAN1\",\n\t\t\t\t\t\"service-profile\": \"default\"\n\t\t\t\t},\n\t\t\t\t\"active-software\": \"\",\n\t\t\t\t\"passive-software\": \"\"\n\t\t\t}\n\t\t},\n\t\t\"intent-type-version\": \"11\",\n\t\t\"required-network-state\": \"active\"\n\t}\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "url": {
+                            "raw": "{{protocol}}://{{server1}}:{{port1}}/{{base-url1}}/rest/restconf/data/ibn:ibn?altiplano-triggerSyncUponSuccess=true",
+                            "protocol": "{{protocol}}",
+                            "host": [
+                                "{{server1}}"
+                            ],
+                            "port": "{{port1}}"
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Create Services",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/yang-data+json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/yang-data+json",
+                                "type": "text"
+                            }
+                        ],
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{access-token}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"ibn:intent\": {\n        \"target\": \"{{Device Name}}-{{LT}}-{{PON}}-{{ONT}}#HSI-{{SVLAN}}\",\n        \"intent-type\": \"tasa-composite\",\n        \"ibn:intent-specific-data\": {\n            \"tasa-composite:hsi\": {\n                \"downstream-profile\": \"TASA_SH300MB_DN\",\n                \"c-vlan-id\": {{CVLAN}},\n                \"upstream-profile\": \"TASA_BW300MB_UP\"\n            }\n        },\n        \"required-network-state\": \"active\",\n        \"intent-type-version\": 3\n    }\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "url": {
+                            "raw": "{{protocol}}://{{server1}}:{{port1}}/{{base-url1}}/rest/restconf/data/ibn:ibn?altiplano-triggerSyncUponSuccess=true",
+                            "protocol": "{{protocol}}",
+                            "host": [
+                                "{{server1}}"
+                            ],
+                            "port": "{{port1}}"
+                        }
+                    },
+                    "response": []
+                }
+            ]
+        },
+        {
+            "name": "Modify",
+            "item": [
+                {
+                    "name": "GetAccessToken",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "pm.environment.set(\"access-token\", pm.response.json().accessToken);",
+                                    "pm.environment.set(\"refresh-token\", pm.response.json().refreshToken);",
+                                    "pm.test(\"Status code is 200\", function () {",
+                                    "    pm.response.to.have.status(200);",
+                                    "});"
+                                ],
+                                "type": "text/javascript"
+                            }
+                        }
+                    ],
+                    "request": {
+                        "auth": {
+                            "type": "basic",
+                            "basic": [
+                                {
+                                    "key": "password",
+                                    "value": "{{password}}",
+                                    "type": "string"
+                                },
+                                {
+                                    "key": "username",
+                                    "value": "{{username}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Basic YWRtaW51c2VyOnBhc3N3b3Jk"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": ""
+                        },
+                        "url": {
+                            "raw": "{{protocol}}://{{server1}}:{{port1}}/{{base-url1}}/rest/auth/login",
+                            "protocol": "{{protocol}}",
+                            "host": [
+                                "{{server1}}"
+                            ],
+                            "port": "{{port1}}",
+                            "path": [
+                                "{{base-url1}}",
+                                "rest",
+                                "auth",
+                                "login"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Modify Serial Number",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "pm.test(\"Status code is 204\", function () {\r",
+                                    "    pm.response.to.have.status(204);\r",
+                                    "});"
+                                ],
+                                "type": "text/javascript"
+                            }
+                        }
+                    ],
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{access-token}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "PATCH",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/yang-data+json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/yang-data+json",
+                                "type": "text"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\r\n    \"ibn:intent\": {\r\n        \"intent-specific-data\": {\r\n        \"ont:ont\": {\r\n\t\t\t\t\"expected-serial-number\": \"{{Serial Number}}\"\r\n\t\t\t}\r\n\t\t}\r\n\t}\r\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "url": {
+                            "raw": "{{protocol}}://{{server1}}:{{port1}}/{{base-url1}}/rest/restconf/data/ibn:ibn/intent={{Device Name}}-{{LT}}-{{PON}}-{{ONT}},ont?altiplano-triggerSyncUponSuccess=true",
+                            "protocol": "{{protocol}}",
+                            "host": [
+                                "{{server1}}"
+                            ],
+                            "port": "{{port1}}",
+                            "path": [
+                                "{{base-url1}}",
+                                "rest",
+                                "restconf",
+                                "data",
+                                "ibn:ibn",
+                                "intent={{Device Name}}-{{LT}}-{{PON}}-{{ONT}},ont"
+                            ],
+                            "query": [
+                                {
+                                    "key": "altiplano-triggerSyncUponSuccess",
+                                    "value": "true"
+                                }
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Logout",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "pm.test(\"Status code is 200\", function () {\r",
+                                    "    pm.response.to.have.status(200);\r",
+                                    "});"
+                                ],
+                                "type": "text/javascript"
+                            }
+                        }
+                    ],
+                    "request": {
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{access-token}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "POST",
+                        "header": [],
+                        "body": {
+                            "mode": "raw",
+                            "raw": ""
+                        },
+                        "url": {
+                            "raw": "{{protocol}}://{{server1}}:{{port1}}/{{base-url1}}/rest/auth/logout",
+                            "protocol": "{{protocol}}",
+                            "host": [
+                                "{{server1}}"
+                            ],
+                            "port": "{{port1}}",
+                            "path": [
+                                "{{base-url1}}",
+                                "rest",
+                                "auth",
+                                "logout"
+                            ]
+                        },
+                        "description": "Logout method"
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Modify Profiles",
+                    "request": {
+                        "method": "PATCH",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/yang-data+json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/yang-data+json",
+                                "type": "text"
+                            }
+                        ],
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{access-token}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"ibn:intent\": {\n        \"ibn:intent-specific-data\": {\n            \"tasa-composite:hsi\": {\n                \"downstream-profile\": \"{{Downstream Profile}}\",\n                \"upstream-profile\": \"{{Upstream Profile}}\"\n            }\n        }\n    }\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "url": {
+                            "raw": "{{protocol}}://{{server1}}:{{port1}}/{{base-url1}}/rest/restconf/data/ibn:ibn/intent={{Device Name}}-{{LT}}-{{PON}}-{{ONT}}%23HSI-{{SVLAN}},tasa-composite?altiplano-triggerSyncUponSuccess=true",
+                            "protocol": "{{protocol}}",
+                            "host": [
+                                "{{server1}}"
+                            ],
+                            "port": "{{port1}}"
+                        }
+                    },
+                    "response": []
+                }
+            ]
+        },
+        {
+            "name": "Unconfigure",
+            "item": [
+                {
+                    "name": "GetAccessToken",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "pm.environment.set(\"access-token\", pm.response.json().accessToken);",
+                                    "pm.environment.set(\"refresh-token\", pm.response.json().refreshToken);",
+                                    "pm.test(\"Status code is 200\", function () {",
+                                    "    pm.response.to.have.status(200);",
+                                    "});"
+                                ],
+                                "type": "text/javascript"
+                            }
+                        }
+                    ],
+                    "request": {
+                        "auth": {
+                            "type": "basic",
+                            "basic": [
+                                {
+                                    "key": "password",
+                                    "value": "{{password}}",
+                                    "type": "string"
+                                },
+                                {
+                                    "key": "username",
+                                    "value": "{{username}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Basic YWRtaW51c2VyOnBhc3N3b3Jk"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": ""
+                        },
+                        "url": {
+                            "raw": "{{protocol}}://{{server1}}:{{port1}}/{{base-url1}}/rest/auth/login",
+                            "protocol": "{{protocol}}",
+                            "host": [
+                                "{{server1}}"
+                            ],
+                            "port": "{{port1}}",
+                            "path": [
+                                "{{base-url1}}",
+                                "rest",
+                                "auth",
+                                "login"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Delete Services",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/yang-data+json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/yang-data+json",
+                                "type": "text"
+                            }
+                        ],
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{access-token}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"ibn:delete-intent-from-network-and-controller\": {\n        \"intent-type\": \"tasa-composite\",\n        \"target\": \"{{Device Name}}-{{LT}}-{{PON}}-{{ONT}}#HSI-{{SVLAN}}\"\n    }\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "url": {
+                            "raw": "{{protocol}}://{{server1}}:{{port1}}/{{base-url1}}/rest/restconf/operations/ibn:delete-intent-from-network-and-controller",
+                            "protocol": "{{protocol}}",
+                            "host": [
+                                "{{server1}}"
+                            ],
+                            "port": "{{port1}}"
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Delete ONT",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/yang-data+json",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/yang-data+json",
+                                "type": "text"
+                            }
+                        ],
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{access-token}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"ibn:delete-intent-from-network-and-controller\": {\n        \"intent-type\": \"ont\",\n        \"target\": \"{{Device Name}}-{{LT}}-{{PON}}-{{ONT}}\"\n    }\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "url": {
+                            "raw": "{{protocol}}://{{server1}}:{{port1}}/{{base-url1}}/rest/restconf/operations/ibn:delete-intent-from-network-and-controller",
+                            "protocol": "{{protocol}}",
+                            "host": [
+                                "{{server1}}"
+                            ],
+                            "port": "{{port1}}"
+                        }
+                    },
+                    "response": []
+                }
+            ]
+        }
+    ]
+}

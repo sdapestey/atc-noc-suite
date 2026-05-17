@@ -4,10 +4,12 @@
 <meta charset="UTF-8">
 <title>Calidad Inventario · ATC NOC Suite</title>
 {% include 'partials/noc_head.html' %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="{{ url_for('static', filename='js/noc-tools.js') }}"></script>
 <script src="{{ url_for('static', filename='js/dashboard-calidad-inventario.js') }}"></script>
+<script src="{{ url_for('static', filename='js/dashboard-calidad-resumen.js') }}"></script>
 </head>
-<body class="theme-devops">
+<body class="theme-devops page-dashboard page-calidad-inventario">
 <div class="container">
   <div class="topbar">
     <div class="brand">
@@ -16,21 +18,50 @@
         <h1>ATC NOC Suite</h1>
       </div>
       <p class="page-lead">
-        <strong>Calidad Inventario</strong> — cruce <code class="inline-code">cm.inventory_fat_occupation</code> +
-        <code class="inline-code">cm.inventory_olt_occupation</code> +
-        <code class="inline-code">altiplano.serial</code> +
-        <code class="inline-code">aux.bajada_inventario</code>.
+        <strong>Calidad Inventario</strong> — resumen de conciliación y reglas de calidad sobre inventario.
       </p>
     </div>
     <div class="topbar-meta">
-      <span id="qualityCount" class="count">—</span>
       {% include 'partials/noc_topbar.html' %}
     </div>
   </div>
 
   {% include 'partials/nav_dashboard.html' %}
 
-  <div class="panel">
+  <div class="calidad-tabs" role="tablist" aria-label="Secciones de calidad inventario">
+    <button type="button" class="calidad-tab is-active" role="tab" aria-selected="true" data-tab="resumen" id="tab-resumen">Resumen general</button>
+    <button type="button" class="calidad-tab" role="tab" aria-selected="false" data-tab="reglas" id="tab-reglas">Reglas de calidad</button>
+  </div>
+
+  <section id="panel-resumen" class="panel calidad-panel calidad-panel--resumen" role="tabpanel" aria-labelledby="tab-resumen">
+    <div class="calidad-resumen-toolbar">
+      <p class="calidad-resumen-lead muted">Vista equivalente al tablero Superset «Conciliaciones ATC».</p>
+      <div class="calidad-resumen-toolbar-actions">
+        <div class="calidad-range" id="resumen-historico-range" aria-label="Rango histórico">
+          <button type="button" class="btn btn-ghost" data-days="365">1 año</button>
+          <button type="button" class="btn btn-ghost is-active" data-days="90">90d</button>
+          <button type="button" class="btn btn-ghost" data-days="30">30d</button>
+        </div>
+        <button type="button" class="btn btn-ghost" id="btn-refresh-resumen">Actualizar</button>
+      </div>
+    </div>
+    <div id="calidad-resumen-root" class="calidad-resumen-root" aria-live="polite">
+      <p class="muted calidad-resumen-loading">Cargando resumen…</p>
+    </div>
+  </section>
+
+  <section id="panel-reglas" class="panel calidad-panel" role="tabpanel" aria-labelledby="tab-reglas" hidden>
+    <div class="metrics-grid calidad-kpi-grid" id="calidad-kpi-grid" aria-live="polite">
+      <p class="muted calidad-kpi-loading">Cargando KPIs…</p>
+    </div>
+
+    <div class="calidad-chart-wrap">
+      <h2 class="calidad-section-title">Distribución por regla</h2>
+      <div class="calidad-chart-stage">
+        <canvas id="calidad-rules-chart" aria-label="Gráfico de hallazgos por regla"></canvas>
+      </div>
+    </div>
+
     <div class="controls">
       <div class="field field-regla">
         <label for="f-regla" class="hint">Regla</label>
@@ -41,13 +72,16 @@
         <label for="f-estado" class="hint">Estado base</label>
         <select id="f-estado" class="chip" aria-label="Filtrar por estado base"></select>
       </div>
+      <div class="calidad-hallazgos-count-wrap" aria-live="polite">
+        <span id="qualityCount" class="count calidad-hallazgos-count" title="Hallazgos con los filtros aplicados">—</span>
+      </div>
       <div class="field">
         <label for="f-operador" class="hint">Operador (invocator_system)</label>
         <input id="f-operador" placeholder="Ej: 1001" autocomplete="off" />
       </div>
       <div class="field" role="search">
         <span class="search-icon" aria-hidden="true">⌕</span>
-        <input id="f-q" placeholder="Buscar por access_id, rama o CTO…" autocomplete="off" />
+        <input id="f-q" placeholder="Buscar por access_id, rama, CTO o ubicación…" autocomplete="off" />
       </div>
       <div class="toolbar-actions" role="toolbar" aria-label="Acciones de calidad">
         <button id="btn-refresh" class="btn" type="button">Actualizar</button>
@@ -56,25 +90,14 @@
     </div>
 
     <div class="table-wrap">
-      <table id="kpi-table">
-        <thead>
-          <tr><th>KPI</th><th>Valor</th></tr>
-        </thead>
-        <tbody id="kpi-body">
-          <tr><td colspan="2">Cargando resumen…</td></tr>
-        </tbody>
-      </table>
-    </div>
-
-    <div class="table-wrap">
       <table id="findings-table">
         <thead>
           <tr>
             <th>Regla</th>
-            <th>Access ID</th>
+            <th>Access ID / Ubicación</th>
             <th>Estado</th>
-            <th>Rama</th>
-            <th>CTO</th>
+            <th>Detalle 1</th>
+            <th>Detalle 2</th>
             <th>Operador</th>
           </tr>
         </thead>
@@ -83,7 +106,24 @@
         </tbody>
       </table>
     </div>
-  </div>
+
+    <div class="calidad-pagination" id="calidad-pagination" hidden>
+      <button type="button" class="btn btn-ghost" id="btn-page-prev" disabled>Anterior</button>
+      <span class="calidad-page-info" id="calidad-page-info">—</span>
+      <button type="button" class="btn btn-ghost" id="btn-page-next" disabled>Siguiente</button>
+    </div>
+  </section>
+
+  <details class="calidad-data-sources muted">
+    <summary>Fuentes de datos (referencia)</summary>
+    <ul>
+      <li><code>aux.bajada_inventario</code> — activos IN SERVICE en Connect Master</li>
+      <li><code>altiplano.serial</code> — activos Altiplano</li>
+      <li><code>cm.inventory_olt_occupation</code> — ocupación OLT / inconsistencias</li>
+      <li><code>cm.inventory_fat_occupation</code> — FAT y TAG NFC</li>
+      <li><code>aux.conciliaciones</code> — histórico de diferencias entre bases</li>
+    </ul>
+  </details>
 </div>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 </body>
