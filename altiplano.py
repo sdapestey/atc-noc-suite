@@ -1198,6 +1198,23 @@ def _normalize_inp_advanced_rn_filters(raw: list | None) -> list[str]:
     return out
 
 
+_INP_RN_UI_TO_IBN_SERVER = {
+    "active": "active",
+    "suspended": "suspend",
+    "not-present": "delete",
+}
+
+
+def _inp_rn_ui_to_ibn_server_values(ui_rn: list[str]) -> list[str]:
+    """Mapea filtros del dashboard a hojas YANG de ``ibn:search-intents`` (GUI: ``suspend``, no ``suspended``)."""
+    out: list[str] = []
+    for v in ui_rn:
+        sv = _INP_RN_UI_TO_IBN_SERVER.get(v)
+        if sv and sv not in out:
+            out.append(sv)
+    return out
+
+
 def _normalize_inp_advanced_al_filters(raw: list | None) -> list[str]:
     out: list[str] = []
     for item in raw or []:
@@ -1252,7 +1269,8 @@ def _inp_gui_search_intents_filter_body(
     )
     dp = (device_prefix or "").strip()
     aid = (access_id or "").strip()
-    rn_server = _normalize_inp_advanced_rn_filters(filter_required_network_state)
+    rn_ui = _normalize_inp_advanced_rn_filters(filter_required_network_state)
+    rn_server = _inp_rn_ui_to_ibn_server_values(rn_ui)
     argument: list[dict] = []
     if aid:
         argument = [{"name": "access-id", "config": True, "value": aid}]
@@ -1333,7 +1351,9 @@ def _advanced_rn_filter_matches(match: dict, selected: list[str]) -> bool:
     for sel in selected:
         if sel == "active" and (rn_yang == "active" or ui == "active"):
             return True
-        if sel == "suspended" and (rn_yang == "suspended" or ui == "suspended"):
+        if sel == "suspended" and (
+            rn_yang in ("suspended", "suspend") or ui == "suspended"
+        ):
             return True
         if sel == "not-present" and (
             rn_yang in ("not-present", "delete", "deleted", "to-be-deleted")
@@ -1822,6 +1842,7 @@ _INTENT_UI_NETWORK = {
     "not-present": "Not present",
     "not present": "Not present",
     "suspended": "Suspended",
+    "suspend": "Suspended",
     # Yang / IBN: intent marcado para borrado — misma lectura que «Not present» en la UI Nokia
     "delete": "Not present",
     "deleted": "Not present",
@@ -2289,6 +2310,7 @@ def _match_entry_rn_edit_allowed(rn_raw: str) -> bool:
     return s in frozenset(
         {
             "suspended",
+            "suspend",
             "not-present",
             "notpresent",
             "delete",
@@ -2903,10 +2925,16 @@ def _inp_resolve_single_ont_connection_match_for_mutations(
 
 
 def _normalize_required_network_state_yang_value(raw: str) -> str | None:
-    """Convierte texto UI o API a hoja YANG ``required-network-state`` (kebab-case)."""
+    """Convierte texto UI o API a hoja YANG ``required-network-state`` (valores IBN: suspend, delete, …)."""
     s = (raw or "").strip().lower().replace(" ", "-").replace("_", "-")
-    if s in ("active", "suspended", "not-present", "delete"):
-        return s
+    if s in ("active",):
+        return "active"
+    if s in ("suspended", "suspend"):
+        return "suspend"
+    if s in ("not-present", "notpresent", "delete", "deleted", "to-be-deleted", "tobedeleted"):
+        return "delete"
+    if s == "custom":
+        return "custom"
     return None
 
 

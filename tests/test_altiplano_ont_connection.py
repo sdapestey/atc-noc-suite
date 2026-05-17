@@ -948,8 +948,32 @@ def test_normalize_required_network_state_yang_value():
     import altiplano as ap
 
     assert ap._normalize_required_network_state_yang_value("Active") == "active"
-    assert ap._normalize_required_network_state_yang_value("not present") == "not-present"
+    assert ap._normalize_required_network_state_yang_value("Suspended") == "suspend"
+    assert ap._normalize_required_network_state_yang_value("not present") == "delete"
     assert ap._normalize_required_network_state_yang_value("foo") is None
+
+
+def test_inp_gui_search_intents_filter_body_suspended_uses_suspend():
+    import altiplano as ap
+
+    body = ap._inp_gui_search_intents_filter_body(
+        filter_required_network_state=["suspended"],
+    )
+    flt = body["ibn:search-intents"]["filter"]
+    assert flt["required-network-state"] == ["suspend"]
+
+
+def test_match_entry_suspend_maps_to_suspended_ui():
+    import altiplano as ap
+
+    entry = {
+        "target": "BA_OLTA_X#1001#gpon",
+        "intent-type": "ont-connection",
+        "required-network-state": "suspend",
+    }
+    out = ap._match_entry_to_result_dict(entry)
+    assert out["network_state"] == "Suspended"
+    assert out["required_network_state"] == "suspend"
 
 
 def test_sincronizar_intent_post_ok(monkeypatch):
