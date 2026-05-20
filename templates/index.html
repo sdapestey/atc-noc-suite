@@ -1265,10 +1265,42 @@ window.addEventListener("load", () => {
           <span class="arrow" aria-hidden="true">▶</span>
           <span class="mono rama-row-label consulta-panel__token" title="{{ c.token }}">{{ c.token }}</span>
         </span>
+        {% set consulta_masivo_es_aid = consulta_row_counts and c.resultado %}
+        {% if not consulta_masivo_es_aid %}
+        <span class="consulta-panel__summary-metrics{% if c.semaforo_deferred %} consulta-semaforo-pending{% endif %}">
+          {% if ns_cnt.cto > 0 %}<span class="badge hide-sm">CTO {{ ns_cnt.cto }}</span>{% endif %}
+          {% if ns_cnt.ont > 0 %}<span class="badge hide-sm" title="ONT IN SERVICE">ONT {{ ns_cnt.ont }}</span>{% endif %}
+          {% if c.semaforo_deferred %}
+          <span class="badge red semaforo-dot hide-sm" title="RX &lt; -27 dBm (vía Altiplano…)" data-semaforo="rojo">…</span>
+          <span class="badge yellow semaforo-dot hide-sm" title="-27 a -25 dBm (vía Altiplano…)" data-semaforo="amarillo">…</span>
+          <span class="badge green semaforo-dot hide-sm" title="RX &gt; -25 dBm (vía Altiplano…)" data-semaforo="verde">…</span>
+          {% else %}
+          {% set sem = c.semaforo_resumen %}
+          <span class="badge red semaforo-dot hide-sm" title="RX &lt; -27 dBm" data-semaforo="rojo">{{ sem.ROJAS }}</span>
+          <span class="badge yellow semaforo-dot hide-sm" title="-27 a -25 dBm" data-semaforo="amarillo">{{ sem.AMARILLAS }}</span>
+          <span class="badge green semaforo-dot hide-sm" title="RX &gt; -25 dBm" data-semaforo="verde">{{ sem.VERDES }}</span>
+          {% endif %}
+        </span>
+        {% endif %}
         <span class="consulta-panel__summary-tail">
           <span class="consulta-panel__hint" aria-hidden="true">Clic para expandir o plegar</span>
           <span class="rama-row-actions consulta-panel__summary-actions" onclick="event.stopPropagation();">
             <button type="button" class="btn" title="Recargar TX/RX vía Altiplano" onclick="event.stopPropagation(); consultaRecargarPotenciasDesdeBtn(this);">Consultar RX</button>
+            {% if not consulta_masivo_es_aid %}
+            {% if c.ruta.rama %}
+            {% if consulta_row_counts %}
+            <button type="button" class="btn btn-ghost" data-consulta-toggle-rama-mapa="1" title="Mostrar mapa de CTO en la RAMA" onclick="event.stopPropagation(); consultaAbrirMapaRama(this);">Ver mapa</button>
+            {% endif %}
+            <a
+              class="btn btn-ghost"
+              href="/dashboard/potencias-historico?ratc={{ c.ruta.rama|urlencode }}&days=30"
+              title="Histórico de potencia para esta rama"
+              onclick="event.stopPropagation();"
+            >Ver historico</a>
+            {% elif c.ruta.cto or (c.resultado and c.resultado.CTO and c.resultado.CTO != '—') %}
+            <button type="button" class="btn btn-ghost" data-consulta-cto-mapa-details-id="consulta-{{ sec }}-cto-map-details" title="Mostrar mapa de la CTO" onclick="event.stopPropagation(); consultaAbrirMapaCto(this);">Ver mapa</button>
+            {% endif %}
+            {% endif %}
           </span>
         </span>
       </summary>

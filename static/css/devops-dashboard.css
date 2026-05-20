@@ -7856,14 +7856,22 @@ details.consulta-panel[open] > .consulta-panel__summary--dash .arrow {
   padding: 4px 8px;
   border-radius: 6px;
   border: 1px solid var(--border-default);
-  background: var(--canvas-inset);
+  background: var(--canvas-default);
+  color: var(--fg-default);
   font-size: 13px;
+  font-family: inherit;
+  color-scheme: dark;
+}
+
+html[data-theme="light"] .page-consulta-index .consulta-masivo-pager__size {
+  color-scheme: light;
 }
 
 .page-consulta-index .consulta-masivo-pager__info {
   font-size: 12px;
   min-width: 7rem;
   text-align: center;
+  color: var(--fg-default);
 }
 
 .page-consulta-index .consulta-section--multi.consulta-section--page-hidden {
@@ -7878,6 +7886,17 @@ details.consulta-panel[open] > .consulta-panel__summary--dash .arrow {
 .page-consulta-index .consulta-panel.consulta-panel--all-down > .consulta-panel__summary--dash {
   background: rgba(254, 226, 226, 0.75);
   border-left: 4px solid #dc2626;
+}
+
+/* RAMA all-down: tono rojo legible en dark (light: reglas anteriores sin cambio) */
+html:not([data-theme="light"]) .page-consulta-index .consulta-section--multi .consulta-panel.consulta-panel--all-down {
+  border-color: rgba(248, 81, 73, 0.55);
+  box-shadow: 0 0 0 1px rgba(248, 81, 73, 0.28);
+}
+
+html:not([data-theme="light"]) .page-consulta-index .consulta-panel.consulta-panel--all-down > .consulta-panel__summary--dash {
+  background: var(--danger-muted);
+  border-left-color: var(--danger);
 }
 
 .page-consulta-index .consulta-section--multi .consulta-cto-panel {
