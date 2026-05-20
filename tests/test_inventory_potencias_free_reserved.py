@@ -68,7 +68,15 @@ def test_access_id_potencias_retorna_none_si_status_free(monkeypatch):
     monkeypatch.setattr(inv, "obtener_potencias_por_cto", boom)
 
     out = inv.consultar_access_id_potencias("99")
-    assert out == {"AID": "99", "TX": None, "RX": None}
+    assert out == {
+        "AID": "99",
+        "TX": None,
+        "RX": None,
+        "SN": None,
+        "ALARMAS": [],
+        "alarmas_label": None,
+        "NV_STATUS": None,
+    }
     assert calls == []
 
 
@@ -108,11 +116,37 @@ def test_access_id_potencias_usa_aid_canonico_para_lookup(monkeypatch):
 
     monkeypatch.setattr(inv, "db_cursor", fake_cursor)
 
-    def fake_potencias(ne, onts):
-        assert onts and onts[0][0] == "FES_A5_23"
-        return {"FES_A5_23": (2.5, -19.3)}
+    def fake_telem(aid, obj, op_id, *, ne=None):
+        assert aid == "FES_A5_23"
+        assert "BA_OLTA_SM01_05" in obj
+        assert op_id == 2800
+        return {
+            "tx": 2.5,
+            "rx": -19.3,
+            "sn": "ALCLF00DBEEF",
+            "oper": "UP",
+            "admin": "UNLOCKED",
+            "health": "Healthy",
+            "health_ts": None,
+        }
 
-    monkeypatch.setattr(inv, "obtener_potencias_por_cto", fake_potencias)
+    monkeypatch.setattr(inv, "obtener_telemetry_ont", fake_telem)
+    monkeypatch.setattr(inv, "obtener_alarmas_ont_activas", lambda *_a, **_k: [])
 
     out = inv.consultar_access_id_potencias("fes_a5_23")
-    assert out == {"AID": "FES_A5_23", "TX": 2.5, "RX": -19.3}
+    assert out == {
+        "AID": "FES_A5_23",
+        "TX": 2.5,
+        "RX": -19.3,
+        "SN": "ALCLF00DBEEF",
+        "ALARMAS": [],
+        "alarmas_label": "Sin Alarmas",
+        "OPERADOR": "ATC",
+        "NV_STATUS": {
+            "health": "Healthy",
+            "health_ts": None,
+            "oper": "UP",
+            "admin": "UNLOCKED",
+            "alarms_active": 0,
+        },
+    }

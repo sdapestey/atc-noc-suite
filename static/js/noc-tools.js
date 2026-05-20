@@ -141,6 +141,40 @@
     );
   }
 
+  function filaTieneAidConsulta(tr) {
+    if (!tr) return false;
+    const st = (tr.getAttribute("data-fat-status") || "").trim().toUpperCase();
+    if (st === "FREE" || st === "RESERVED") return false;
+    const aid = (tr.getAttribute("data-aid") || "").trim();
+    if (!aid || aid.startsWith("nf-")) return false;
+    return true;
+  }
+
+  /** Quita spinner de carga y pinta dBm o DOWN (dashboards RAMA / OLT / consulta). */
+  function finalizeTxRxLoadingCell(td, rawValue, tr) {
+    if (!td) return;
+    td.classList.remove("olt-txrx-cell--loading");
+    td.removeAttribute("aria-busy");
+    td.removeAttribute("aria-label");
+    applyPowerDbmCell(td, rawValue, filaTieneAidConsulta(tr));
+  }
+
+  /** Celda TX/RX en consulta CTO: valor en dBm o ``DOWN`` si hay abonado sin lectura. */
+  function applyPowerDbmCell(el, v, hasSubscriber) {
+    if (!el) return;
+    el.classList.remove("loading", "status-down", "status-up");
+    if (!hasSubscriber) {
+      el.textContent = formatPowerDbm(v);
+      return;
+    }
+    if (hasPowerValue(v)) {
+      el.textContent = formatPowerDbm(v);
+      return;
+    }
+    el.textContent = "DOWN";
+    el.classList.add("status-down");
+  }
+
   /** Tono fila histórico potencias: ``bad`` / ``warn`` / ``ok`` / ``""``. */
   function rxHistoricoTone(db) {
     var cat = clasificarRxDbm(db);
@@ -163,6 +197,9 @@
     clasificarRxDbm: clasificarRxDbm,
     formatPowerDbm: formatPowerDbm,
     hasPowerValue: hasPowerValue,
+    applyPowerDbmCell: applyPowerDbmCell,
+    filaTieneAidConsulta: filaTieneAidConsulta,
+    finalizeTxRxLoadingCell: finalizeTxRxLoadingCell,
     rxHistoricoTone: rxHistoricoTone,
     worstRxHistoricoTone: worstRxHistoricoTone,
   };

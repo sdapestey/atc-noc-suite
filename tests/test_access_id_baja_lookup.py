@@ -68,6 +68,8 @@ def test_consultar_access_id_detalle_desde_bajada_inventario_con_fila(monkeypatc
         "SF01-RATC-0-000308",
         "IN SERVICE",
         "ALCLF00ABCD12",
+        "BA_OLTA_SF01_01-1-2-3:1-1",
+        1001,
     )
     monkeypatch.setattr(inv, "db_cursor", _fake_db_cursor_bajada_detalle(bajada_row=row))
     out = inv.consultar_access_id_detalle_desde_bajada_inventario("1058516041")
@@ -98,11 +100,68 @@ def test_consultar_access_id_detalle_desde_bajada_case_insensitive(monkeypatch):
         "SF01-RATC-0-000308",
         "IN SERVICE",
         "ALCLF00ABCD12",
+        "BA_OLTA_SF01_01-1-2-3:1-1",
+        1001,
     )
     monkeypatch.setattr(inv, "db_cursor", _fake_db_cursor_bajada_detalle(bajada_row=row))
     out = inv.consultar_access_id_detalle_desde_bajada_inventario("fes_a5_23")
     assert out is not None
     assert out["AID"] == "FES_A5_23"
+
+
+def test_enrich_detalle_no_sobrescribe_operador_con_cero_de_fat(monkeypatch):
+    """Si inventario FAT devuelve OPERADOR '0', no pisa un operador ya resuelto en bajada."""
+    from services import inventory as inv
+
+    row = (
+        "1058143440",
+        0,
+        None,
+        None,
+        "ES01-FATC-8-105280",
+        None,
+        None,
+        "ES01-RATC-0-000001",
+        "IN SERVICE",
+        "MSTC8CBDAFC4",
+        "BA_OLTA_ES01_01-1-4-2-3:1-1",
+        1001,
+    )
+    monkeypatch.setattr(inv, "db_cursor", _fake_db_cursor_bajada_detalle(bajada_row=row))
+    monkeypatch.setattr(
+        inv,
+        "consultar_access_id_estructura",
+        lambda _aid: {"OPERADOR": "0", "ONT": "x", "Status": "IN SERVICE"},
+    )
+    out = inv.consultar_access_id_detalle_desde_bajada_inventario("1058143440")
+    assert out["OPERADOR"] == "TASA"
+
+
+def test_consultar_access_id_detalle_operatorid_cero_usa_serial_e_invocator(monkeypatch):
+    """operatorid=0 en aux; ONT y operador desde serial / inventory_olt_occupation."""
+    from services import inventory as inv
+
+    row = (
+        "1058143440",
+        0,
+        None,
+        None,
+        "ES01-FATC-8-105280",
+        None,
+        None,
+        "ES01-RATC-0-000001",
+        "IN SERVICE",
+        "MSTC8CBDAFC4",
+        "BA_OLTA_ES01_01-1-4-2-3:1-1",
+        1001,
+    )
+    monkeypatch.setattr(inv, "db_cursor", _fake_db_cursor_bajada_detalle(bajada_row=row))
+    monkeypatch.setattr(inv, "consultar_access_id_estructura", lambda _aid: None)
+    out = inv.consultar_access_id_detalle_desde_bajada_inventario("1058143440")
+    assert out is not None
+    assert out["OPERADOR"] == "TASA"
+    assert "BA_OLTA_ES01_01-1-4-2-3" in out["ONT"]
+    assert out["SN"] == "MSTC8CBDAFC4"
 
 
 def test_consultar_access_id_detalle_desde_bajada_prefiere_cm_description(monkeypatch):
@@ -115,6 +174,8 @@ def test_consultar_access_id_detalle_desde_bajada_prefiere_cm_description(monkey
         None,
         "HEXCTO",
         "TG01-FATC-8-100987",
+        None,
+        None,
         None,
         None,
         None,

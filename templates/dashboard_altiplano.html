@@ -78,6 +78,10 @@
     <div id="alt-inp-panel-creacion" role="tabpanel" aria-labelledby="alt-inp-tab-creacion" hidden>
     <div class="panel altiplano-panel">
       <div class="altiplano-panel-inner">
+      <div class="orquestador-panel-head orquestador-panel-head--solo-credit">
+        <span class="orquestador-panel-head__spacer" aria-hidden="true"></span>
+        {% include 'partials/orquestador_credit.html' %}
+      </div>
       <div class="altiplano-create-form" id="altiplano-create-form-grid" aria-label="Formulario ONT Connection INP">
         <section class="altiplano-create-step altiplano-create-step--location">
           <header class="altiplano-create-step__head">
@@ -253,11 +257,14 @@
       <div class="altiplano-consulta-shell">
         <div class="panel altiplano-panel altiplano-consulta-panel--search">
           <div class="altiplano-consulta-panel-inner">
-            <p class="muted altiplano-consulta-lead">
-              Buscá intents <code class="inline-code">ont-connection</code> en <strong>Altiplano INP</strong>.
-              Device name (<code class="inline-code">BA_OLTA_…</code>), Access ID y/o <strong>búsqueda avanzada</strong>
-              por estados (como la GUI). Device y Access ID son excluyentes entre sí.
-            </p>
+            <div class="orquestador-panel-head">
+              <p class="muted altiplano-consulta-lead orquestador-panel-head__main">
+                Buscá intents <code class="inline-code">ont-connection</code> en <strong>Altiplano INP</strong>.
+                Device name (<code class="inline-code">BA_OLTA_…</code>), Access ID y/o <strong>búsqueda avanzada</strong>
+                por estados (como la GUI). Device y Access ID son excluyentes entre sí.
+              </p>
+              {% include 'partials/orquestador_credit.html' %}
+            </div>
             <div class="altiplano-consulta-search-row">
               <div class="altiplano-consulta-grid altiplano-consulta-grid--single">
                 <div class="altiplano-field">
@@ -356,18 +363,23 @@
     <div id="alt-inp-panel-borrado" role="tabpanel" aria-labelledby="alt-inp-tab-borrado" hidden>
       <div class="panel altiplano-panel">
         <div class="altiplano-panel-inner">
-          <p class="muted altiplano-consulta-lead">
-            Indicá <strong>device name</strong> (prefijo antes del <code class="inline-code">#</code> o target completo
-            <code class="inline-code">…#VNO#gpon</code>) y/o <strong>Access ID</strong> del servicio.
-            El Access ID puede resolverse desde inventario ATC cuando ya está sincronizado; si no, se busca en Altiplano INP.
-            Si hay más de un intent coincidente, acotá con Access ID o target completo en device name.
-          </p>
-          <p class="muted" style="margin-bottom:14px;color:var(--danger-text);font-weight:600;">
-            La operación elimina el intent en Altiplano (irreversible). Se detecta el
-            <strong>VNO</strong> desde el target (<code class="inline-code">…#VNO#gpon</code>), inventario ATC
-            o consulta INP; en <strong>TASA</strong> se borran antes el servicio HSI y el ONT, luego el
-            <strong>ONT Connection</strong> en INP.
-          </p>
+          <div class="orquestador-panel-head">
+            <div class="orquestador-panel-head__main">
+              <p class="muted altiplano-consulta-lead">
+                Indicá <strong>device name</strong> (prefijo antes del <code class="inline-code">#</code> o target completo
+                <code class="inline-code">…#VNO#gpon</code>) y/o <strong>Access ID</strong> del servicio.
+                El Access ID puede resolverse desde inventario ATC cuando ya está sincronizado; si no, se busca en Altiplano INP.
+                Si hay más de un intent coincidente, acotá con Access ID o target completo en device name.
+              </p>
+              <p class="muted orquestador-panel-head__warn">
+                La operación elimina el intent en Altiplano (irreversible). Se detecta el
+                <strong>VNO</strong> desde el target (<code class="inline-code">…#VNO#gpon</code>), inventario ATC
+                o consulta INP; en <strong>TASA</strong> se borran antes el servicio HSI y el ONT, luego el
+                <strong>ONT Connection</strong> en INP.
+              </p>
+            </div>
+            {% include 'partials/orquestador_credit.html' %}
+          </div>
           <div class="altiplano-consulta-grid">
             <div class="altiplano-field">
               <label class="t" for="borrado_device_name">Device name (prefijo target)</label>
@@ -435,6 +447,7 @@
 
     <div id="alt-vno-panel-tasa" class="panel altiplano-result" role="tabpanel" aria-labelledby="alt-vno-tab-tasa">
       <div class="panel altiplano-panel altiplano-tasa-shell">
+        {% include 'partials/orquestador_credit.html' %}
         <div class="altiplano-tasa-layout">
           <aside class="altiplano-tasa-rail" aria-label="Selección Orquestador TASA">
             <header class="altiplano-tasa-head altiplano-tasa-head--rail">
@@ -484,10 +497,12 @@
                 <h2 id="tasa-api-title" class="altiplano-tasa-work-title">—</h2>
                 <p class="muted altiplano-tasa-work-sub" id="tasa-api-subtitle">Complete las variables para ejecutar.</p>
               </div>
-              <div class="altiplano-tasa-mode" role="tablist" aria-label="Modo de ejecución">
+              <div class="altiplano-tasa-work-head__aside">
+                <div class="altiplano-tasa-mode" role="tablist" aria-label="Modo de ejecución">
                 <button type="button" class="altiplano-tasa-mode__btn is-active" id="tasa-mode-individual" role="tab" aria-selected="true">Individual</button>
                 <button type="button" class="altiplano-tasa-mode__btn" id="tasa-mode-masivo" role="tab" aria-selected="false" disabled title="Próximamente">Masivo (CSV)</button>
                 <button type="button" class="altiplano-tasa-mode__btn" id="tasa-mode-secuencial" role="tab" aria-selected="false" disabled title="Próximamente">Secuencial</button>
+                </div>
               </div>
             </div>
 
@@ -517,19 +532,49 @@
       </div>
     </div>
     <div id="alt-vno-panel-directv" class="panel altiplano-result" role="tabpanel" aria-labelledby="alt-vno-tab-directv" hidden>
-      <p class="muted">Próximamente.</p>
+      <div class="altiplano-panel-inner">
+        <div class="orquestador-panel-head orquestador-panel-head--solo-credit">
+          <span class="orquestador-panel-head__spacer" aria-hidden="true"></span>
+          {% include 'partials/orquestador_credit.html' %}
+        </div>
+        <p class="muted">Próximamente.</p>
+      </div>
     </div>
     <div id="alt-vno-panel-iplan" class="panel altiplano-result" role="tabpanel" aria-labelledby="alt-vno-tab-iplan" hidden>
-      <p class="muted">Próximamente.</p>
+      <div class="altiplano-panel-inner">
+        <div class="orquestador-panel-head orquestador-panel-head--solo-credit">
+          <span class="orquestador-panel-head__spacer" aria-hidden="true"></span>
+          {% include 'partials/orquestador_credit.html' %}
+        </div>
+        <p class="muted">Próximamente.</p>
+      </div>
     </div>
     <div id="alt-vno-panel-metrotel" class="panel altiplano-result" role="tabpanel" aria-labelledby="alt-vno-tab-metrotel" hidden>
-      <p class="muted">Próximamente.</p>
+      <div class="altiplano-panel-inner">
+        <div class="orquestador-panel-head orquestador-panel-head--solo-credit">
+          <span class="orquestador-panel-head__spacer" aria-hidden="true"></span>
+          {% include 'partials/orquestador_credit.html' %}
+        </div>
+        <p class="muted">Próximamente.</p>
+      </div>
     </div>
     <div id="alt-vno-panel-sion" class="panel altiplano-result" role="tabpanel" aria-labelledby="alt-vno-tab-sion" hidden>
-      <p class="muted">Próximamente.</p>
+      <div class="altiplano-panel-inner">
+        <div class="orquestador-panel-head orquestador-panel-head--solo-credit">
+          <span class="orquestador-panel-head__spacer" aria-hidden="true"></span>
+          {% include 'partials/orquestador_credit.html' %}
+        </div>
+        <p class="muted">Próximamente.</p>
+      </div>
     </div>
     <div id="alt-vno-panel-cambio-cto" class="panel altiplano-result" role="tabpanel" aria-labelledby="alt-vno-tab-cambio-cto" hidden>
-      <p class="muted">Próximamente.</p>
+      <div class="altiplano-panel-inner">
+        <div class="orquestador-panel-head orquestador-panel-head--solo-credit">
+          <span class="orquestador-panel-head__spacer" aria-hidden="true"></span>
+          {% include 'partials/orquestador_credit.html' %}
+        </div>
+        <p class="muted">Próximamente.</p>
+      </div>
     </div>
   </div>
 </div>

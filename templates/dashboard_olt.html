@@ -18,7 +18,7 @@
         {% include 'partials/brand_logo.html' %}
         <h1>ATC NOC Suite</h1>
       </div>
-      <p class="page-lead page-lead--one-line"><strong>OLT / LT</strong> — <strong>Sitio principal</strong> → sitio (código) → OLT → LT → RAMA → CTO → AID. Expandí un <strong>LT</strong> para inventario; al abrir una <strong>CTO</strong> o con <strong>Consultar</strong> se cargan potencias (como en RAMA&nbsp;/&nbsp;CTO).</p>
+      <p class="page-lead page-lead--one-line"><strong>OLT / LT</strong> — <strong>Sitio principal</strong> → sitio (código) → OLT → LT → RAMA → CTO → AID. Expandí un <strong>LT</strong> para inventario; al abrir una <strong>CTO</strong> o con <strong>Consultar RX</strong> se cargan potencias (como en RAMA&nbsp;/&nbsp;CTO).</p>
     </div>
     {% include 'partials/noc_topbar.html' %}
   </div>
@@ -59,17 +59,17 @@
      data-search="{{ bloque.SEARCH_TEXT }}"
      data-principal="{{ bloque.PRINCIPAL }}"
      data-pid="{{ pid }}">
-  <div class="site node" onclick="toggleNode('{{ pid }}')">
+  <div class="card node site-head" onclick="toggleNode('{{ pid }}')">
     <span class="arrow" id="arrow-{{ pid }}">▶</span> {{ bloque.PRINCIPAL }}
   </div>
 
   {% for o in bloque.OLTS %}
   {% set oid = pid ~ '_o' ~ loop.index0 %}
-  <div class="olt-section hidden indent1"
+  <div class="card indent1 olt-section hidden"
        data-parent="{{ pid }}"
        data-node-id="{{ oid }}"
        data-search="{{ o.SEARCH_TEXT }}">
-    <div class="olt node"
+    <div class="node olt"
          onclick="toggleNode('{{ oid }}')">
       <div class="olt-label">
         <span class="arrow" id="arrow-{{ oid }}">▶</span>

@@ -3,13 +3,15 @@
 from web.routes import _consulta_operadores_union, sort_consulta_operadores_chips
 
 
-def test_sort_consulta_operadores_chips_mueve_guion_al_final():
-    assert sort_consulta_operadores_chips(["-", "ATC", "TASA"]) == ["ATC", "TASA", "-"]
-    assert sort_consulta_operadores_chips(["—", "TASA", "-"]) == ["TASA", "—", "-"]
-    assert sort_consulta_operadores_chips(["ATC", "-", "ATC"]) == ["ATC", "-"]
+def test_sort_consulta_operadores_chips_solo_validos():
+    assert sort_consulta_operadores_chips(["-", "ATC", "TASA", "0", "None"]) == [
+        "TASA",
+        "ATC",
+    ]
+    assert sort_consulta_operadores_chips(["DIRECTV", "TASA"]) == ["TASA", "DIRECTV"]
 
 
-def test_consulta_operadores_union_aplica_orden_guion_al_final():
+def test_consulta_operadores_union_omite_invalidos():
     consultas = [
         {
             "tabla_cto": [{"OPERADOR": "-"}, {"OPERADOR": "ATC"}],
@@ -22,7 +24,7 @@ def test_consulta_operadores_union_aplica_orden_guion_al_final():
             "es_rama": False,
         },
     ]
-    assert _consulta_operadores_union(consultas) == ["ATC", "TASA", "-"]
+    assert _consulta_operadores_union(consultas) == ["TASA", "ATC"]
 
 
 def test_index_masivo_cto_sin_chip_estado_operador_ordenado(client, monkeypatch):
@@ -83,8 +85,7 @@ def test_index_masivo_cto_sin_chip_estado_operador_ordenado(client, monkeypatch)
     assert r.status_code == 200
     html = r.get_data(as_text=True)
     assert 'data-chip-fat-status' not in html
-    pos_dash = html.find('data-chip-operador="-"')
-    pos_atc = html.find('data-chip-operador="ATC"')
-    pos_tasa = html.find('data-chip-operador="TASA"')
-    assert pos_dash != -1 and pos_atc != -1 and pos_tasa != -1
-    assert pos_dash > pos_atc and pos_dash > pos_tasa
+    assert 'data-chip-operador="-"' not in html
+    assert 'data-chip-operador="0"' not in html
+    assert 'data-chip-operador="ATC"' in html
+    assert 'data-chip-operador="TASA"' in html

@@ -9,10 +9,9 @@ const _oltStateStore = window.createNocPageStateStore
   ? window.createNocPageStateStore(_OLT_STATE_KEY, { debounceMs: 120 })
   : null;
 
-/** Sin columna SN ni botón TX/RX por fila (alineado con dashboard RAMA / CTO). */
+/** Sin columna SN ni columna Estado (alineado con consulta índice / RAMA). */
 const OLT_COL_TX = 7;
 const OLT_COL_RX = 8;
-const OLT_COL_EST = 9;
 
 function _oltFatSkipPotencias(tr) {
   const st = (tr.getAttribute("data-fat-status") || "").trim().toUpperCase();
@@ -38,19 +37,12 @@ function _oltRowCellsHtml(o, rama, cto, outNum) {
     '<span class="olt-txrx-loading-wrap" title="Cargando potencias…"><span class="olt-txrx-cell-spin" aria-hidden="true"></span></span>';
   let txCell;
   let rxCell;
-  let estCell;
-  if (st === "FREE") {
+  if (st === "FREE" || st === "RESERVED") {
     txCell = '<td class="mono">-</td>';
     rxCell = '<td class="mono">-</td>';
-    estCell = '<td class="mono">-</td>';
-  } else if (st === "RESERVED") {
-    txCell = '<td class="mono">-</td>';
-    rxCell = '<td class="mono">-</td>';
-    estCell = '<td class="mono status-down">DOWN</td>';
   } else {
     txCell = `<td class="mono olt-txrx-cell--loading" aria-busy="true" aria-label="Cargando">${spin}</td>`;
     rxCell = `<td class="mono olt-txrx-cell--loading" aria-busy="true" aria-label="Cargando">${spin}</td>`;
-    estCell = '<td class="mono status-pending">Cargando...</td>';
   }
   return `
                       <td class="mono">${outNum}</td>
@@ -61,8 +53,7 @@ function _oltRowCellsHtml(o, rama, cto, outNum) {
                       <td class="mono">${ontDisp}</td>
                       <td>${statusDisp}</td>
                       ${txCell}
-                      ${rxCell}
-                      ${estCell}`;
+                      ${rxCell}`;
 }
 
 function toastOlt(msg) {
@@ -667,6 +658,15 @@ function _formatPowerDbm(v) {
   return _npOlt() ? _npOlt().formatPowerDbm(v) : "-";
 }
 
+function _applyPotenciaEnFilaOlt(tr, txVal, rxVal, row) {
+  if (!tr || _oltFatSkipPotencias(tr) || !_npOlt()) return;
+  const tdTx = tr.children[OLT_COL_TX];
+  const tdRx = tr.children[OLT_COL_RX];
+  _npOlt().finalizeTxRxLoadingCell(tdTx, txVal, tr);
+  _npOlt().finalizeTxRxLoadingCell(tdRx, rxVal, tr);
+  if (row && tdRx) _addSemFromRx(row, tdRx.textContent);
+}
+
 function _addSem(row, res) {
   if (!res) return;
   const r = row.querySelector(".rojas");
@@ -722,9 +722,14 @@ function buildRamaBlockHtml(uid, rama, block, parentRamaId, depth) {
                  data-node-id="${ramaId}"${parentAttr}
                  data-olt-tree-kind="${kindLabel}"
                  onclick="toggleNode('${ramaId}')">
-                <span class="olt-tree-kind rama-row-kind rama-row-kind--rama">${kindLabel}</span>
-                <span class="arrow" id="arrow-${ramaId}">▶</span> <span class="olt-tree-label rama-row-label">${_esc(rama)}</span>
-                <button type="button" class="btn-mini pot-rama" data-pot-rama="${encodeURIComponent(rama)}">Consultar</button>
+                <span class="rama-row-head">
+                  <span class="rama-row-kind rama-row-kind--rama">${kindLabel}</span>
+                  <span class="arrow" id="arrow-${ramaId}">▶</span>
+                  <span class="mono rama-row-label">${_esc(rama)}</span>
+                </span>
+                <span class="rama-row-actions" onclick="event.stopPropagation()">
+                  <button type="button" class="btn pot-rama" data-pot-rama="${encodeURIComponent(rama)}">Consultar RX</button>
+                </span>
             </div>`;
 
   const ctos = block.CTOS || {};
@@ -735,19 +740,22 @@ function buildRamaBlockHtml(uid, rama, block, parentRamaId, depth) {
     const ctoId = ramaId + "_C_" + encodeURIComponent(cto).replace(/%/g, "_");
 
     html += `
-                <div class="node olt-tree-row olt-tree-depth-${ctoDepth} olt-tree-cto hidden"
+                <div class="node olt-tree-row cto-head-row olt-tree-depth-${ctoDepth} olt-tree-cto hidden"
                      data-parent="${ramaId}"
                      data-node-id="${ctoId}"
                      data-olt-tree-kind="CTO"
                      onclick="toggleNode('${ctoId}')">
-                    <span class="olt-tree-kind rama-row-kind rama-row-kind--cto">CTO</span>
-                    <span class="arrow" id="arrow-${ctoId}">▶</span> <span class="olt-tree-label rama-row-label">${_esc(cto)}</span>
-                    <button type="button" class="btn-mini pot-cto" data-pot-cto="${encodeURIComponent(cto)}">Consultar</button>
+                    <span class="rama-row-kind rama-row-kind--cto">CTO</span>
+                    <span class="arrow" id="arrow-${ctoId}">▶</span>
+                    <span class="mono rama-row-label">${_esc(cto)}</span>
+                    <span class="rama-row-actions" onclick="event.stopPropagation()">
+                      <button type="button" class="btn-mini pot-cto" data-pot-cto="${encodeURIComponent(cto)}">Consultar RX</button>
+                    </span>
                 </div>
 
                 <div class="table-wrap olt-tree-table-shell olt-tree-depth-${tblDepth} hidden" data-parent="${ctoId}">
                 <table class="olt-tree-table">
-                <tr><th>OUT</th><th>AID</th><th>Operador</th><th>Sitio</th><th>RAMA</th><th>ONT</th><th>Status</th><th>TX (dBm)</th><th>RX (dBm)</th><th>Estado</th></tr>`;
+                <tr><th>OUT</th><th>AID</th><th>Operador</th><th>Sitio</th><th>RAMA</th><th>ONT</th><th>Status</th><th>TX (dBm)</th><th>RX (dBm)</th></tr>`;
 
     (ctos[cto] || []).forEach((o, oix) => {
       html += `
@@ -786,9 +794,14 @@ function buildPonBlockHtml(uid, pon, block) {
                        data-pon-label="${_esc(pon)}"
                        title="Seleccionar PON para exportación"
                        onclick="event.stopPropagation()">
-                <span class="olt-tree-kind">PON</span>
-                <span class="arrow" id="arrow-${ponId}">▶</span> <span class="olt-tree-label">${_esc(pon)}</span>
-                <span class="muted">RAMAs ${ramasN} · CTO ${ctoN} · ONT ${ontN}</span>
+                <span class="rama-row-head">
+                  <span class="rama-row-kind rama-row-kind--pon">PON</span>
+                  <span class="arrow" id="arrow-${ponId}">▶</span>
+                  <span class="mono rama-row-label">${_esc(pon)}</span>
+                </span>
+                <span class="badge hide-sm">RAMA ${ramasN}</span>
+                <span class="badge hide-sm">CTO ${ctoN}</span>
+                <span class="badge hide-sm">ONT ${ontN}</span>
             </div>`;
 
   const ramas = block && block.RAMAS ? block.RAMAS : {};
@@ -894,9 +907,9 @@ function cargarInventarioLT(lt, uid, row) {
       if (ponCell) ponCell.textContent = String(ponCount);
 
       let html =
-        '<p class="hint">Inventario cargado. Expandí cada <strong>PON</strong> para ver RAMA (RATC) → FATC → CTO → ONT. <span class="muted">Las mismas ramas FATC se listan bajo cada RATC (sin vínculo padre/hijo en BD).</span> Al expandir una <strong>CTO</strong> o con <strong>Consultar</strong> se cargan las potencias (Altiplano).</p>';
+        '<p class="hint">Inventario cargado. Expandí cada <strong>PON</strong> para ver RAMA (RATC) → FATC → CTO → ONT. <span class="muted">Las mismas ramas FATC se listan bajo cada RATC (sin vínculo padre/hijo en BD).</span> Al expandir una <strong>CTO</strong> o con <strong>Consultar RX</strong> se cargan las potencias (Altiplano).</p>';
       html += `<p class="hint"><strong>Impacto LT:</strong> PON ${ponCount} · RAMAs ${ramasCount} · CTO ${ctoCount} · ONT ${ontCount}</p>`;
-      html += `<p class="hint"><label><input type="checkbox" class="pon-select-all" data-uid="${uid}"> Seleccionar todos los PON de este LT</label></p>`;
+      html += `<p class="hint rama-hint-no-margin"><label class="rama-cto-select-all-label"><input type="checkbox" class="pon-select-all" data-uid="${uid}"> Seleccionar todos los PON de este LT</label></p>`;
 
       const pones = sortNaturalKeys(Object.keys(data.PONES || {}));
       for (const pon of pones) {
@@ -960,7 +973,7 @@ function bindPotenciaButtons(wrap, row) {
 function _setPotButtonLoading(btn, loading) {
   if (!btn) return;
   if (loading) {
-    if (!btn.dataset.potLabel) btn.dataset.potLabel = (btn.textContent || "").trim() || "Consultar";
+    if (!btn.dataset.potLabel) btn.dataset.potLabel = (btn.textContent || "").trim() || "Consultar RX";
     btn.disabled = true;
     btn.classList.add("pot-btn-loading");
     btn.innerHTML = "";
@@ -980,7 +993,7 @@ function _setPotButtonLoading(btn, loading) {
     btn.disabled = false;
     btn.classList.remove("pot-btn-loading");
     btn.removeAttribute("aria-busy");
-    btn.textContent = btn.dataset.potLabel || "Consultar";
+    btn.textContent = btn.dataset.potLabel || "Consultar RX";
   }
 }
 
@@ -1004,21 +1017,20 @@ function _setCtoOltTxRxCellsLoading(wrap, cto) {
   });
 }
 
-function _oltTxRxCellsStuckToDashForCto(wrap, cto) {
+function _oltFinalizeTxRxPendientesEn(wrap, filterFn) {
   wrap.querySelectorAll("tr[data-aid]").forEach((tr) => {
-    if (decodeURIComponent(tr.getAttribute("data-cto") || "") !== cto) {
-      return;
-    }
-    [OLT_COL_TX, OLT_COL_RX].forEach((idx) => {
-      const td = tr.children[idx];
-      if (td && td.classList && td.classList.contains("olt-txrx-cell--loading")) {
-        td.classList.remove("olt-txrx-cell--loading");
-        td.removeAttribute("aria-busy");
-        td.removeAttribute("aria-label");
-        td.textContent = "-";
-      }
-    });
+    if (filterFn && !filterFn(tr)) return;
+    const tdTx = tr.children[OLT_COL_TX];
+    const tdRx = tr.children[OLT_COL_RX];
+    const loading =
+      (tdTx && tdTx.classList.contains("olt-txrx-cell--loading")) ||
+      (tdRx && tdRx.classList.contains("olt-txrx-cell--loading"));
+    if (loading) _applyPotenciaEnFilaOlt(tr, null, null, null);
   });
+}
+
+function _oltTxRxCellsStuckToDashForCto(wrap, cto) {
+  _oltFinalizeTxRxPendientesEn(wrap, (tr) => decodeURIComponent(tr.getAttribute("data-cto") || "") === cto);
 }
 
 function _setOltTxRxCellsLoadingForRama(wrap, rama) {
@@ -1042,20 +1054,7 @@ function _setOltTxRxCellsLoadingForRama(wrap, rama) {
 }
 
 function _oltTxRxCellsStuckToDashForRama(wrap, rama) {
-  wrap.querySelectorAll("tr[data-aid]").forEach((tr) => {
-    if (decodeURIComponent(tr.getAttribute("data-rama") || "") !== rama) {
-      return;
-    }
-    [OLT_COL_TX, OLT_COL_RX].forEach((idx) => {
-      const td = tr.children[idx];
-      if (td && td.classList && td.classList.contains("olt-txrx-cell--loading")) {
-        td.classList.remove("olt-txrx-cell--loading");
-        td.removeAttribute("aria-busy");
-        td.removeAttribute("aria-label");
-        td.textContent = "-";
-      }
-    });
-  });
+  _oltFinalizeTxRxPendientesEn(wrap, (tr) => decodeURIComponent(tr.getAttribute("data-rama") || "") === rama);
 }
 
 function potenciaRama(rama, wrap, row, btnEl) {
@@ -1083,27 +1082,16 @@ function potenciaRama(rama, wrap, row, btnEl) {
           if (!tr) return;
           if (decodeURIComponent(tr.getAttribute("data-rama") || "") !== rama) return;
           if (_oltFatSkipPotencias(tr)) return;
-          const tdTx = tr.children[OLT_COL_TX];
-          const tdRx = tr.children[OLT_COL_RX];
-          const tdEst = tr.children[OLT_COL_EST];
-          if (tdTx && tdRx) {
-            tdTx.classList.remove("olt-txrx-cell--loading");
-            tdTx.removeAttribute("aria-busy");
-            tdTx.removeAttribute("aria-label");
-            tdRx.classList.remove("olt-txrx-cell--loading");
-            tdRx.removeAttribute("aria-busy");
-            tdRx.removeAttribute("aria-label");
-            tdTx.textContent = _formatPowerDbm(cell.TX);
-            tdRx.textContent = _formatPowerDbm(cell.RX);
-            if (tdEst) {
-              tdEst.classList.remove("status-pending");
-              const up = _hasPowerOlt(cell.TX) || _hasPowerOlt(cell.RX);
-              tdEst.textContent = up ? "UP" : "DOWN";
-              tdEst.classList.remove("status-up", "status-down");
-              tdEst.classList.add(up ? "status-up" : "status-down");
-            }
-          }
+          _applyPotenciaEnFilaOlt(tr, cell.TX, cell.RX, row);
         });
+      });
+      wrap.querySelectorAll("tr[data-aid]").forEach((tr) => {
+        if (decodeURIComponent(tr.getAttribute("data-rama") || "") !== rama) return;
+        if (_oltFatSkipPotencias(tr)) return;
+        const tdTx = tr.children[OLT_COL_TX];
+        if (tdTx && tdTx.classList.contains("olt-txrx-cell--loading")) {
+          _applyPotenciaEnFilaOlt(tr, null, null, row);
+        }
       });
       _recomputePeor(wrap, row);
     })
@@ -1148,26 +1136,16 @@ function potenciaCto(cto, wrap, row, btnEl) {
           return;
         }
         if (_oltFatSkipPotencias(tr)) return;
-        const tdTx = tr.children[OLT_COL_TX];
-        const tdRx = tr.children[OLT_COL_RX];
-        const tdEst = tr.children[OLT_COL_EST];
-        if (tdTx && tdRx) {
-          tdTx.classList.remove("olt-txrx-cell--loading");
-          tdTx.removeAttribute("aria-busy");
-          tdTx.removeAttribute("aria-label");
-          tdRx.classList.remove("olt-txrx-cell--loading");
-          tdRx.removeAttribute("aria-busy");
-          tdRx.removeAttribute("aria-label");
-          tdTx.textContent = _formatPowerDbm(rec.TX);
-          tdRx.textContent = _formatPowerDbm(rec.RX);
-          _addSemFromRx(row, rec.RX);
-          if (tdEst) {
-            tdEst.classList.remove("status-pending");
-            const up = _hasPowerOlt(rec.TX) || _hasPowerOlt(rec.RX);
-            tdEst.textContent = up ? "UP" : "DOWN";
-            tdEst.classList.remove("status-up", "status-down");
-            tdEst.classList.add(up ? "status-up" : "status-down");
-          }
+        _applyPotenciaEnFilaOlt(tr, rec.TX, rec.RX, row);
+      });
+      const seenCto = new Set(arr.map((rec) => String(rec.AID || "")));
+      wrap.querySelectorAll("tr[data-aid]").forEach((tr) => {
+        if (decodeURIComponent(tr.getAttribute("data-cto") || "") !== ctoKey) return;
+        if (_oltFatSkipPotencias(tr)) return;
+        const aid = String(tr.getAttribute("data-aid") || "");
+        if (!aid || seenCto.has(aid)) return;
+        if (_npOlt().filaTieneAidConsulta(tr)) {
+          _applyPotenciaEnFilaOlt(tr, null, null, row);
         }
       });
       _recomputePeor(wrap, row);

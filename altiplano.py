@@ -35,7 +35,7 @@ _ALTIPLANO_POWER_TARGETS_BY_OPERATOR_ID = {
     3001: ("dtv", "https://10.200.7.107:32443/dtv-altiplano-ac/rest/auth/login"),
     4000: ("metro", "https://10.200.5.102:32443/metro-altiplano-ac/rest/auth/login"),
     4010: ("metro", "https://10.200.5.102:32443/metro-altiplano-ac/rest/auth/login"),
-    3950: ("iplan", "https://10.200.5.>03:32444/iplan-altiplano-ac/rest/auth/login"),
+    3950: ("iplan", "https://10.200.5.103:32444/iplan-altiplano-ac/rest/auth/login"),
     2800: ("atc", "https://10.200.5.105:32446/atc-altiplano-ac/rest/auth/login"),
     2805: ("atc", "https://10.200.5.105:32446/atc-altiplano-ac/rest/auth/login"),
     2806: ("atc", "https://10.200.5.105:32446/atc-altiplano-ac/rest/auth/login"),
@@ -867,7 +867,10 @@ def _json_loads_altiplano_http_response(res: requests.Response) -> object | None
     elif text.startswith(")]}'"):
         text = text[4:].lstrip("\n\r\t ")
     if not text:
-        return None
+        try:
+            return res.json()
+        except ValueError:
+            return None
     try:
         return json.loads(text)
     except ValueError:
@@ -3755,6 +3758,1149 @@ def normalizar_object_name(object_name_raw: str) -> str:
     return object_name_raw
 
 
+def _altiplano_power_target(operator_id) -> tuple[str, str] | None:
+    if operator_id is None:
+        return None
+    try:
+        op_key = int(operator_id)
+    except (TypeError, ValueError):
+        op_key = operator_id
+    return _ALTIPLANO_POWER_TARGETS_BY_OPERATOR_ID.get(op_key)
+
+
+def _vno_slug_from_base_url(base_url: str) -> str:
+    base = (base_url or "").strip()
+    if base.endswith("-altiplano-ac"):
+        return base[: -len("-altiplano-ac")]
+    return base.split("-")[0] if base else ""
+
+
+def _power_auth_contexts(operator_id) -> list[tuple[str, str, str, str]]:
+    """
+    Contextos (vno, auth_url, user, password) para leer potencias.
+
+    Usa credenciales por operador (``ALTIPLANO_TASA_*``, etc.) y prueba también INP
+    (misma AC que Network Views en la GUI).
+    """
+    from services.domain import OPERADORES
+
+    contexts: list[tuple[str, str, str, str]] = []
+    seen_auth: set[str] = set()
+
+    def _append_operator(op_name: str) -> None:
+        host, port, base = get_altiplano_nbi_target(op_name)
+        if not host or not base:
+            return
+        user, pwd = get_altiplano_operator_credentials(op_name)
+        if not user or not pwd:
+            return
+        auth_url = f"https://{host}:{port}/{base}/rest/auth/login"
+        if auth_url in seen_auth:
+            return
+        seen_auth.add(auth_url)
+        contexts.append((_vno_slug_from_base_url(base), auth_url, user, pwd))
+
+    op_key = None
+    if operator_id is not None:
+        try:
+            op_key = int(operator_id)
+        except (TypeError, ValueError):
+            pass
+    if op_key is not None:
+        op_name = OPERADORES.get(op_key)
+        if op_name:
+            _append_operator(op_name)
+
+    _append_operator("INP")
+
+    if contexts:
+        return contexts
+
+    legacy = _altiplano_power_target(operator_id)
+    if not legacy:
+        return []
+    vno, auth_url = legacy
+    user, pwd = get_altiplano_credentials()
+    if user and pwd:
+        return [(vno, auth_url, user, pwd)]
+    return []
+
+
+def _ne_from_object_name_raw(object_name_raw: str) -> str | None:
+    """
+    Deriva ``BA_OLTA_ES01_01.LT1`` desde ``BA_OLTA_ES01_01-1-1-4`` o ``…:1-1-1-4``.
+
+    No usar ``split('-')[0/1]`` a secas: el nombre OLT ya contiene guiones.
+    """
+    normalized = normalizar_object_name(str(object_name_raw or "").strip())
+    if not normalized:
+        return None
+    m = re.match(r"^(BA_OLTA_[A-Za-z0-9_]+)-(\d+)", normalized)
+    if m:
+        return f"{m.group(1)}.LT{m.group(2)}"
+    parts = normalized.split("-")
+    if len(parts) >= 2 and parts[0] and str(parts[1]).isdigit():
+        return f"{parts[0]}.LT{parts[1]}"
+    return None
+
+
+def _dbm_from_altiplano_tenths(value) -> float | None:
+    try:
+        return round(float(value) * 0.1, 2)
+    except (TypeError, ValueError):
+        return None
+
+
+def _potencias_from_diagnostics_body(body: object) -> tuple[float, float] | None:
+    if not isinstance(body, dict):
+        return None
+    diag = body.get("bbf-hardware-transceivers-mounted:diagnostics")
+    if not isinstance(diag, dict):
+        return None
+    tx = _dbm_from_altiplano_tenths(
+        diag.get("nokia-hardware-transceivers-dbm-mounted:tx-power-dbm")
+    )
+    rx = _dbm_from_altiplano_tenths(
+        diag.get("nokia-hardware-transceivers-dbm-mounted:rx-power-dbm")
+    )
+    if tx is None or rx is None:
+        return None
+    return tx, rx
+
+
+def _potencias_from_ema_entity_body(body: object) -> tuple[float, float] | None:
+    """Misma escala que la GUI Network Views (``extraAttributes`` × 0,1 dBm)."""
+    if not isinstance(body, dict):
+        return None
+    ea = body.get("extraAttributes")
+    if not isinstance(ea, dict):
+        return None
+    tx = _dbm_from_altiplano_tenths(ea.get("tx-signal-level"))
+    rx = _dbm_from_altiplano_tenths(
+        ea.get("rx-signal-level-ont") or ea.get("rx-signal-level")
+    )
+    if tx is None or rx is None:
+        return None
+    return tx, rx
+
+
+def _sn_valor_legible(val) -> str | None:
+    """Normaliza un campo de serial de EMA; descarta placeholders de la GUI."""
+    if val is None or isinstance(val, dict):
+        return None
+    s = str(val).strip()
+    if not s or s == "-":
+        return None
+    low = s.lower()
+    if low.startswith("{") or "classname" in low or "undefined" in low:
+        return None
+    if len(s) < 6 or len(s) > 20:
+        return None
+    return s.upper()
+
+
+def _sn_from_ema_entity_body(body: object) -> str | None:
+    """Expected Serial Number (General en Network Views); fallback a detectado/legacy."""
+    if not isinstance(body, dict):
+        return None
+    ea = body.get("extraAttributes")
+    if not isinstance(ea, dict):
+        return None
+    for key in (
+        "expected-serial-number",
+        "detected-serial-number",
+        "serialNumber",
+        "serial-number",
+    ):
+        sn = _sn_valor_legible(ea.get(key))
+        if sn:
+            return sn
+    return None
+
+
+def _restconf_potencias_url(base_host: str, vno: str, ne: str, object_name_raw: str) -> str:
+    object_name_altiplano = normalizar_object_name(object_name_raw)
+    onu_encoded = quote(object_name_altiplano, safe="")
+    return (
+        f"https://{base_host}/{vno}-altiplano-ac/rest/restconf/data/"
+        f"anv:device-manager/anv-device-holders:device={ne}/"
+        f"device-specific-data/bbf-fiber-onu-emulated-mount:onus/"
+        f"onu={onu_encoded}_GPON/root/"
+        f"ietf-hardware-mounted:hardware-state/component=ANIPORT/"
+        f"bbf-hardware-transceivers-mounted:transceiver-link/diagnostics"
+        f"?altiplano-target=INP"
+    )
+
+
+def _ema_entity_url(
+    base_host: str,
+    vno: str,
+    ne: str,
+    object_name_raw: str,
+    *,
+    fetch_device_attributes: bool,
+    is_one: bool,
+) -> str:
+    """URL API EMA de Network Views (potencias, oper/admin, SN)."""
+    object_name_altiplano = normalizar_object_name(object_name_raw)
+    onu_name = quote(f"v1~{object_name_altiplano}_GPON", safe="")
+    ne_enc = quote(ne, safe="")
+    qs = urlencode(
+        {
+            "fetchDeviceAttributes": "true" if fetch_device_attributes else "false",
+            "isChild": "false",
+            "isOne": "true" if is_one else "false",
+            "forCondition": "false",
+        }
+    )
+    return (
+        f"https://{base_host}/{vno}-altiplano-ac/rest/ema/entity/"
+        f"LS-FX-MF-SF-LT/ONT/{ne_enc}/{onu_name}?{qs}"
+    )
+
+
+def _ema_potencias_url(base_host: str, vno: str, ne: str, object_name_raw: str) -> str:
+    return _ema_entity_url(
+        base_host,
+        vno,
+        ne,
+        object_name_raw,
+        fetch_device_attributes=True,
+        is_one=True,
+    )
+
+
+def _ema_entity_resource_url(
+    base_host: str, vno: str, ne: str, object_name_raw: str
+) -> str:
+    """URL base EMA de la ONT (POST lock/unlock admin, HAR Network Views)."""
+    object_name_altiplano = normalizar_object_name(object_name_raw)
+    onu_name = quote(f"v1~{object_name_altiplano}_GPON", safe="")
+    ne_enc = quote(ne, safe="")
+    return (
+        f"https://{base_host}/{vno}-altiplano-ac/rest/ema/entity/"
+        f"LS-FX-MF-SF-LT/ONT/{ne_enc}/{onu_name}"
+    )
+
+
+def _ont_connection_full_target(object_name_raw: str, operator_id) -> str:
+    """Target RESTCONF ``…#{VNO}#gpon`` a partir de inventario."""
+    onu = normalizar_object_name(str(object_name_raw or "").strip())
+    if not onu:
+        return ""
+    low = onu.lower()
+    if "#" in onu and "gpon" in low:
+        return onu
+    vno = ""
+    if operator_id is not None:
+        try:
+            vno = str(int(operator_id))
+        except (TypeError, ValueError):
+            vno = str(operator_id).strip()
+    if not vno:
+        return ""
+    return f"{onu}#{vno}#gpon"
+
+
+def _ema_top_level_state(body: object, key: str) -> str | None:
+    if not isinstance(body, dict):
+        return None
+    val = body.get(key)
+    if val is None:
+        return None
+    s = str(val).strip()
+    return s.upper() if s else None
+
+
+def _normalize_altiplano_iso8601_for_js(raw: str | None) -> str | None:
+    """Normaliza ISO8601 de Altiplano para ``Date`` en navegadores (``+0000`` → ``+00:00``)."""
+    s = str(raw or "").strip()
+    if not s:
+        return None
+    m = re.match(r"^(.*)([+-])(\d{2})(\d{2})$", s)
+    if m and "T" in m.group(1):
+        s = f"{m.group(1)}{m.group(2)}{m.group(3)}:{m.group(4)}"
+    return s
+
+
+def _parse_altiplano_datetime_utc(raw: str | None):
+    from datetime import datetime, timezone
+
+    norm = _normalize_altiplano_iso8601_for_js(raw)
+    if not norm:
+        return None
+    try:
+        dt = datetime.fromisoformat(norm.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def _newest_altiplano_iso_timestamp(*values: str | None) -> str | None:
+    """El timestamp más reciente entre candidatos (p. ej. IBN vs EMA ``onu-detected``)."""
+    best_dt = None
+    best_raw = None
+    for raw in values:
+        if not raw:
+            continue
+        dt = _parse_altiplano_datetime_utc(raw)
+        if dt is None:
+            continue
+        if best_dt is None or dt > best_dt:
+            best_dt = dt
+            best_raw = raw
+    return _normalize_altiplano_iso8601_for_js(best_raw) if best_raw else None
+
+
+def _onu_detected_datetime_from_ema(body: object) -> str | None:
+    """``extraAttributes/onu-detected-datetime`` (Network Views / EMA)."""
+    if not isinstance(body, dict):
+        return None
+    ea = body.get("extraAttributes")
+    if not isinstance(ea, dict):
+        return None
+    val = ea.get("onu-detected-datetime")
+    if val is None:
+        return None
+    s = str(val).strip()
+    return s if s else None
+
+
+def _intent_health_from_search_intents_row(row: dict) -> dict[str, str | None]:
+    """Campos de health en una fila cruda de ``ibn:search-intents`` (como la GUI)."""
+    out: dict[str, str | None] = {"health": None, "health_ts": None}
+    if not isinstance(row, dict):
+        return out
+    h = row.get("health") or row.get("intent-health")
+    if h is not None and str(h).strip():
+        out["health"] = str(h).strip()
+    ts = row.get("health-last-updated-timestamp") or row.get(
+        "intent-health-last-updated-timestamp"
+    )
+    if ts is not None and str(ts).strip():
+        out["health_ts"] = _normalize_altiplano_iso8601_for_js(str(ts).strip())
+    return out
+
+
+def _deep_find_intent_health_fields(obj: object, depth: int = 0, max_depth: int = 12) -> dict[str, str]:
+    """Extrae health y timestamp del JSON RESTCONF/IBN."""
+    out: dict[str, str] = {}
+    if depth > max_depth:
+        return out
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            if not isinstance(k, str):
+                continue
+            lk = k.lower().replace("_", "-")
+            if lk in ("intent-health", "health") and v is not None:
+                sv = str(v).strip()
+                if sv and "health" not in out:
+                    out["health"] = sv
+            elif lk in (
+                "intent-health-last-updated-timestamp",
+                "health-last-updated-timestamp",
+            ) and v is not None:
+                sv = str(v).strip()
+                if sv:
+                    norm = _normalize_altiplano_iso8601_for_js(sv)
+                    if norm:
+                        out["health_ts"] = norm
+            sub = _deep_find_intent_health_fields(v, depth + 1, max_depth)
+            for sk, sv in sub.items():
+                if sv and sk not in out:
+                    out[sk] = sv
+    elif isinstance(obj, list):
+        for item in obj:
+            sub = _deep_find_intent_health_fields(item, depth + 1, max_depth)
+            for sk, sv in sub.items():
+                if sv and sk not in out:
+                    out[sk] = sv
+    return out
+
+
+def _nv_health_display_timestamp(
+    health_ts: str | None,
+    onu_detected_ts: str | None,
+    *,
+    oper: str | None,
+    health: str | None,
+) -> str | None:
+    """
+    Timestamp para el “hace X min” bajo Healthy.
+
+    ``health-last-updated-timestamp`` del intent a veces queda desfasado (días) mientras
+    la GUI muestra la detección reciente de la ONT (EMA ``onu-detected-datetime``).
+    Con ONT Up, priorizar el más reciente entre IBN y EMA (como Network Views).
+    """
+    oper_up = str(oper or "").strip().upper() == "UP"
+    health_ok = str(health or "").strip().lower() in ("healthy", "health")
+    if oper_up and (health_ok or onu_detected_ts):
+        return _newest_altiplano_iso_timestamp(health_ts, onu_detected_ts)
+    return _newest_altiplano_iso_timestamp(health_ts) or _normalize_altiplano_iso8601_for_js(
+        onu_detected_ts
+    )
+
+
+def _fetch_intent_health_inp(
+    access_id: str,
+    full_target: str,
+    *,
+    username: str,
+    password: str,
+) -> dict[str, str | None]:
+    """Health vía ``ibn:search-intents`` (GUI) y fallback GET RESTCONF por target."""
+    out: dict[str, str | None] = {"health": None, "health_ts": None}
+    aid = str(access_id or "").strip()
+    tgt = (full_target or "").strip().lower()
+
+    host, port, base_url = get_altiplano_nbi_target("INP")
+    if not host or not port or not base_url:
+        return out
+    auth_url = f"https://{host}:{port}/{base_url}/rest/auth/login"
+    base_rest = f"https://{host}:{port}/{base_url}/rest/restconf/data"
+    token = _obtener_token(auth_url, username=username, password=password)
+    if not token:
+        return out
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/yang-data+json",
+    }
+
+    if aid:
+        url = _inp_search_intents_operation_url(base_rest)
+        if url:
+            body = _inp_gui_search_intents_body_by_access_id(aid)
+            post_headers = {
+                **headers,
+                "Content-Type": "application/yang-data+json",
+            }
+            try:
+                res = requests.post(
+                    url,
+                    headers=post_headers,
+                    json=body,
+                    verify=False,
+                    timeout=get_altiplano_inp_search_http_timeout_s(),
+                )
+            except requests.RequestException:
+                res = None
+            if res is not None and res.status_code == 200:
+                data = _json_loads_altiplano_http_response(res)
+                rows = _extract_intent_list_from_search_intents_response(data)
+                best: dict[str, str | None] | None = None
+                best_target_match = False
+                for row in rows:
+                    if (row.get("intent-type") or "").strip() != "ont-connection":
+                        continue
+                    if aid:
+                        row_aid = _access_id_from_search_intents_row(row)
+                        if not _intent_access_id_matches(row_aid, aid, "exact"):
+                            continue
+                    row_tgt = str(row.get("target") or "").strip().lower()
+                    target_match = bool(tgt and row_tgt and row_tgt == tgt)
+                    if not aid and tgt and row_tgt and row_tgt != tgt:
+                        continue
+                    found = _intent_health_from_search_intents_row(row)
+                    if not found.get("health") and not found.get("health_ts"):
+                        continue
+                    if target_match:
+                        if found.get("health"):
+                            out["health"] = found["health"]
+                        if found.get("health_ts"):
+                            out["health_ts"] = found["health_ts"]
+                        if out["health"] or out["health_ts"]:
+                            return out
+                    if best is None or target_match and not best_target_match:
+                        best = found
+                        best_target_match = target_match
+                    elif best is not None and not best_target_match:
+                        merged_ts = _newest_altiplano_iso_timestamp(
+                            best.get("health_ts"), found.get("health_ts")
+                        )
+                        if merged_ts:
+                            best["health_ts"] = merged_ts
+                        if not best.get("health") and found.get("health"):
+                            best["health"] = found["health"]
+                if best:
+                    if best.get("health"):
+                        out["health"] = best["health"]
+                    if best.get("health_ts"):
+                        out["health_ts"] = best["health_ts"]
+                    if out["health"] or out["health_ts"]:
+                        return out
+
+    if not tgt:
+        return out
+    url = f"{base_rest}/{_inp_rel_path_ont_connection_instance(full_target)}"
+    body = _http_get_altiplano_json(
+        url,
+        auth_url,
+        access_id=access_id,
+        ne="",
+        log_label="intent health INP",
+        accept="application/yang-data+json",
+        username=username,
+        password=password,
+    )
+    if not isinstance(body, dict):
+        return out
+    found = _deep_find_intent_health_fields(body)
+    if found.get("health"):
+        out["health"] = found["health"]
+    if found.get("health_ts"):
+        out["health_ts"] = found["health_ts"]
+    return out
+
+
+def _http_post_altiplano_json(
+    url: str,
+    auth_url: str,
+    payload: dict,
+    *,
+    access_id: str,
+    ne: str,
+    log_label: str,
+    accept: str = "application/json",
+    username: str | None = None,
+    password: str | None = None,
+) -> object | None:
+    """POST JSON a Altiplano (p. ej. búsqueda de alarmas activas en AC INP)."""
+    token = _obtener_token(auth_url, username=username, password=password)
+    if not token:
+        logger.warning(
+            "Altiplano POST (%s): sin token (auth_url=%s access_id=%s)",
+            log_label,
+            auth_url,
+            access_id,
+        )
+        return None
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": accept,
+        "Content-Type": "application/json",
+    }
+
+    def _post(bearer: str):
+        headers["Authorization"] = f"Bearer {bearer}"
+        return requests.post(
+            url,
+            headers=headers,
+            json=payload,
+            verify=False,
+            timeout=60,
+        )
+
+    try:
+        res = _post(token)
+    except requests.RequestException:
+        logger.warning(
+            "Altiplano POST (%s): error de red access_id=%s NE=%s",
+            log_label,
+            access_id,
+            ne,
+        )
+        return None
+
+    if res.status_code in (401, 403):
+        token_new = _obtener_token(
+            auth_url, username=username, password=password, force_refresh=True
+        )
+        if not token_new:
+            return None
+        try:
+            res = _post(token_new)
+        except requests.RequestException:
+            return None
+
+    if res.status_code != 200:
+        logger.warning(
+            "Altiplano POST (%s): HTTP %s access_id=%s NE=%s",
+            log_label,
+            res.status_code,
+            access_id,
+            ne,
+        )
+        return None
+
+    return _json_loads_altiplano_http_response(res)
+
+
+def _http_post_altiplano_expect_ok(
+    url: str,
+    auth_url: str,
+    payload: dict,
+    *,
+    access_id: str,
+    ne: str,
+    log_label: str,
+    username: str | None = None,
+    password: str | None = None,
+    ok_statuses: tuple[int, ...] = (200, 201, 204),
+) -> dict:
+    """POST JSON; éxito por código HTTP (EMA lock/unlock suele responder vacío)."""
+    token = _obtener_token(auth_url, username=username, password=password)
+    if not token:
+        return {"ok": False, "message": "No se pudo autenticar en Altiplano"}
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/json, text/plain, */*",
+        "Content-Type": "application/json",
+    }
+
+    def _post(bearer: str):
+        headers["Authorization"] = f"Bearer {bearer}"
+        return requests.post(
+            url,
+            headers=headers,
+            json=payload,
+            verify=False,
+            timeout=60,
+        )
+
+    try:
+        res = _post(token)
+    except requests.RequestException as ex:
+        logger.warning(
+            "Altiplano POST (%s): error de red access_id=%s NE=%s",
+            log_label,
+            access_id,
+            ne,
+        )
+        return {"ok": False, "message": f"Error de red: {ex}"}
+
+    if res.status_code in (401, 403):
+        token_new = _obtener_token(
+            auth_url, username=username, password=password, force_refresh=True
+        )
+        if token_new:
+            try:
+                res = _post(token_new)
+            except requests.RequestException as ex:
+                return {"ok": False, "message": f"Error de red: {ex}"}
+
+    if res.status_code in ok_statuses:
+        return {"ok": True, "status_code": res.status_code}
+
+    msg = _extract_altiplano_error_message(res)
+    return {
+        "ok": False,
+        "message": msg or f"HTTP {res.status_code}",
+        "status_code": res.status_code,
+    }
+
+
+def cambiar_admin_status_ont(
+    access_id: str,
+    object_name_raw: str,
+    operador: str,
+    admin_status: str,
+    *,
+    ne: str | None = None,
+) -> dict:
+    """
+    Bloquea o desbloquea la ONT (admin lock) vía EMA INP.
+
+    Misma API que Network Views: ``POST …/ema/entity/…/ONT/{NE}/{onu}`` con
+    ``{"adminStatus":"LOCKED"}`` o ``{"adminStatus":"UNLOCKED"}`` (HAR).
+    """
+    status = str(admin_status or "").strip().upper()
+    if status not in ("LOCKED", "UNLOCKED"):
+        return {"ok": False, "message": "admin_status debe ser LOCKED o UNLOCKED"}
+
+    obj = str(object_name_raw or "").strip()
+    if not obj or obj == "—":
+        return {"ok": False, "message": "object_name de ONT requerido"}
+
+    ne_val = (ne or "").strip() or _ne_from_object_name_raw(obj)
+    if not ne_val:
+        return {"ok": False, "message": "No se pudo derivar NE desde object_name"}
+
+    host, port, base_url = get_altiplano_nbi_target("INP")
+    if not host or not port or not base_url:
+        return {"ok": False, "message": "Entorno NBI INP no configurado"}
+
+    op = str(operador or "").strip().upper()
+    user, pwd = get_altiplano_operator_credentials("INP")
+    if not user or not pwd:
+        user, pwd = get_altiplano_operator_credentials(op)
+    if not user or not pwd:
+        user, pwd = get_altiplano_credentials()
+    if not user or not pwd:
+        return {"ok": False, "message": "Credenciales Altiplano INP no configuradas"}
+
+    auth_url = f"https://{host}:{port}/{base_url}/rest/auth/login"
+    base_host = f"{host}:{port}"
+    url = _ema_entity_resource_url(base_host, "inp", ne_val, obj)
+    payload = {"adminStatus": status}
+
+    out = _http_post_altiplano_expect_ok(
+        url,
+        auth_url,
+        payload,
+        access_id=str(access_id or "").strip(),
+        ne=ne_val,
+        log_label=f"EMA admin {status}",
+        username=user,
+        password=pwd,
+    )
+    if out.get("ok"):
+        label = "Locked" if status == "LOCKED" else "Unlocked"
+        out["admin_status"] = status
+        out["message"] = f"ONT {label.lower()} correctamente en Altiplano"
+    return out
+
+
+def _http_get_altiplano_json(
+    url: str,
+    auth_url: str,
+    *,
+    access_id: str,
+    ne: str,
+    log_label: str,
+    accept: str = "application/json",
+    username: str | None = None,
+    password: str | None = None,
+) -> object | None:
+    token = _obtener_token(auth_url, username=username, password=password)
+    if not token:
+        logger.warning(
+            "Altiplano potencias (%s): sin token (auth_url=%s access_id=%s)",
+            log_label,
+            auth_url,
+            access_id,
+        )
+        return None
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": accept,
+    }
+
+    def _get(bearer: str):
+        headers["Authorization"] = f"Bearer {bearer}"
+        return requests.get(url, headers=headers, verify=False, timeout=60)
+
+    try:
+        res = _get(token)
+    except requests.RequestException:
+        logger.warning(
+            "Altiplano potencias (%s): error de red access_id=%s NE=%s",
+            log_label,
+            access_id,
+            ne,
+        )
+        return None
+
+    if res.status_code in (401, 403):
+        token_new = _obtener_token(
+            auth_url, username=username, password=password, force_refresh=True
+        )
+        if not token_new:
+            logger.warning(
+                "Altiplano potencias (%s): sin token tras HTTP %s access_id=%s NE=%s",
+                log_label,
+                res.status_code,
+                access_id,
+                ne,
+            )
+            return None
+        try:
+            res = _get(token_new)
+        except requests.RequestException:
+            logger.warning(
+                "Altiplano potencias (%s): error de red tras refrescar token access_id=%s NE=%s",
+                log_label,
+                access_id,
+                ne,
+            )
+            return None
+
+    if res.status_code != 200:
+        msg = (
+            "Altiplano potencias (%s): HTTP %s access_id=%s NE=%s",
+            log_label,
+            res.status_code,
+            access_id,
+            ne,
+        )
+        # 404 habitual si la ONT no está en ese VNO (p. ej. prueba TASA e INP).
+        if res.status_code == 404:
+            logger.debug(*msg)
+        else:
+            logger.warning(*msg)
+        return None
+
+    return _json_loads_altiplano_http_response(res)
+
+
+def _fetch_ont_telemetry_live(
+    access_id: str,
+    object_name_raw: str,
+    operator_id,
+    ne: str,
+) -> dict[str, object | None]:
+    """
+    TX/RX (RESTCONF + EMA), SN (EMA) y estado oper/admin/health (Network Views).
+
+    Returns:
+        ``tx``, ``rx``, ``sn``, ``oper``, ``admin``, ``health``, ``health_ts``.
+    """
+    out: dict[str, object | None] = {
+        "tx": None,
+        "rx": None,
+        "sn": None,
+        "oper": None,
+        "admin": None,
+        "health": None,
+        "health_ts": None,
+    }
+    contexts = _power_auth_contexts(operator_id)
+    if not contexts:
+        logger.warning(
+            "Altiplano telemetría: sin credenciales/endpoint (access_id=%s operator_id=%s)",
+            access_id,
+            operator_id,
+        )
+        return out
+
+    for vno, auth_url, user, pwd in contexts:
+        base_host = auth_url.split("/")[2]
+        if out["tx"] is None or out["rx"] is None:
+            restconf_body = _http_get_altiplano_json(
+                _restconf_potencias_url(base_host, vno, ne, object_name_raw),
+                auth_url,
+                access_id=access_id,
+                ne=ne,
+                log_label=f"RESTCONF diagnostics ({vno})",
+                accept="application/yang-data+json",
+                username=user,
+                password=pwd,
+            )
+            pair = _potencias_from_diagnostics_body(restconf_body)
+            if pair is not None:
+                out["tx"], out["rx"] = pair
+
+        ema_body = _http_get_altiplano_json(
+            _ema_potencias_url(base_host, vno, ne, object_name_raw),
+            auth_url,
+            access_id=access_id,
+            ne=ne,
+            log_label=f"EMA entity ({vno})",
+            username=user,
+            password=pwd,
+        )
+        onu_detected_ts = None
+
+        def _merge_onu_detected(body: object | None) -> None:
+            nonlocal onu_detected_ts
+            ts = _onu_detected_datetime_from_ema(body)
+            if not ts:
+                return
+            onu_detected_ts = _newest_altiplano_iso_timestamp(onu_detected_ts, ts)
+
+        if ema_body:
+            if out["sn"] is None:
+                out["sn"] = _sn_from_ema_entity_body(ema_body)
+            if out["tx"] is None or out["rx"] is None:
+                pair = _potencias_from_ema_entity_body(ema_body)
+                if pair is not None:
+                    out["tx"], out["rx"] = pair
+            if out["oper"] is None:
+                out["oper"] = _ema_top_level_state(ema_body, "operationState")
+            _merge_onu_detected(ema_body)
+
+        if out["admin"] is None:
+            ema_admin_body = _http_get_altiplano_json(
+                _ema_entity_url(
+                    base_host,
+                    vno,
+                    ne,
+                    object_name_raw,
+                    fetch_device_attributes=False,
+                    is_one=False,
+                ),
+                auth_url,
+                access_id=access_id,
+                ne=ne,
+                log_label=f"EMA admin ({vno})",
+                username=user,
+                password=pwd,
+            )
+            if ema_admin_body:
+                out["admin"] = _ema_top_level_state(ema_admin_body, "adminStatus")
+                _merge_onu_detected(ema_admin_body)
+
+        if out["health"] is None:
+            full_target = _ont_connection_full_target(object_name_raw, operator_id)
+            if full_target:
+                health = _fetch_intent_health_inp(
+                    access_id,
+                    full_target,
+                    username=user,
+                    password=pwd,
+                )
+                if health.get("health"):
+                    out["health"] = health["health"]
+                if health.get("health_ts"):
+                    out["health_ts"] = health["health_ts"]
+
+        if out["health"] is None and str(out.get("oper") or "").strip().upper() == "UP":
+            out["health"] = "Healthy"
+
+        if out.get("health") or out.get("health_ts") or onu_detected_ts:
+            out["health_ts"] = _nv_health_display_timestamp(
+                out.get("health_ts"),
+                onu_detected_ts,
+                oper=out.get("oper"),
+                health=out.get("health"),
+            )
+
+        if (
+            out["tx"] is not None
+            and out["rx"] is not None
+            and out["sn"]
+            and out["oper"]
+            and out["admin"]
+            and out["health"]
+        ):
+            break
+
+    return out
+
+
+def _ont_gpon_interface_suffix(object_name_raw: str) -> str:
+    """Sufijo GPON de la ONT (p. ej. ``v1~BA_OLTA_SF01_04-7-1-5_GPON``)."""
+    onu = normalizar_object_name(str(object_name_raw or "").strip())
+    if not onu:
+        return ""
+    return f"v1~{onu}_GPON"
+
+
+def _alarm_resource_raw_paths(ne: str, object_name_raw: str) -> list[str]:
+    """Rutas ``alarmResource.raw`` usadas por Network Views (HAR / AC INP)."""
+    ne_val = str(ne or "").strip()
+    gpon = _ont_gpon_interface_suffix(object_name_raw)
+    if not ne_val or not gpon:
+        return []
+    prefix = (
+        f"/anv:device-manager/anv-device-holders:device={ne_val}/"
+        "device-specific-data"
+    )
+    onu_key = normalizar_object_name(str(object_name_raw or "").strip())
+    paths = [
+        f"{prefix}/ietf-interfaces:interfaces/interface={gpon}",
+        f"{prefix}/bbf-fiber-onu-emulated-mount:onus/onu={gpon}",
+        f"{prefix}/bbf-fiber-onu-emulated-mount:onus/onu={gpon}/root/"
+        "ietf-hardware-mounted:hardware/component=ANIPORT",
+        f"{prefix}/bbf-fiber-onu-emulated-mount:onus/onu={gpon}/root/"
+        "ietf-hardware-mounted:hardware/component=CHASSIS",
+    ]
+    if onu_key:
+        paths.append(
+            f"{prefix}/bbf-fiber-onu-emulated-mount:onus/onu=v1~{onu_key}_GPON"
+        )
+    return paths
+
+
+def _build_alarmas_activas_search_query(ne: str, object_name_raw: str) -> dict | None:
+    paths = _alarm_resource_raw_paths(ne, object_name_raw)
+    if not paths:
+        return None
+    should: list[dict] = [{"match": {"alarmResource.raw": p}} for p in paths]
+    gpon = _ont_gpon_interface_suffix(object_name_raw)
+    onu_key = normalizar_object_name(str(object_name_raw or "").strip())
+    if gpon:
+        should.append({"wildcard": {"alarmResource.raw": f"*{gpon}*"}})
+    if onu_key:
+        should.append({"wildcard": {"alarmResourceUiName": f"*{onu_key}_GPON*"}})
+        should.append({"wildcard": {"alarmResourceUiName": f"*{onu_key}*"}})
+    return {
+        "query": {
+            "bool": {
+                "must": [
+                    {"bool": {"should": [{"term": {"alarmStatus": "Active"}}]}},
+                    {"bool": {"should": should, "minimum_should_match": 1}},
+                ]
+            }
+        }
+    }
+
+
+def _parse_alarmas_activas_search_body(body: object) -> list[dict]:
+    """Normaliza hits de ``/rest/alarm/alarms/search`` (índice ``alarms-active``)."""
+    if not isinstance(body, dict):
+        return []
+    hits_wrap = body.get("hits")
+    if not isinstance(hits_wrap, dict):
+        return []
+    items = hits_wrap.get("hits")
+    if not isinstance(items, list):
+        return []
+    out: list[dict] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        src = item.get("_source")
+        if not isinstance(src, dict):
+            continue
+        if str(src.get("alarmStatus") or "").strip().lower() != "active":
+            continue
+        cleared_raw = src.get("clearedTime")
+        cleared = ""
+        if cleared_raw is not None and str(cleared_raw).strip() not in ("", "-"):
+            cleared = str(cleared_raw).strip()
+        out.append(
+            {
+                "severity": str(src.get("alarmSeverity") or "").strip(),
+                "status": str(src.get("alarmStatus") or "").strip(),
+                "type": str(src.get("alarmType") or "").strip(),
+                "raised": str(src.get("raisedTime") or "").strip(),
+                "cleared": cleared,
+                "resource": str(
+                    src.get("alarmResourceUiName") or src.get("alarmResource") or ""
+                ).strip(),
+                "text": str(
+                    src.get("alarmText") or src.get("additionalInfo") or ""
+                ).strip(),
+                "main_device": str(src.get("mainDeviceRefId") or "").strip(),
+                "repair": str(src.get("proposedRepairAction") or "").strip(),
+                "service_affecting": str(src.get("serviceAffecting") or "").strip(),
+            }
+        )
+    out.sort(key=lambda a: a.get("raised") or "", reverse=True)
+    return out
+
+
+def _inp_alarm_search_url() -> tuple[str, str, str, str] | None:
+    """URL y credenciales del buscador de alarmas en AC INP (como Network Views)."""
+    host, port, base = get_altiplano_nbi_target("INP")
+    if not host or not base:
+        return None
+    user, pwd = get_altiplano_operator_credentials("INP")
+    if not user or not pwd:
+        user, pwd = get_altiplano_credentials()
+    if not user or not pwd:
+        return None
+    auth_url = f"https://{host}:{port}/{base}/rest/auth/login"
+    search_url = (
+        f"https://{host}:{port}/{base}/rest/alarm/alarms/search"
+        "?index=alarms-active"
+    )
+    return search_url, auth_url, user, pwd
+
+
+def obtener_alarmas_ont_activas(
+    access_id: str,
+    object_name_raw: str,
+    operator_id,
+    *,
+    ne: str | None = None,
+) -> list[dict]:
+    """
+    Alarmas activas de la ONT vía ``POST …/rest/alarm/alarms/search`` (AC INP).
+
+    Misma API que la pestaña Alarms de Network Views (HAR ``10.200.4.101.har``).
+    """
+    _ = operator_id  # reservado; alarmas se consultan siempre en INP
+    obj = str(object_name_raw or "").strip()
+    if not obj:
+        return []
+    ne_val = (ne or "").strip() or _ne_from_object_name_raw(obj)
+    if not ne_val:
+        return []
+    query = _build_alarmas_activas_search_query(ne_val, obj)
+    if not query:
+        return []
+    ctx = _inp_alarm_search_url()
+    if not ctx:
+        return []
+    search_url, auth_url, user, pwd = ctx
+    body = _http_post_altiplano_json(
+        search_url,
+        auth_url,
+        query,
+        access_id=str(access_id or "").strip(),
+        ne=ne_val,
+        log_label="alarmas activas INP",
+        username=user,
+        password=pwd,
+    )
+    return _parse_alarmas_activas_search_body(body)
+
+
+def obtener_telemetry_ont(
+    access_id,
+    object_name_raw,
+    operator_id,
+    *,
+    ne: str | None = None,
+) -> dict[str, object | None]:
+    """TX/RX, SN y estado Network Views de una ONT vía Altiplano."""
+    obj = str(object_name_raw or "").strip()
+    empty = {
+        "tx": None,
+        "rx": None,
+        "sn": None,
+        "oper": None,
+        "admin": None,
+        "health": None,
+        "health_ts": None,
+    }
+    if not obj:
+        return empty
+    ne_val = (ne or "").strip() or _ne_from_object_name_raw(obj)
+    if not ne_val:
+        return empty
+    return _fetch_ont_telemetry_live(str(access_id or "").strip(), obj, operator_id, ne_val)
+
+
+def obtener_potencias_ont(
+    access_id,
+    object_name_raw,
+    operator_id,
+    *,
+    ne: str | None = None,
+) -> tuple[float, float] | None:
+    """
+    TX/RX de una ONT en Altiplano (RESTCONF diagnostics; si falla, API EMA como la GUI).
+
+    Args:
+        access_id: Solo para logs.
+        object_name_raw: ``object_name`` de inventario / aux.bajada_inventario.
+        operator_id: ``operatorid`` de inventario (mapa por operador en este módulo).
+        ne: Network Element; si se omite se deriva del ``object_name_raw``.
+
+    Returns:
+        ``(tx_dbm, rx_dbm)`` o ``None`` si no hay lectura.
+    """
+    telem = obtener_telemetry_ont(
+        access_id, object_name_raw, operator_id, ne=ne
+    )
+    tx, rx = telem.get("tx"), telem.get("rx")
+    if tx is None or rx is None:
+        return None
+    return float(tx), float(rx)
+
+
+def obtener_sn_ont(
+    access_id,
+    object_name_raw,
+    operator_id,
+    *,
+    ne: str | None = None,
+) -> str | None:
+    """Serial number (detectado) desde API EMA de Altiplano."""
+    telem = obtener_telemetry_ont(
+        access_id, object_name_raw, operator_id, ne=ne
+    )
+    sn = telem.get("sn")
+    return str(sn).strip().upper() if sn else None
+
+
 def obtener_potencias_por_cto(NE, onts_cto):
     """
     Obtiene TX/RX de Altiplano para ONTs de una CTO.
@@ -3782,87 +4928,24 @@ def obtener_potencias_por_cto(NE, onts_cto):
         if target is None:
             continue
         vno, auth_url = target
-        tasks.append((str(access_id), object_name_raw, vno, auth_url))
+        tasks.append((str(access_id), object_name_raw, operator_id, vno, auth_url))
 
     if not tasks:
         return resultados
 
-    def _fetch_one(access_id, object_name_raw, vno, auth_url):
-        token = _obtener_token(auth_url)
-        if not token:
+    def _fetch_one(access_id, object_name_raw, operator_id, vno, auth_url):
+        _ = vno, auth_url
+        telem = _fetch_ont_telemetry_live(access_id, object_name_raw, operator_id, NE)
+        tx, rx = telem.get("tx"), telem.get("rx")
+        if tx is None or rx is None:
             return access_id, None
-
-        base_host = auth_url.split("/")[2]
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Accept": "application/yang-data+json",
-            "Content-Type": "application/yang-data+json",
-        }
-        object_name_altiplano = normalizar_object_name(object_name_raw)
-        onu_encoded = quote(object_name_altiplano, safe="")
-        power_url = (
-            f"https://{base_host}/{vno}-altiplano-ac/rest/restconf/data/"
-            f"anv:device-manager/anv-device-holders:device={NE}/"
-            f"device-specific-data/bbf-fiber-onu-emulated-mount:onus/"
-            f"onu={onu_encoded}_GPON/root/"
-            f"ietf-hardware-mounted:hardware-state/component=ANIPORT/"
-            f"bbf-hardware-transceivers-mounted:transceiver-link/diagnostics"
-            f"?altiplano-target=INP"
-        )
-
-        try:
-            r = requests.get(power_url, headers=headers, verify=False, timeout=60)
-        except requests.RequestException:
-            return access_id, None
-
-        if r.status_code in (401, 403):
-            token_new = _obtener_token(auth_url, force_refresh=True)
-            if not token_new:
-                logger.warning(
-                    "Altiplano potencias: sin token tras HTTP %s (access_id=%s NE=%s)",
-                    r.status_code,
-                    access_id,
-                    NE,
-                )
-                return access_id, None
-            headers["Authorization"] = f"Bearer {token_new}"
-            try:
-                r = requests.get(power_url, headers=headers, verify=False, timeout=60)
-            except requests.RequestException:
-                logger.warning(
-                    "Altiplano potencias: error de red tras refrescar token (access_id=%s NE=%s)",
-                    access_id,
-                    NE,
-                )
-                return access_id, None
-
-        if r.status_code != 200:
-            logger.warning(
-                "Altiplano potencias: GET diagnostics HTTP %s access_id=%s NE=%s",
-                r.status_code,
-                access_id,
-                NE,
-            )
-            return access_id, None
-
-        try:
-            diagnostics = r.json()["bbf-hardware-transceivers-mounted:diagnostics"]
-            tx = round(
-                diagnostics["nokia-hardware-transceivers-dbm-mounted:tx-power-dbm"] * 0.1, 2
-            )
-            rx = round(
-                diagnostics["nokia-hardware-transceivers-dbm-mounted:rx-power-dbm"] * 0.1, 2
-            )
-            return access_id, (tx, rx)
-        except Exception as ex:
-            logger.debug("Altiplano: sin diagnostics para access_id=%s: %s", access_id, ex)
-            return access_id, None
+        return access_id, (float(tx), float(rx))
 
     max_workers = min(len(tasks), get_altiplano_power_workers())
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = [
-            executor.submit(_fetch_one, access_id, object_name_raw, vno, auth_url)
-            for access_id, object_name_raw, vno, auth_url in tasks
+            executor.submit(_fetch_one, access_id, object_name_raw, operator_id, vno, auth_url)
+            for access_id, object_name_raw, operator_id, vno, auth_url in tasks
         ]
         for fut in as_completed(futures):
             aid, power = fut.result()

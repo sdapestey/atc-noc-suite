@@ -9,7 +9,12 @@ from db import db_cursor
 from psycopg2.errors import UndefinedColumn
 from queries import QUERIES
 
-from altiplano import obtener_potencias_por_cto
+from altiplano import (
+    obtener_alarmas_ont_activas,
+    obtener_potencias_ont,
+    obtener_potencias_por_cto,
+    obtener_telemetry_ont,
+)
 
 from .domain import (
     SITIO_PRINCIPAL_DEFAULT,
@@ -49,6 +54,19 @@ _PARTIDO_DISPLAY_MAP = {
     "BA SAMA": "BA San Martin",
     "BA SANM": "BA San Martin",
 }
+
+
+def _tiene_potencia_valida(tx, rx) -> bool:
+    """True si TX y RX son lecturas numéricas (no DOWN / vacío)."""
+    for v in (tx, rx):
+        if v is None:
+            return False
+        if isinstance(v, (int, float)):
+            continue
+        s = str(v).strip()
+        if not s or s == "-":
+            return False
+    return True
 
 
 def _sin_potencias_por_status(status) -> bool:
@@ -108,10 +126,48 @@ def _operador_desde_operatorid_cell(op_raw) -> str:
     if op_raw is None or str(op_raw).strip() == "":
         return "—"
     s = str(op_raw).strip()
+    if s == "0":
+        return "—"
     try:
         return nombre_operador(int(s))
     except (TypeError, ValueError):
         return nombre_operador(s)
+
+
+def _operator_id_efectivo_desde_bajada(b_operatorid, invocator_system) -> Any:
+    """Prioriza invocator_system (inventario activo) si operatorid en aux es 0 o vacío."""
+    for candidate in (invocator_system, b_operatorid):
+        if candidate is None:
+            continue
+        s = str(candidate).strip()
+        if not s or s == "0":
+            continue
+        try:
+            return int(s)
+        except (TypeError, ValueError):
+            return candidate
+    return None
+
+
+def _object_name_raw_desde_fuentes(*candidates) -> str | None:
+    for raw in candidates:
+        if raw is None:
+            continue
+        t = str(raw).strip()
+        if t:
+            return t
+    return None
+
+
+def _object_name_ui_desde_raw(obj_raw: str | None) -> str:
+    if not obj_raw:
+        return ""
+    return str(obj_raw).replace(":1-1", "")
+
+
+def _operador_display_valido(op_label: str | None) -> bool:
+    op = str(op_label or "").strip()
+    return bool(op) and op not in ("0", "—", "-")
 
 
 def _fecha_display_desde_textos_aux(
@@ -261,12 +317,34 @@ def _fetch_row_bajada_inventario_detalle(cur, aid: str):
                     b.object_name,
                     f.path_atc,
                     f.status,
-                    s.serial_number
+                    s.serial_number,
+                    s.object_name,
+                    COALESCE(
+                        NULLIF(o.invocator_system, 0),
+                        b_hist.operatorid,
+                        NULLIF(b.operatorid, 0)
+                    ) AS invocator_system
                 FROM aux.bajada_inventario b
                 LEFT JOIN cm.inventory_fat_occupation f
                   ON LOWER(btrim(f.access_id::text)) = LOWER(btrim(b.access_id::text))
                 LEFT JOIN altiplano.serial s
                   ON LOWER(btrim(s.access_id::text)) = LOWER(btrim(b.access_id::text))
+                LEFT JOIN cm.inventory_olt_occupation o
+                  ON LOWER(btrim(o.access_id::text)) = LOWER(btrim(b.access_id::text))
+                LEFT JOIN LATERAL (
+                    SELECT
+                        CASE
+                            WHEN trim(b2.operatorid::text) ~ '^[0-9]+$'
+                            THEN trim(b2.operatorid::text)::bigint
+                            ELSE NULL
+                        END AS operatorid
+                    FROM aux.bajada_inventario b2
+                    WHERE LOWER(btrim(b2.access_id::text)) = LOWER(btrim(b.access_id::text))
+                      AND trim(b2.operatorid::text) ~ '^[0-9]+$'
+                      AND trim(b2.operatorid::text) <> '0'
+                    ORDER BY b2.reserved_date DESC NULLS LAST, b2.provided_date DESC NULLS LAST
+                    LIMIT 1
+                ) b_hist ON true
                 WHERE LOWER(btrim(b.access_id::text)) = LOWER(btrim(%s))
                 ORDER BY b.reserved_date DESC NULLS LAST, b.provided_date DESC NULLS LAST
                 LIMIT 1
@@ -278,11 +356,23 @@ def _fetch_row_bajada_inventario_detalle(cur, aid: str):
 
 def _dict_detalle_desde_bajada_inventario_row(row, aid: str) -> dict:
     """Arma el dict de detalle índice a partir de la fila de `_fetch_row_bajada_inventario_detalle`."""
-    row_aid, op_id, res_dt, prov_dt, cto, cm_desc, obj_raw, path_atc, fat_status, serial_number = row
+    (
+        row_aid,
+        op_id,
+        res_dt,
+        prov_dt,
+        cto,
+        cm_desc,
+        obj_raw,
+        path_atc,
+        fat_status,
+        serial_number,
+        serial_object_name,
+        invocator_system,
+    ) = row
     aid_canon = (str(row_aid).strip() if row_aid is not None else "") or aid
-    ont_ui = ""
-    if obj_raw:
-        ont_ui = str(obj_raw).replace(":1-1", "")
+    obj_effective = _object_name_raw_desde_fuentes(serial_object_name, obj_raw)
+    ont_ui = _object_name_ui_desde_raw(obj_effective)
     cm_s = (cm_desc or "").strip() if cm_desc is not None else ""
     cto_display = cm_s if cm_s else ((cto or "").strip() or None)
     if not cto_display:
@@ -293,10 +383,11 @@ def _dict_detalle_desde_bajada_inventario_row(row, aid: str) -> dict:
         status_disp = str(fat_status).strip()
     else:
         status_disp = "Registro aux.bajada_inventario"
+    op_eff = _operator_id_efectivo_desde_bajada(op_id, invocator_system)
 
     return {
         "AID": aid_canon,
-        "OPERADOR": nombre_operador(op_id),
+        "OPERADOR": _operador_desde_operatorid_cell(op_eff),
         "Status": status_disp,
         "CTO": cto_display,
         "RAMA": rama_val,
@@ -306,6 +397,34 @@ def _dict_detalle_desde_bajada_inventario_row(row, aid: str) -> dict:
         "RX": None,
         "fuente_detalle": "bajada_inventario",
     }
+
+
+def _enrich_detalle_con_inventario_activo(det: dict, aid: str) -> dict:
+    """Completa operador/ONT/SN desde inventario FAT cuando aux.bajada_inventario viene incompleto."""
+    try:
+        fat = consultar_access_id_estructura(aid)
+    except Exception:
+        logger.exception("_enrich_detalle_con_inventario_activo")
+        return det
+    if not fat:
+        return det
+    if not _operador_display_valido(det.get("OPERADOR")):
+        fat_op = fat.get("OPERADOR")
+        if _operador_display_valido(fat_op):
+            det["OPERADOR"] = fat_op
+    ont = str(det.get("ONT") or "").strip()
+    if ont in ("", "—"):
+        det["ONT"] = fat.get("ONT") or det["ONT"]
+    sn = str(det.get("SN") or "").strip()
+    if sn in ("", "—") and fat.get("SN"):
+        det["SN"] = fat["SN"]
+    rama = det.get("RAMA")
+    if not (rama and str(rama).strip()):
+        det["RAMA"] = fat.get("RAMA")
+    st = str(det.get("Status") or "").strip()
+    if st == "Registro aux.bajada_inventario" and fat.get("Status"):
+        det["Status"] = fat["Status"]
+    return det
 
 
 def consultar_access_id_detalle_desde_bajada_inventario(access_id: str) -> dict | None:
@@ -327,7 +446,8 @@ def consultar_access_id_detalle_desde_bajada_inventario(access_id: str) -> dict 
     if not row:
         return None
 
-    return _dict_detalle_desde_bajada_inventario_row(row, aid)
+    det = _dict_detalle_desde_bajada_inventario_row(row, aid)
+    return _enrich_detalle_con_inventario_activo(det, det["AID"])
 
 
 def _dict_baja_desde_bajas_aux_row(row, has_cm: bool, aid: str, fuente_baja: str) -> dict:
@@ -414,7 +534,7 @@ def _consultar_access_id_estructura_con_cursor(cur, access_id) -> dict | None:
 
     return {
         "AID": aid,
-        "OPERADOR": nombre_operador(op_id),
+        "OPERADOR": _operador_desde_operatorid_cell(op_id),
         "Status": status,
         "CTO": cto,
         "RAMA": rama,
@@ -641,53 +761,181 @@ def consultar_access_id_desde_alias(alias: str) -> dict | None:
     }
 
 
+def _resolver_object_name_operator_potencias(
+    access_id: str, cto: str | None = None
+) -> tuple[str | None, int | None]:
+    """
+    ``object_name`` y ``operator_id`` para Altiplano.
+
+    Inventario activo a veces tiene ``object_name`` NULL; en ese caso usa
+    ``aux.bajada_inventario``.
+    """
+    aid_s = (access_id or "").strip()
+    if not aid_s:
+        return None, None
+
+    cto_s = (cto or "").strip()
+    if cto_s:
+        with db_cursor() as cur:
+            cur.execute(QUERIES["onts_por_cto"], (cto_s,))
+            for r in cur.fetchall():
+                if r[0] is None or str(r[0]).strip() != aid_s:
+                    continue
+                if r[4]:
+                    return str(r[4]).strip(), r[7]
+                break
+
+    try:
+        with db_cursor() as cur:
+            row = _fetch_row_bajada_inventario_detalle(cur, aid_s)
+    except Exception:
+        logger.exception("_resolver_object_name_operator_potencias bajada")
+        return None, None
+    if row:
+        obj = _object_name_raw_desde_fuentes(
+            row[10] if len(row) > 10 else None,
+            row[6] if len(row) > 6 else None,
+        )
+        if obj:
+            op_eff = _operator_id_efectivo_desde_bajada(
+                row[1] if len(row) > 1 else None,
+                row[11] if len(row) > 11 else None,
+            )
+            return obj, op_eff
+    return None, None
+
+
+def cambiar_admin_status_access_id(
+    access_id: str,
+    operador: str,
+    admin_status: str,
+    *,
+    object_name: str | None = None,
+) -> dict:
+    """Lock/unlock admin de la ONT (prender/apagar) resolviendo object_name desde inventario."""
+    from altiplano import cambiar_admin_status_ont
+
+    aid = str(access_id or "").strip()
+    if not aid:
+        return {"ok": False, "message": "Access ID requerido"}
+
+    status = str(admin_status or "").strip().upper()
+    if status not in ("LOCKED", "UNLOCKED"):
+        return {"ok": False, "message": "admin_status debe ser LOCKED o UNLOCKED"}
+
+    obj = (str(object_name or "").strip() if object_name else "") or None
+    op_id = None
+    if not obj:
+        base = consultar_access_id_estructura(aid)
+        cto = base.get("CTO") if base else None
+        if base and _sin_potencias_por_status(base.get("Status")):
+            return {
+                "ok": False,
+                "message": "ONT en estado FREE/RESERVED (sin lock admin en Altiplano)",
+            }
+        obj, op_id = _resolver_object_name_operator_potencias(aid, cto)
+    else:
+        base = consultar_access_id_estructura(aid)
+        if base:
+            _, op_id = _resolver_object_name_operator_potencias(aid, base.get("CTO"))
+        else:
+            with db_cursor() as cur:
+                row = _fetch_row_bajada_inventario_detalle(cur, aid)
+            if row:
+                op_id = row[1]
+
+    if not obj:
+        return {"ok": False, "message": "No se encontró object_name para el Access ID"}
+
+    return cambiar_admin_status_ont(
+        aid,
+        obj,
+        operador,
+        status,
+    )
+
+
 def consultar_access_id_potencias(access_id):
-    """Consulta TX/RX de un Access ID puntual.
+    """Consulta TX/RX y SN (Expected Serial Number en Altiplano) de un Access ID puntual.
 
     Flujo:
-    1) Resuelve la estructura del AID.
-    2) Busca ONT de la CTO para conocer NE/operador.
-    3) Consulta Altiplano y devuelve solo la potencia del AID requerido.
+    1) Resuelve AID (inventario activo o solo aux.bajada_inventario).
+    2) Obtiene ``object_name`` (inventario o bajada si en activo viene NULL).
+    3) Consulta Altiplano (RESTCONF + API EMA / AC INP como la GUI).
 
     Args:
         access_id: Access ID a consultar.
 
     Returns:
-        Dict con `AID`, `TX` y `RX` (valores numéricos o `None`).
+        Dict con `AID`, `TX`, `RX` y `SN` (Expected Serial Number vía EMA si está disponible).
     """
+    aid_in = str(access_id or "").strip()
     base = consultar_access_id_estructura(access_id)
-    if not base:
-        return {"AID": access_id, "TX": None, "RX": None}
+    if base:
+        aid_canon = str(base["AID"]).strip()
+        if _sin_potencias_por_status(base.get("Status")):
+            return {
+                "AID": aid_canon,
+                "TX": None,
+                "RX": None,
+                "SN": None,
+                "ALARMAS": [],
+                "alarmas_label": None,
+                "NV_STATUS": None,
+            }
+        cto = base.get("CTO")
+    else:
+        aid_canon = aid_in
+        cto = None
 
-    aid_canon = str(base["AID"]).strip()
+    obj, op_id = _resolver_object_name_operator_potencias(aid_canon, cto)
+    if not obj or op_id is None:
+        return {
+            "AID": aid_canon or access_id,
+            "TX": None,
+            "RX": None,
+            "SN": None,
+            "ALARMAS": [],
+            "alarmas_label": None,
+            "NV_STATUS": None,
+        }
 
-    with db_cursor() as cur:
-        cur.execute(QUERIES["onts_por_cto"], (base["CTO"],))
-        rows = cur.fetchall()
-
-    if not rows:
-        return {"AID": aid_canon, "TX": None, "RX": None}
-
-    for r in rows:
-        if str(r[0]).strip() == aid_canon and _sin_potencias_por_status(r[1]):
-            return {"AID": aid_canon, "TX": None, "RX": None}
-
-    ne = _ne_para_potencias_desde_filas_ont(rows)
-    if not ne:
-        return {"AID": aid_canon, "TX": None, "RX": None}
-
-    onts = [
-        (str(r[0]), r[4], r[7])
-        for r in rows
-        if r[0] is not None and r[4] and not _sin_potencias_por_status(r[1])
-    ]
-    if not onts:
-        return {"AID": aid_canon, "TX": None, "RX": None}
-
-    potencias = obtener_potencias_por_cto(ne, onts)
-
-    tx, rx = potencias.get(aid_canon, (None, None))
-    return {"AID": aid_canon, "TX": tx, "RX": rx}
+    telem = obtener_telemetry_ont(aid_canon, obj, op_id)
+    tx = telem.get("tx")
+    rx = telem.get("rx")
+    out = {
+        "AID": aid_canon,
+        "TX": tx,
+        "RX": rx,
+        "SN": telem.get("sn"),
+    }
+    out["ALARMAS"] = obtener_alarmas_ont_activas(aid_canon, obj, op_id)
+    if out["ALARMAS"]:
+        out["alarmas_label"] = None
+    elif _tiene_potencia_valida(tx, rx):
+        out["alarmas_label"] = "Sin Alarmas"
+    else:
+        out["alarmas_label"] = None
+    n_alarms = 0
+    if out.get("alarmas_label") != "Sin Alarmas":
+        al = out.get("ALARMAS")
+        n_alarms = len(al) if isinstance(al, list) else 0
+    health = telem.get("health") or None
+    oper = telem.get("oper") or None
+    if not health and str(oper or "").strip().upper() == "UP":
+        health = "Healthy"
+    out["NV_STATUS"] = {
+        "health": health,
+        "health_ts": telem.get("health_ts") or None,
+        "oper": oper,
+        "admin": telem.get("admin") or None,
+        "alarms_active": n_alarms,
+    }
+    if op_id is not None:
+        op_label = _operador_desde_operatorid_cell(op_id)
+        if _operador_display_valido(op_label):
+            out["OPERADOR"] = op_label
+    return out
 
 
 def consultar_cto_estructura(cto):

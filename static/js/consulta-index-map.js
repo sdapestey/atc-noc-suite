@@ -335,6 +335,9 @@
   window.consultaAbrirMapaRama = function (btn) {
     var sec = btn && btn.closest ? btn.closest(".consulta-section") : null;
     if (!sec) return;
+    if (window.ConsultaMasivoUi && sec.classList.contains("consulta-section--multi")) {
+      window.ConsultaMasivoUi.expandRamaSection(sec, { expandCtos: true });
+    }
     var wrap = sec.querySelector(".consulta-mapa-rama-details");
     if (!wrap) return;
 
@@ -361,6 +364,14 @@
 
   window.consultaAbrirMapaCto = function (btn) {
     if (!btn) return;
+    var secCto = btn.closest ? btn.closest(".consulta-section") : null;
+    if (
+      window.ConsultaMasivoUi &&
+      secCto &&
+      secCto.classList.contains("consulta-section--multi")
+    ) {
+      window.ConsultaMasivoUi.expandRamaSection(secCto, { expandCtos: true });
+    }
     var targetId = (btn.getAttribute("data-consulta-cto-mapa-details-id") || "").trim();
     var det = targetId ? document.getElementById(targetId) : null;
     if (!det || String(det.tagName || "").toLowerCase() !== "details") {

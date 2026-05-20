@@ -34,6 +34,7 @@ from .dashboard_rama import (
 from .exports import (
     export_dashboard_olts_csv,
     export_dashboard_ramas_csv,
+    export_index_csv_filename,
     export_index_query_csv,
 )
 from .historico_potencias import (
@@ -49,6 +50,7 @@ from .inventory import (
     consultar_access_id_estructura,
     consultar_cto_coordenadas,
     consultar_cto_direccion_postal,
+    cambiar_admin_status_access_id,
     consultar_access_id_potencias,
     consultar_cto_estructura,
     consultar_cto_potencias,
@@ -61,6 +63,7 @@ __all__ = [
     "consultar_access_id_baja_o_ausente",
     "consultar_access_id_detalle_desde_bajada_inventario",
     "consultar_access_id_estructura",
+    "cambiar_admin_status_access_id",
     "consultar_access_id_potencias",
     "consultar_cto_coordenadas",
     "consultar_cto_direccion_postal",
@@ -87,6 +90,7 @@ __all__ = [
     "export_dashboard_ramas_csv",
     "export_dashboard_olts_csv",
     "export_dashboard_calidad_inventario_csv",
+    "export_index_csv_filename",
     "export_index_query_csv",
     "consultar_potencias_historico_rama",
     "consultar_potencias_altiplano_ahora_rama",

@@ -19,3 +19,8 @@ def test_dashboard_rama_js_contains_core_handlers():
     assert "_sincronizarResaltadoPotenciasEn" in js
     assert "consulta-fila-sem-amarillo" in js
     assert "NocPower" in js
+    assert "finalizeTxRxLoadingCell" in js
+    assert "filaTieneAidConsulta" in js
+    assert "_ramaFinalizeTxRxPendientes" in js
+    assert "<th>Estado</th>" not in js
+    assert "RAMA_COL_EST" not in js

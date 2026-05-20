@@ -1,4 +1,4 @@
-def test_index_access_id_renders_estado_field(client, monkeypatch):
+def test_index_access_id_sin_fila_estado_solo_tx_rx(client, monkeypatch):
     import web.routes as routes
 
     monkeypatch.setattr(
@@ -22,7 +22,10 @@ def test_index_access_id_renders_estado_field(client, monkeypatch):
     r = client.post("/", data={"value": "105"})
     assert r.status_code == 200
     html = r.get_data(as_text=True)
-    assert "<th>Estado</th><td id=\"s0-estado-id\"" in html
+    assert "<th>TX (dBm)</th><td id=\"s0-tx\"" in html
+    assert "<th>RX (dBm)</th><td id=\"s0-rx\"" in html
+    assert "<th>Alarmas</th><td id=\"s0-alarmas\"" in html
+    assert "estado-id" not in html
     assert "(aux.bajada_inventario)" in html
 
 
@@ -59,7 +62,7 @@ def test_index_alphanumeric_access_id_resolves(client, monkeypatch):
     assert "SF01-FATC-8-100001" in html
 
 
-def test_index_cto_table_renders_estado_column(client, monkeypatch):
+def test_index_cto_table_sin_columna_estado(client, monkeypatch):
     import web.routes as routes
 
     monkeypatch.setattr(
@@ -84,11 +87,13 @@ def test_index_cto_table_renders_estado_column(client, monkeypatch):
     r = client.post("/", data={"value": "TG01-FATC-8-100987"})
     assert r.status_code == 200
     html = r.get_data(as_text=True)
-    assert "<th>Status</th>" in html and "<th>TX (dBm)</th>" in html and "<th>Estado</th>" in html
-    assert "id=\"s0-st-105\"" in html
+    assert "<th>Status</th>" in html and "<th>TX (dBm)</th>" in html and "<th>RX (dBm)</th>" in html
+    assert "<th>Estado</th>" not in html
+    assert "id=\"s0-tx-105\"" in html
+    assert "id=\"s0-st-105\"" not in html
 
 
-def test_index_rama_table_renders_estado_column(client, monkeypatch):
+def test_index_rama_table_sin_columna_estado(client, monkeypatch):
     import web.routes as routes
 
     monkeypatch.setattr(
@@ -113,8 +118,9 @@ def test_index_rama_table_renders_estado_column(client, monkeypatch):
     r = client.post("/", data={"value": "TG01-RATC-0-000308"})
     assert r.status_code == 200
     html = r.get_data(as_text=True)
-    assert "<th>AID</th>" in html and "<th>TX</th>" in html and "<th>ESTADO</th>" in html
-    assert "id=\"s0-st-105\"" in html
+    assert "<th>AID</th>" in html and "<th>TX</th>" in html and "<th>RX</th>" in html
+    assert "<th>ESTADO</th>" not in html
+    assert "id=\"s0-tx-105\"" in html
     assert "consulta-cto-block" in html
     assert "consulta-cto-head-row--subrama" in html
     assert "Consultar RX" in html

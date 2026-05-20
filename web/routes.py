@@ -22,13 +22,20 @@ from altiplano import (
     sincronizar_intent_ont_connection_inp,
 )
 from db import ensure_db_connection_ready, healthcheck_db
-from services.domain import OPERADORES, resumen_semaforo_desde_rx_values, split_index_query_tokens
+from services.domain import (
+    OPERADORES,
+    canonical_operador_consulta,
+    resumen_semaforo_desde_rx_values,
+    sort_operadores_consulta,
+    split_index_query_tokens,
+)
 from services import (
     ALLOWED_HISTORICO_DAYS,
     cambiar_sn_ont,
     consultar_access_id_desde_alias,
     consultar_access_id_baja_o_ausente,
     consultar_access_id_detalle_desde_bajada_inventario,
+    cambiar_admin_status_access_id,
     consultar_access_id_potencias,
     consultar_cto_coordenadas,
     consultar_cto_direccion_postal,
@@ -65,6 +72,7 @@ from services import (
     export_dashboard_ramas_csv,
     export_csv_potencias_historico_rama,
     export_dashboard_calidad_inventario_csv,
+    export_index_csv_filename,
     export_index_query_csv,
     consultar_potencias_altiplano_ahora_rama,
     consultar_potencias_historico_rama,
@@ -460,6 +468,26 @@ _CONSULTA_INDIVIDUAL_MULTI_TOKEN_MSG = (
 )
 
 
+def _consulta_row_in_service(row: dict) -> bool:
+    st = row.get("STATUS") if row.get("STATUS") is not None else row.get("Status")
+    return str(st or "").strip().upper() == "IN SERVICE"
+
+
+def count_consulta_in_service_ont_rows(rows) -> int:
+    """ONT con estado IN SERVICE (misma regla que badges ONT en index.html)."""
+    return sum(1 for r in (rows or []) if _consulta_row_in_service(r))
+
+
+def _consulta_in_service_ont_from_tabla(tabla_cto, *, es_rama: bool) -> int:
+    if not tabla_cto:
+        return 0
+    if es_rama:
+        return sum(count_consulta_in_service_ont_rows(rows) for rows in tabla_cto.values())
+    if isinstance(tabla_cto, list):
+        return count_consulta_in_service_ont_rows(tabla_cto)
+    return 0
+
+
 def _consulta_fila_count(c: dict) -> int:
     """Filas con equipos (detalle=1, tabla CTO/RAMA=suma de ONT)."""
     if c.get("resultado"):
@@ -472,24 +500,68 @@ def _consulta_fila_count(c: dict) -> int:
     return len(t) if isinstance(t, list) else 0
 
 
-_DASH_LIKE_OPERADORES = frozenset({"-", "—"})
+def _consulta_section_cto_ont(c: dict) -> tuple[int, int]:
+    """CTO y ONT IN SERVICE de una sección (misma lógica que badges en index.html)."""
+    if c.get("resultado"):
+        res = c["resultado"]
+        cto = 1 if (res.get("CTO") and res.get("CTO") != "—") else 0
+        ont = 1 if _consulta_row_in_service(res) else 0
+        return cto, ont
+    t = c.get("tabla_cto")
+    if not t:
+        return 0, 0
+    if c.get("es_rama"):
+        return len(t), _consulta_in_service_ont_from_tabla(t, es_rama=True)
+    if isinstance(t, list):
+        return 1, count_consulta_in_service_ont_rows(t)
+    return 0, 0
+
+
+def _consulta_in_service_inventory_rows(c: dict) -> list[dict]:
+    """Filas inventario IN SERVICE de una sección (para totales por operador)."""
+    if c.get("resultado"):
+        res = c["resultado"]
+        return [res] if _consulta_row_in_service(res) else []
+    t = c.get("tabla_cto")
+    if not t:
+        return []
+    if c.get("es_rama"):
+        out: list[dict] = []
+        for rows in t.values():
+            out.extend(r for r in rows if _consulta_row_in_service(r))
+        return out
+    if isinstance(t, list):
+        return [r for r in t if _consulta_row_in_service(r)]
+    return []
+
+
+def _consulta_masivo_inventory_totals(consultas: list[dict]) -> dict | None:
+    """Suma CTO/ONT IN SERVICE y desglose por operador (consulta masiva, >1 token)."""
+    if len(consultas) <= 1:
+        return None
+    cto_total = 0
+    ont_total = 0
+    ont_por_operador: dict[str, int] = {}
+    for c in consultas:
+        cto, ont = _consulta_section_cto_ont(c)
+        cto_total += cto
+        ont_total += ont
+        for row in _consulta_in_service_inventory_rows(c):
+            op_label = canonical_operador_consulta(row.get("OPERADOR"))
+            if not op_label:
+                continue
+            ont_por_operador[op_label] = ont_por_operador.get(op_label, 0) + 1
+    ops_orden = sort_operadores_consulta(ont_por_operador.keys())
+    return {
+        "cto": cto_total,
+        "ont": ont_total,
+        "ont_por_operador": [(op, ont_por_operador[op]) for op in ops_orden],
+    }
 
 
 def sort_consulta_operadores_chips(operadores) -> list[str]:
-    """Orden de chips de operador: valores «sin operador» (-, —) al final."""
-    seen: set[str] = set()
-    head: list[str] = []
-    tail: list[str] = []
-    for raw in operadores or []:
-        op = str(raw).strip() if raw is not None else ""
-        if not op or op in seen:
-            continue
-        seen.add(op)
-        if op in _DASH_LIKE_OPERADORES:
-            tail.append(op)
-        else:
-            head.append(op)
-    return head + tail
+    """Chips de operador en Consulta: solo TASA, DirecTV, Metrotel, Iplan, ATC, SION."""
+    return sort_operadores_consulta(operadores)
 
 
 def _consulta_operadores_union(consultas: list[dict]) -> list[str]:
@@ -534,7 +606,7 @@ def _csv_download_response(csv_text: str, filename: str) -> Response:
     return Response(
         "\ufeff" + (csv_text or ""),
         mimetype="text/csv; charset=utf-8",
-        headers={"Content-Disposition": f"attachment; filename={filename}"},
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 
@@ -639,9 +711,11 @@ def register(app):
         if len(consultas) > 1:
             consulta_ops_merged = _consulta_operadores_union(consultas)
             consulta_row_counts = [_consulta_fila_count(c) for c in consultas]
+            consulta_masivo_totals = _consulta_masivo_inventory_totals(consultas)
         else:
             consulta_ops_merged = None
             consulta_row_counts = None
+            consulta_masivo_totals = None
 
         return render_template(
             "index.html",
@@ -653,7 +727,9 @@ def register(app):
             value=value,
             consulta_ops_merged=consulta_ops_merged,
             consulta_row_counts=consulta_row_counts,
+            consulta_masivo_totals=consulta_masivo_totals,
             sort_consulta_operadores_chips=sort_consulta_operadores_chips,
+            count_consulta_in_service_ont_rows=count_consulta_in_service_ont_rows,
         )
 
     @app.route("/potencias", methods=["POST"])
@@ -722,11 +798,50 @@ def register(app):
         code = 200 if result.get("ok") else 502
         return jsonify(result), code
 
+    @app.route("/ont/admin-status", methods=["POST"])
+    def cambiar_admin_status_ont_route():
+        data = request.get_json(silent=True) or request.form
+        access_id = (data.get("access_id") or "").strip()
+        operador = (data.get("operador") or "").strip()
+        object_name = (data.get("object_name") or "").strip() or None
+        admin_status = (data.get("admin_status") or "").strip().upper()
+        toggle = str(data.get("toggle") or "").lower() in ("1", "true", "yes")
+        current = (data.get("current_admin") or "").strip().upper()
+
+        if not access_id:
+            return jsonify({"ok": False, "message": "access_id requerido"}), 400
+
+        if toggle:
+            if current == "LOCKED":
+                admin_status = "UNLOCKED"
+            elif current == "UNLOCKED":
+                admin_status = "LOCKED"
+            else:
+                return jsonify(
+                    {"ok": False, "message": "Estado admin actual desconocido"}
+                ), 400
+
+        if admin_status not in ("LOCKED", "UNLOCKED"):
+            return jsonify(
+                {"ok": False, "message": "admin_status debe ser LOCKED o UNLOCKED"}
+            ), 400
+
+        result = cambiar_admin_status_access_id(
+            access_id,
+            operador,
+            admin_status,
+            object_name=object_name,
+        )
+        code = 200 if result.get("ok") else 502
+        return jsonify(result), code
+
     @app.route("/export/csv")
     def export_index_csv():
         value = request.args.get("value", "").strip()
-        data = export_index_query_csv(value)
-        return _csv_download_response(data, "consulta.csv")
+        operador = (request.args.get("operador") or "").strip() or None
+        data = export_index_query_csv(value, operador=operador)
+        filename = export_index_csv_filename(value, operador=operador)
+        return _csv_download_response(data, filename)
 
     @app.route("/dashboard/rama")
     def dash_rama():

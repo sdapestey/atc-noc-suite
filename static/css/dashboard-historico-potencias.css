@@ -1,6 +1,6 @@
-﻿/* Dashboard Historico Potencias: tarjetas KPI */
+/* Dashboard Historico Potencias: tarjetas KPI */
 .page-historico-potencias .metrics-grid {
-  margin: 14px 16px 0;
+  margin: 14px 18px 0;
   display: grid;
   /* 5 cols: PON ocupa 2 + ONTs + Mediana + Estado = una sola fila en desktop */
   grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -66,6 +66,11 @@
   color: var(--fg-muted);
 }
 
+.page-historico-potencias .card > .search {
+  padding-left: 18px;
+  padding-right: 18px;
+}
+
 .page-historico-potencias .historico-range {
   display: inline-flex;
   align-items: center;
@@ -83,9 +88,11 @@
 }
 
 .page-historico-potencias .historico-chart-shell {
-  margin-top: 16px;
+  margin: 16px 18px 18px;
   min-height: 0;
   padding: 12px;
+  box-sizing: border-box;
+  width: auto;
 }
 
 .page-historico-potencias .historico-chart-toolbar {

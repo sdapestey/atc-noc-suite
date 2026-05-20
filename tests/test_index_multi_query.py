@@ -34,8 +34,9 @@ def test_index_multiple_access_ids_two_sections(client, monkeypatch):
     html = r.get_data(as_text=True)
     assert 'data-query-token="105"' in html
     assert 'data-query-token="106"' in html
-    assert "<th>Estado</th><td id=\"s0-estado-id\"" in html
-    assert "<th>Estado</th><td id=\"s1-estado-id\"" in html
+    assert "<th>TX (dBm)</th><td id=\"s0-tx\"" in html
+    assert "<th>TX (dBm)</th><td id=\"s1-tx\"" in html
+    assert "estado-id" not in html
 
 
 def test_index_masivo_panel_semaforo_sin_badge_filas(client, monkeypatch):
@@ -152,6 +153,110 @@ def test_index_get_empty_shows_welcome_no_result_sections(client):
     assert "<strong>Individual:</strong>" in html
     assert 'class="consulta-section' not in html
     assert 'id="consulta-s0"' not in html
+
+
+def test_index_masivo_multi_rama_shows_cto_ont_totals(client, monkeypatch):
+    """Consulta masiva con varias RAMAs: pills CTO/ONT con suma total junto a los botones."""
+    import web.routes as routes
+
+    def rama_struct(rama):
+        if rama == "TG01-RATC-0-000308":
+            return {
+                "TG01-FATC-8-100987": [
+                    {"AID": "105", "OPERADOR": "TASA", "ONT": "ONT-1", "STATUS": "IN SERVICE"},
+                    {"AID": "108", "OPERADOR": "TASA", "ONT": "ONT-F", "STATUS": "FREE"},
+                ],
+                "TG01-FATC-8-100988": [
+                    {"AID": "106", "OPERADOR": "ATC", "ONT": "ONT-2", "STATUS": "IN SERVICE"},
+                ],
+            }
+        if rama == "TG01-RATC-0-000309":
+            return {
+                "TG01-FATC-8-100989": [{"AID": "107", "OPERADOR": "TASA", "ONT": "ONT-3", "STATUS": "IN SERVICE"}],
+            }
+        return {}
+
+    monkeypatch.setattr(routes, "consultar_rama_estructura", rama_struct)
+
+    r = client.post(
+        "/",
+        data={
+            "consulta_modo": "masivo",
+            "value_masivo": "TG01-RATC-0-000308\nTG01-RATC-0-000309",
+        },
+    )
+    assert r.status_code == 200
+    html = r.get_data(as_text=True)
+    assert 'class="consulta-masivo-totals"' in html
+    assert 'olt-metric-pill--cto' in html
+    assert 'olt-metric-pill--ont' in html
+    assert ">3</span> <span class=\"dashboard-metric-pill__l olt-metric-pill__l\">CTO</span>" in html
+    assert ">3</span> <span class=\"dashboard-metric-pill__l olt-metric-pill__l\">ONT</span>" in html
+    assert 'consulta-masivo-totals__op' in html
+    assert 'consulta-masivo-totals__op-l">TASA</span>' in html
+    assert 'consulta-masivo-totals__op-n">2</span>' in html
+    assert 'consulta-masivo-totals__op-l">ATC</span>' in html
+    assert 'consulta-masivo-totals__op-n">1</span>' in html
+    assert 'consulta-masivo-totals__op-l">None</span>' not in html
+    assert 'consulta-masivo-totals__op-l">0</span>' not in html
+    assert 'consulta-masivo-totals__op-l">-</span>' not in html
+    assert "consulta-masivo-pager" in html
+    assert "consulta-masivo-pager__size-row" in html
+    assert '<details class="consulta-panel">' in html
+    assert '<details class="consulta-panel" open>' not in html
+    assert "consulta-cto-panel" in html
+
+
+def test_index_rama_ont_badge_counts_only_in_service(client, monkeypatch):
+    """Badges ONT en RAMA/CTO cuentan solo filas IN SERVICE (no FREE/RESERVED)."""
+    import web.routes as routes
+
+    monkeypatch.setattr(
+        routes,
+        "consultar_rama_estructura",
+        lambda _rama: {
+            "TG01-FATC-8-100987": [
+                {"AID": "105", "OPERADOR": "TASA", "ONT": "ONT-1", "STATUS": "IN SERVICE"},
+                {"AID": "106", "OPERADOR": "TASA", "ONT": "ONT-2", "STATUS": "FREE"},
+                {"AID": "107", "OPERADOR": "TASA", "ONT": "ONT-3", "STATUS": "RESERVED"},
+            ],
+            "TG01-FATC-8-100988": [
+                {"AID": "108", "OPERADOR": "TASA", "ONT": "ONT-4", "STATUS": "IN SERVICE"},
+            ],
+        },
+    )
+
+    r = client.post(
+        "/",
+        data={"consulta_modo": "individual", "value": "TG01-RATC-0-000308"},
+    )
+    assert r.status_code == 200
+    html = r.get_data(as_text=True)
+
+    assert html.count('title="ONT IN SERVICE">ONT 2</span>') == 1
+    assert html.count('title="ONT IN SERVICE">ONT 1</span>') == 2
+
+
+def test_index_cto_ont_badge_counts_only_in_service(client, monkeypatch):
+    import web.routes as routes
+
+    monkeypatch.setattr(
+        routes,
+        "consultar_cto_estructura",
+        lambda _cto: [
+            {"AID": "105", "OPERADOR": "TASA", "ONT": "ONT-1", "STATUS": "IN SERVICE"},
+            {"AID": "106", "OPERADOR": "TASA", "ONT": "ONT-2", "STATUS": "FREE"},
+        ],
+    )
+
+    r = client.post(
+        "/",
+        data={"consulta_modo": "individual", "value": "TG01-FATC-8-100987"},
+    )
+    assert r.status_code == 200
+    html = r.get_data(as_text=True)
+    assert 'title="ONT IN SERVICE">ONT 1</span>' in html
+    assert 'ONT 2</span>' not in html or 'title="ONT IN SERVICE">ONT 2</span>' not in html
 
 
 def test_index_get_modo_masivo_empty_shows_masivo_tab(client):

@@ -105,6 +105,8 @@ def test_dashboard_altiplano_get_panel_cuando_hay_sesion(client):
     assert "for=\"cir\"" not in html
     assert "tester_inp" in html
     assert 'id="btn-orquestador-logout"' in html
+    assert "orquestador-credit" in html
+    assert "Desarrollo e implementación por Lucas Gimenez" in html
 
 
 def test_dashboard_altiplano_login_ok(client, monkeypatch):

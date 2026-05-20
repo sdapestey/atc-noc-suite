@@ -17,6 +17,30 @@ OPERADORES = {
     2806: "ATC",
 }
 
+# Operadores mostrados en Consulta (chips, totales masivos, export filtrado).
+OPERADORES_CONSULTA_ORDEN = ("TASA", "DIRECTV", "METROTEL", "IPLAN", "ATC", "SION")
+
+_OPERADOR_CONSULTA_ALIASES: dict[str, str] = {
+    "TASA": "TASA",
+    "DIRECTV": "DIRECTV",
+    "METROTEL": "METROTEL",
+    "IPLAN": "IPLAN",
+    "ATC": "ATC",
+    "SION": "SION",
+}
+
+_OPERADOR_CONSULTA_OMITIR = frozenset({
+    "",
+    "-",
+    "—",
+    "0",
+    "NONE",
+    "NULL",
+    "NAN",
+    "N/A",
+    "NA",
+})
+
 SITIO_PRINCIPAL_POR_REGION = {
     "MR01": "Moreno",
     "ES01": "Escobar",
@@ -42,6 +66,45 @@ OLT_PRESENCIA_FORZADA = [
 def nombre_operador(op_id: Any) -> str:
     """Mapea `operator_id` a nombre comercial legible."""
     return OPERADORES.get(op_id, str(op_id))
+
+
+def _operador_consulta_key(op: str) -> str:
+    return re.sub(r"\s+", "", (op or "").strip().upper())
+
+
+def canonical_operador_consulta(op: str | None) -> str | None:
+    """Etiqueta canónica de operador en Consulta, o None si no es válido (omitir 0, -, etc.)."""
+    raw = (op or "").strip()
+    if not raw:
+        return None
+    key = _operador_consulta_key(raw)
+    if key in _OPERADOR_CONSULTA_OMITIR or raw in ("-", "—", "0"):
+        return None
+    return _OPERADOR_CONSULTA_ALIASES.get(key)
+
+
+def operadores_consulta_coinciden(row_operador: str | None, filtro: str | None) -> bool:
+    """True si el filtro es ALL o el operador de fila coincide (p. ej. DIRECTV en inventario)."""
+    filt = (filtro or "").strip()
+    if not filt or filt.upper() == "ALL":
+        return True
+    row_c = canonical_operador_consulta(row_operador)
+    filt_c = canonical_operador_consulta(filt)
+    return row_c is not None and filt_c is not None and row_c == filt_c
+
+
+def sort_operadores_consulta(operadores) -> list[str]:
+    """Operadores válidos en orden fijo para chips y totales."""
+    seen: set[str] = set()
+    valid: list[str] = []
+    for raw in operadores or []:
+        op = canonical_operador_consulta(str(raw).strip() if raw is not None else "")
+        if not op or op in seen:
+            continue
+        seen.add(op)
+        valid.append(op)
+    order = {name: i for i, name in enumerate(OPERADORES_CONSULTA_ORDEN)}
+    return sorted(valid, key=lambda x: order.get(x, 99))
 
 
 def natural_sort_key_str(s: str | None):

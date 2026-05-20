@@ -11,28 +11,18 @@ def test_obtener_potencias_por_cto_soporta_operadores_nuevos(monkeypatch):
         ("999", "BA_OLTA_X:1-1-1-1-999", 9999),  # no soportado
     ]
 
-    monkeypatch.setattr(altiplano, "_obtener_token", lambda *_a, **_k: "tk")
-
     called_urls = []
 
-    def fake_get(url, headers=None, verify=False, timeout=None):
+    def fake_http(url, auth_url, **kwargs):
         called_urls.append(url)
+        return {
+            "bbf-hardware-transceivers-mounted:diagnostics": {
+                "nokia-hardware-transceivers-dbm-mounted:tx-power-dbm": -180,
+                "nokia-hardware-transceivers-dbm-mounted:rx-power-dbm": -250,
+            }
+        }
 
-        class R:
-            status_code = 200
-
-            @staticmethod
-            def json():
-                return {
-                    "bbf-hardware-transceivers-mounted:diagnostics": {
-                        "nokia-hardware-transceivers-dbm-mounted:tx-power-dbm": -180,
-                        "nokia-hardware-transceivers-dbm-mounted:rx-power-dbm": -250,
-                    }
-                }
-
-        return R()
-
-    monkeypatch.setattr(altiplano.requests, "get", fake_get)
+    monkeypatch.setattr(altiplano, "_http_get_altiplano_json", fake_http)
 
     out = altiplano.obtener_potencias_por_cto("BA_OLTA_X", onts)
 
@@ -48,56 +38,33 @@ def test_obtener_potencias_por_cto_soporta_operadores_nuevos(monkeypatch):
     assert all("999" not in u for u in called_urls)
 
 
-def test_obtener_potencias_por_cto_refresca_token_si_401(monkeypatch):
-    """Tras HTTP 401/403 se fuerza nuevo token y se reintenta el GET una vez."""
+def test_obtener_potencias_por_cto_fallback_ema_si_restconf_vacio(monkeypatch):
+    """Si RESTCONF no devuelve diagnostics, se consulta la API EMA (como la GUI)."""
     import altiplano
 
     onts = [("100", "BA_OLTA_X:1-1-1-1-100", 1001)]
 
-    token_calls = []
+    http_calls = []
 
-    def fake_obtener_token(auth_url, username=None, password=None, force_refresh=False):
-        token_calls.append(force_refresh)
-        return "tk-after-refresh" if force_refresh else "tk-before"
-
-    monkeypatch.setattr(altiplano, "_obtener_token", fake_obtener_token)
-
-    get_calls = []
-
-    class Resp401:
-        status_code = 401
-
-        @staticmethod
-        def json():
-            return {}
-
-    class Resp200:
-        status_code = 200
-
-        @staticmethod
-        def json():
-            return {
-                "bbf-hardware-transceivers-mounted:diagnostics": {
-                    "nokia-hardware-transceivers-dbm-mounted:tx-power-dbm": -180,
-                    "nokia-hardware-transceivers-dbm-mounted:rx-power-dbm": -250,
-                }
+    def fake_http(url, auth_url, **kwargs):
+        http_calls.append(kwargs.get("log_label", ""))
+        if "RESTCONF" in kwargs.get("log_label", ""):
+            return None
+        return {
+            "extraAttributes": {
+                "tx-signal-level": "21",
+                "rx-signal-level-ont": "-203",
             }
+        }
 
-    def fake_get(url, headers=None, verify=False, timeout=None):
-        get_calls.append((headers or {}).get("Authorization", ""))
-        if len(get_calls) == 1:
-            return Resp401()
-        return Resp200()
-
-    monkeypatch.setattr(altiplano.requests, "get", fake_get)
+    monkeypatch.setattr(altiplano, "_http_get_altiplano_json", fake_http)
 
     out = altiplano.obtener_potencias_por_cto("BA_OLTA_X", onts)
 
-    assert out == {"100": (-18.0, -25.0)}
-    assert token_calls == [False, True]
-    assert len(get_calls) == 2
-    assert "Bearer tk-before" in get_calls[0]
-    assert "Bearer tk-after-refresh" in get_calls[1]
+    assert out == {"100": (2.1, -20.3)}
+    assert len(http_calls) >= 2
+    assert any("RESTCONF" in c for c in http_calls)
+    assert any("EMA" in c for c in http_calls)
 
 
 def test_obtener_potencias_por_cto_operador_no_soportado_se_omite(monkeypatch):

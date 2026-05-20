@@ -11,10 +11,9 @@ const _ramaStateStore = window.createNocPageStateStore
   ? window.createNocPageStateStore(_RAMA_STATE_KEY, { debounceMs: 120 })
   : null;
 
-/** Columnas tabla CTO: OUT…Estado (sin SN ni botón por fila). */
+/** Columnas tabla CTO: OUT…RX (sin SN ni columna Estado). */
 const RAMA_COL_TX = 7;
 const RAMA_COL_RX = 8;
-const RAMA_COL_EST = 9;
 
 function _ramaFatSkipPotencias(tr) {
   const st = (tr.getAttribute("data-fat-status") || "").trim().toUpperCase();
@@ -98,7 +97,7 @@ function _rowsCtosSeleccionados() {
   }
   const lines = [];
   lines.push(
-    ["Sitio_principal", "RAMA", "CTO", "OUT", "AID", "Operador", "SITIO", "ONT", "STATUS", "TX", "RX", "Estado"].join(
+    ["Sitio_principal", "RAMA", "CTO", "OUT", "AID", "Operador", "SITIO", "ONT", "STATUS", "TX", "RX"].join(
       "\t"
     )
   );
@@ -131,7 +130,6 @@ function _rowsCtosSeleccionados() {
         (cells[6]?.innerText || "").trim(),
         (cells[7]?.innerText || "").trim(),
         (cells[8]?.innerText || "").trim(),
-        (cells[9]?.innerText || "").trim(),
       ].join("\t"));
       n++;
     });
@@ -1023,6 +1021,15 @@ function _formatPowerDbm(v) {
   return _np() ? _np().formatPowerDbm(v) : "-";
 }
 
+function _applyPotenciaEnFilaRama(tr, txVal, rxVal) {
+  if (!tr || _ramaFatSkipPotencias(tr) || !_np()) return;
+  const tdTx = tr.children[RAMA_COL_TX];
+  const tdRx = tr.children[RAMA_COL_RX];
+  _np().finalizeTxRxLoadingCell(tdTx, txVal, tr);
+  _np().finalizeTxRxLoadingCell(tdRx, rxVal, tr);
+  if (tdRx) _aplicarResaltadoFila(tr, tdRx.textContent);
+}
+
 function _ramaRowCellsHtml(o, rama, cto, outNum) {
   const st = String(o.STATUS || "").trim().toUpperCase();
   const aidDisp = st === "FREE" ? "-" : _escHtml(o.AID);
@@ -1037,19 +1044,12 @@ function _ramaRowCellsHtml(o, rama, cto, outNum) {
 
   let txCell;
   let rxCell;
-  let estCell;
-  if (st === "FREE") {
+  if (st === "FREE" || st === "RESERVED") {
     txCell = '<td class="mono">-</td>';
     rxCell = '<td class="mono">-</td>';
-    estCell = '<td class="mono">-</td>';
-  } else if (st === "RESERVED") {
-    txCell = '<td class="mono">-</td>';
-    rxCell = '<td class="mono">-</td>';
-    estCell = '<td class="mono status-down">DOWN</td>';
   } else {
     txCell = `<td class="mono olt-txrx-cell--loading" aria-busy="true" aria-label="Cargando">${spin}</td>`;
     rxCell = `<td class="mono olt-txrx-cell--loading" aria-busy="true" aria-label="Cargando">${spin}</td>`;
-    estCell = '<td class="mono status-pending">Cargando...</td>';
   }
 
   return `
@@ -1062,7 +1062,6 @@ function _ramaRowCellsHtml(o, rama, cto, outNum) {
             <td>${statusDisp}</td>
             ${txCell}
             ${rxCell}
-            ${estCell}
   `;
 }
 
@@ -1106,7 +1105,7 @@ function renderInventarioRama(rama, inv, container) {
         </div>
         <div class="table-wrap">
           <table>
-            <tr><th>OUT</th><th>AID</th><th>Operador</th><th>Sitio</th><th>RAMA</th><th>ONT</th><th>Status</th><th>TX (dBm)</th><th>RX (dBm)</th><th>Estado</th></tr>
+            <tr><th>OUT</th><th>AID</th><th>Operador</th><th>Sitio</th><th>RAMA</th><th>ONT</th><th>Status</th><th>TX (dBm)</th><th>RX (dBm)</th></tr>
     `;
     onts.forEach((o, oix) => {
       html += `
@@ -1258,17 +1257,15 @@ function _setRamaCardTxRxCellsLoading(card) {
   });
 }
 
-function _ramaCardTxRxCellsStuckToDash(card) {
-  if (!card) {
-    return;
-  }
+function _ramaFinalizeTxRxPendientes(card) {
+  if (!card) return;
   card.querySelectorAll("tr[data-aid]").forEach((tr) => {
-    if (tr.children[RAMA_COL_TX] && tr.children[RAMA_COL_TX].classList.contains("olt-txrx-cell--loading")) {
-      _setTxRxCellLoading(tr.children[RAMA_COL_TX], false);
-    }
-    if (tr.children[RAMA_COL_RX] && tr.children[RAMA_COL_RX].classList.contains("olt-txrx-cell--loading")) {
-      _setTxRxCellLoading(tr.children[RAMA_COL_RX], false);
-    }
+    const tdTx = tr.children[RAMA_COL_TX];
+    const tdRx = tr.children[RAMA_COL_RX];
+    const loading =
+      (tdTx && tdTx.classList.contains("olt-txrx-cell--loading")) ||
+      (tdRx && tdRx.classList.contains("olt-txrx-cell--loading"));
+    if (loading) _applyPotenciaEnFilaRama(tr, null, null);
   });
 }
 
@@ -1288,25 +1285,11 @@ function _aplicarDataRama(rama, data, row, card) {
     const cto = tr.dataset.cto;
     const aid = tr.dataset.aid;
     if (_ramaFatSkipPotencias(tr)) return;
-    const tdTx = tr.children[RAMA_COL_TX];
-    const tdRx = tr.children[RAMA_COL_RX];
-    const tdEst = tr.children[RAMA_COL_EST];
-    if (!tdTx || !tdRx) {
-      return;
-    }
+    if (!tr.children[RAMA_COL_TX] || !tr.children[RAMA_COL_RX]) return;
     if (data[cto] && data[cto][aid]) {
-      _clearTxRxCellLoadingKeepValue(tdTx);
-      _clearTxRxCellLoadingKeepValue(tdRx);
-      tdTx.innerText = _formatPowerDbm(data[cto][aid].TX);
-      tdRx.innerText = _formatPowerDbm(data[cto][aid].RX);
-      _aplicarResaltadoFila(tr, data[cto][aid].RX);
-      if (tdEst) {
-        tdEst.classList.remove("status-pending");
-        const up = _hasPowerRama(data[cto][aid].TX) || _hasPowerRama(data[cto][aid].RX);
-        tdEst.textContent = up ? "UP" : "DOWN";
-        tdEst.classList.remove("status-up", "status-down");
-        tdEst.classList.add(up ? "status-up" : "status-down");
-      }
+      _applyPotenciaEnFilaRama(tr, data[cto][aid].TX, data[cto][aid].RX);
+    } else if (_np() && _np().filaTieneAidConsulta(tr)) {
+      _applyPotenciaEnFilaRama(tr, null, null);
     }
   });
   _sincronizarResaltadoPotenciasEn(root);
@@ -1390,26 +1373,21 @@ function _ejecutarConsultaPotenciasCto(cto, ctoNode, card, feedbackBtn, opts) {
     })
     .then((rows) => {
       if (!Array.isArray(rows)) return;
+      const seen = new Set();
       rows.forEach((rec) => {
         const aid = String(rec.AID || "");
         if (!aid) return;
         const tr = _findTrByAidInCtoBody(ctoBody, aid);
         if (!tr || _ramaFatSkipPotencias(tr)) return;
-        const tdTx = tr.children[RAMA_COL_TX];
-        const tdRx = tr.children[RAMA_COL_RX];
-        const tdEst = tr.children[RAMA_COL_EST];
-        if (!tdTx || !tdRx) return;
-        _clearTxRxCellLoadingKeepValue(tdTx);
-        _clearTxRxCellLoadingKeepValue(tdRx);
-        tdTx.innerText = _formatPowerDbm(rec.TX);
-        tdRx.innerText = _formatPowerDbm(rec.RX);
-        _aplicarResaltadoFila(tr, tdRx.innerText);
-        if (tdEst) {
-          tdEst.classList.remove("status-pending");
-          const up = _hasPowerRama(rec.TX) || _hasPowerRama(rec.RX);
-          tdEst.textContent = up ? "UP" : "DOWN";
-          tdEst.classList.remove("status-up", "status-down");
-          tdEst.classList.add(up ? "status-up" : "status-down");
+        seen.add(aid);
+        _applyPotenciaEnFilaRama(tr, rec.TX, rec.RX);
+      });
+      ctoBody.querySelectorAll("tr[data-aid]").forEach((tr) => {
+        if (_ramaFatSkipPotencias(tr)) return;
+        const aid = String(tr.getAttribute("data-aid") || "");
+        if (!aid || seen.has(aid)) return;
+        if (_np() && _np().filaTieneAidConsulta(tr)) {
+          _applyPotenciaEnFilaRama(tr, null, null);
         }
       });
       _saveStateSoon();
@@ -1422,14 +1400,7 @@ function _ejecutarConsultaPotenciasCto(cto, ctoNode, card, feedbackBtn, opts) {
       toast(`Error consultando potencias CTO: ${cto}`);
     })
     .finally(() => {
-      ctoBody.querySelectorAll("tr[data-aid]").forEach((tr) => {
-        if (tr.children[RAMA_COL_TX] && tr.children[RAMA_COL_TX].classList.contains("olt-txrx-cell--loading")) {
-          _setTxRxCellLoading(tr.children[RAMA_COL_TX], false);
-        }
-        if (tr.children[RAMA_COL_RX] && tr.children[RAMA_COL_RX].classList.contains("olt-txrx-cell--loading")) {
-          _setTxRxCellLoading(tr.children[RAMA_COL_RX], false);
-        }
-      });
+      _ramaFinalizeTxRxPendientes(ctoBody);
       if (feedbackBtn) _setRamaPotButtonLoading(feedbackBtn, false);
       if (ctoNode._potCtoFetchPromise === p) {
         delete ctoNode._potCtoFetchPromise;
@@ -1488,7 +1459,7 @@ function consultarRama(rama, btn) {
       })
       .finally(() => {
         if (card) {
-          _ramaCardTxRxCellsStuckToDash(card);
+          _ramaFinalizeTxRxPendientes(card);
         }
         _setRamaPotButtonLoading(btn, false);
       });

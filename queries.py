@@ -18,12 +18,26 @@ QUERIES = {
             -- Serial real de ONT (fuente principal para SN en UI)
             s.serial_number AS serial_number,
 
-            o.invocator_system
+            COALESCE(o.invocator_system, b_aid.operatorid) AS invocator_system
         FROM cm.inventory_fat_occupation f
         LEFT JOIN altiplano.serial s
                ON s.access_id = f.access_id
         LEFT JOIN cm.inventory_olt_occupation o
                ON o.access_id = f.access_id
+        LEFT JOIN LATERAL (
+            SELECT
+                CASE
+                    WHEN trim(b2.operatorid::text) ~ '^[0-9]+$'
+                    THEN trim(b2.operatorid::text)::bigint
+                    ELSE NULL
+                END AS operatorid
+            FROM aux.bajada_inventario b2
+            WHERE LOWER(btrim(b2.access_id::text)) = LOWER(btrim(f.access_id::text))
+              AND trim(b2.operatorid::text) ~ '^[0-9]+$'
+              AND trim(b2.operatorid::text) <> '0'
+            ORDER BY b2.reserved_date DESC NULLS LAST, b2.provided_date DESC NULLS LAST
+            LIMIT 1
+        ) b_aid ON true
         WHERE LOWER(btrim(f.access_id::text)) = LOWER(btrim(%s))
     """,
 
