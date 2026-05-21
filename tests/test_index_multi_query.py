@@ -268,3 +268,11 @@ def test_index_get_modo_masivo_empty_shows_masivo_tab(client):
     assert 'class="consulta-section' not in html
     assert 'id="consulta-s0"' not in html
     assert 'id="qm"' in html
+
+
+def test_index_mode_tab_switch_clears_via_navigate(client):
+    """Al cambiar Individual ↔ Masivo se recarga la consulta vacía (misma lógica que Limpiar)."""
+    r = client.get("/")
+    html = r.get_data(as_text=True)
+    assert "consultaNavigateClear" in html
+    assert "modoEl.value === m" in html

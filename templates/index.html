@@ -1012,6 +1012,13 @@ window.addEventListener("load", () => {
     Promise.all(potenciaJobs).then(afterPotencias).catch(afterPotencias);
   }
 
+  const clearUrlInd = {{ url_for("index") | tojson }};
+  const clearUrlMas = {{ url_for("index", modo="masivo") | tojson }};
+
+  function consultaNavigateClear(m) {
+    window.location.assign(m === "masivo" ? clearUrlMas : clearUrlInd);
+  }
+
   const input = document.getElementById("q");
   const modoEl = document.getElementById("consulta_modo");
   const panelInd = document.getElementById("consulta-panel-individual");
@@ -1040,8 +1047,18 @@ window.addEventListener("load", () => {
     }
   }
   document.querySelectorAll(".consulta-mode-tab").forEach((btn) => {
-    btn.addEventListener("click", () => consultaSetModo(btn.getAttribute("data-modo") || "individual"));
+    btn.addEventListener("click", () => {
+      const m = btn.getAttribute("data-modo") || "individual";
+      if (modoEl && modoEl.value === m) return;
+      consultaNavigateClear(m);
+    });
   });
+  const btnLimpiar = document.getElementById("btn-consulta-limpiar");
+  if (btnLimpiar) {
+    btnLimpiar.addEventListener("click", () => {
+      consultaNavigateClear((modoEl && modoEl.value) || "individual");
+    });
+  }
   if (modoEl && modoEl.value === "masivo") consultaSetModo("masivo");
   else consultaSetModo("individual");
 
@@ -1143,16 +1160,6 @@ window.addEventListener("load", () => {
     </form>
     <script>
       (function () {
-        var btn = document.getElementById("btn-consulta-limpiar");
-        var clearUrlInd = {{ url_for("index") | tojson }};
-        var clearUrlMas = {{ url_for("index", modo="masivo") | tojson }};
-        if (btn) {
-          btn.addEventListener("click", function () {
-            var m = document.getElementById("consulta_modo");
-            var isMasivo = m && m.value === "masivo";
-            window.location.assign(isMasivo ? clearUrlMas : clearUrlInd);
-          });
-        }
         var form = document.querySelector(".consulta-search-form");
         var buscar = form && form.querySelector(".consulta-btn-buscar");
         if (!form || !buscar) return;

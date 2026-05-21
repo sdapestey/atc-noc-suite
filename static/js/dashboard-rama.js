@@ -299,6 +299,14 @@ function _expandSiteByName(siteName) {
   });
 }
 
+function _ramaInventarioLoadingHtml() {
+  return (
+    '<div class="rama-detail-loading lt-detail-loading" role="status" aria-live="polite" aria-busy="true">' +
+    '<span class="rama-detail-spinner lt-detail-spinner" aria-hidden="true"></span>' +
+    "<span>Cargando inventario de red…</span></div>"
+  );
+}
+
 async function _expandRamaByValueEnsuringInventory(ramaVal) {
   const target = String(ramaVal || "").trim();
   if (!target) return;
@@ -316,12 +324,12 @@ async function _expandRamaByValueEnsuringInventory(ramaVal) {
   const row = card.querySelector(".rama-row[data-toggle-node]");
   const body = row?.nextElementSibling;
   if (row && body) {
+    body.classList.remove("hidden");
+    setExpanded(row, true);
     const container = card.querySelector("[data-rama-detail]");
     if (container) {
       await cargarInventarioRama(target, card, container);
     }
-    body.classList.remove("hidden");
-    setExpanded(row, true);
   }
 }
 
@@ -639,9 +647,9 @@ function verMapaRama(btn) {
   };
 
   if (indent2.classList.contains("hidden")) {
+    indent2.classList.remove("hidden");
+    if (ramaRow) setExpanded(ramaRow, true);
     cargarInventarioRama(rama, card, detail).finally(() => {
-      indent2.classList.remove("hidden");
-      if (ramaRow) setExpanded(ramaRow, true);
       openPanel();
     });
     return;
@@ -803,9 +811,9 @@ function toggle(el) {
   if (willExpand && isRamaRow && card) {
     const container = card.querySelector("[data-rama-detail]");
     if (container) {
+      next.classList.remove("hidden");
+      setExpanded(el, true);
       cargarInventarioRama(rama, card, container).finally(() => {
-        next.classList.remove("hidden");
-        setExpanded(el, true);
         _saveStateSoon();
       });
       return;
@@ -1152,7 +1160,7 @@ function cargarInventarioRama(rama, card, container) {
   if (_ramaInventarioCargado[ramaKey]) return Promise.resolve();
   if (_ramaInventarioCargando[ramaKey]) return _ramaInventarioCargando[ramaKey];
 
-  container.innerHTML = '<p class="hint">Cargando inventario de red…</p>';
+  container.innerHTML = _ramaInventarioLoadingHtml();
   const req = fetch("/dashboard/rama/inventario", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },

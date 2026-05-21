@@ -22,5 +22,8 @@ def test_dashboard_rama_js_contains_core_handlers():
     assert "finalizeTxRxLoadingCell" in js
     assert "filaTieneAidConsulta" in js
     assert "_ramaFinalizeTxRxPendientes" in js
+    assert "_ramaInventarioLoadingHtml" in js
+    assert "Cargando inventario de red…" in js
+    assert "rama-detail-spinner" in js
     assert "<th>Estado</th>" not in js
     assert "RAMA_COL_EST" not in js

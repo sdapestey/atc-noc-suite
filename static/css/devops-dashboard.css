@@ -3339,6 +3339,11 @@ tr.ltrow.lt-row-loading {
   flex-shrink: 0;
 }
 
+/* RAMA / CTO: inventario al expandir fila RAMA */
+.page-tree-dashboard.page-rama [data-rama-detail] .rama-detail-loading {
+  padding: 16px 8px 22px;
+}
+
 .lt-detail-error {
   margin: 0;
   padding: 16px 20px;
