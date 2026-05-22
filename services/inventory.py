@@ -811,6 +811,8 @@ def cambiar_admin_status_access_id(
     admin_status: str,
     *,
     object_name: str | None = None,
+    nbi_username: str | None = None,
+    nbi_password: str | None = None,
 ) -> dict:
     """Lock/unlock admin de la ONT (prender/apagar) resolviendo object_name desde inventario."""
     from altiplano import cambiar_admin_status_ont
@@ -852,6 +854,8 @@ def cambiar_admin_status_access_id(
         obj,
         operador,
         status,
+        nbi_username=nbi_username,
+        nbi_password=nbi_password,
     )
 
 

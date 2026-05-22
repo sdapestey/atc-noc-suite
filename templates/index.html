@@ -112,6 +112,7 @@
 <script src="{{ url_for('static', filename='js/consulta-index-map.js') }}"></script>
 
 <script src="{{ url_for('static', filename='js/noc-tools.js') }}"></script>
+<script src="{{ url_for('static', filename='js/consulta-altiplano-auth.js') }}"></script>
 <script>
 let _activeOperador = "ALL";
 let _activeFatStatus = "ALL";
@@ -231,15 +232,241 @@ function _formatPowerDbm(v) {
 }
 
 function _applyPotenciaDbmCelda(el, v, hasSubscriber) {
+  if (el) el.classList.remove("consulta-down-poll-counting");
   window.NocPower.applyPowerDbmCell(el, v, hasSubscriber);
 }
 
 const _CONSULTA_POT_SPINNER_HTML =
   '<span class="olt-txrx-loading-wrap" title="Cargando potencias…"><span class="olt-txrx-cell-spin" aria-hidden="true"></span></span>';
 
+const _CONSULTA_SN_CHANGING_HTML =
+  '<span class="olt-txrx-loading-wrap consulta-sn-changing-wrap" title="Cambiando SN…">' +
+  '<span class="olt-txrx-cell-spin" aria-hidden="true"></span>' +
+  '<span class="consulta-sn-changing-label">Cambiando</span></span>';
+
+const _CONSULTA_SN_RELOAD_DELAY_MS = 3500;
+const _CONSULTA_DOWN_POLL_MS = 3000;
+const _CONSULTA_DOWN_POLL_COUNTDOWN_SEC = 3;
+const _consultaDownPollers = new Map();
+
+function _setConsultaSnChanging(snEl, btn, loading) {
+  if (!snEl) return;
+  if (loading) {
+    snEl.classList.add("consulta-sn-changing");
+    snEl.setAttribute("aria-busy", "true");
+    snEl.setAttribute("aria-label", "Cambiando SN");
+    snEl.innerHTML = _CONSULTA_SN_CHANGING_HTML;
+    if (btn) {
+      btn.disabled = true;
+      btn.setAttribute("aria-busy", "true");
+    }
+    return;
+  }
+  snEl.classList.remove("consulta-sn-changing");
+  snEl.removeAttribute("aria-busy");
+  snEl.removeAttribute("aria-label");
+  if (btn) {
+    btn.disabled = false;
+    btn.removeAttribute("aria-busy");
+  }
+}
+
+function _consultaPotenciaCeldaDown(el) {
+  if (!el) return false;
+  const t = String(el.textContent || "").trim().toUpperCase();
+  return el.classList.contains("status-down") || t === "DOWN";
+}
+
+function _isConsultaDetallePotenciaPar(pre) {
+  const tx = _potCell(pre, "tx");
+  const rx = _potCell(pre, "rx");
+  if (!tx || !rx) return false;
+  const pfx = pre ? pre + "-" : "";
+  return tx.id === pfx + "tx" && rx.id === pfx + "rx";
+}
+
+function _consultaDetalleTxRxBothDown(pre) {
+  if (!_isConsultaDetallePotenciaPar(pre)) return false;
+  return (
+    _consultaPotenciaCeldaDown(_potCell(pre, "tx")) &&
+    _consultaPotenciaCeldaDown(_potCell(pre, "rx"))
+  );
+}
+
+/** True si la celda muestra un valor de potencia real (no DOWN ni cuenta regresiva). */
+function _consultaPotenciaCeldaHasReading(el) {
+  if (!el) return false;
+  if (el.classList.contains("consulta-potencia-loading")) return false;
+  if (el.classList.contains("consulta-down-poll-counting")) return false;
+  if (el.querySelector(".consulta-down-poll-countdown")) return false;
+  const t = String(el.textContent || "").trim();
+  if (!t || t === "-" || t.toUpperCase() === "DOWN") return false;
+  return window.NocPower.hasPowerValue(window.NocPower.parseRxDbm(t));
+}
+
+/** El poll sigue mientras esté activo y TX/RX aún no tengan lectura válida. */
+function _consultaDetallePollShouldContinue(pre, root) {
+  if (!_isConsultaDetallePotenciaPar(pre)) return false;
+  if (!_consultaIsDownPollActive(root)) return false;
+  const tx = _potCell(pre, "tx");
+  const rx = _potCell(pre, "rx");
+  return !(
+    _consultaPotenciaCeldaHasReading(tx) && _consultaPotenciaCeldaHasReading(rx)
+  );
+}
+
+function _consultaIsDownPollActive(root) {
+  if (!root) return false;
+  const key = root.id || root.getAttribute("data-section-prefix") || "";
+  return Boolean(key && _consultaDownPollers.has(key));
+}
+
+/** Si el poll sigue activo y aún no hay alarmas, mantiene la fila con spinner. */
+function _consultaDetallePollAlarmasTail(pre, root, data) {
+  if (!root || !_consultaIsDownPollActive(root)) return;
+  if (!_consultaDetallePollShouldContinue(pre, root)) return;
+  const list = data && Array.isArray(data.ALARMAS) ? data.ALARMAS : [];
+  if (list.length > 0) return;
+  if (data && data.alarmas_label === "Sin Alarmas") return;
+  _setAlarmasDetalleRowVisible(pre, true);
+  const al = _potCell(pre, "alarmas");
+  if (al) _setConsultaPotenciaLoading(al, true);
+}
+
+function _consultaDetallePollPrepUI(pre, root) {
+  if (!_isConsultaDetallePotenciaPar(pre)) return;
+  if (!_consultaDetallePollShouldContinue(pre, root) && !_consultaDetalleTxRxBothDown(pre)) {
+    return;
+  }
+  _setAlarmasDetalleRowVisible(pre, true);
+}
+
+function _consultaStopDownPoll(root) {
+  if (!root) return;
+  const key = root.id || root.getAttribute("data-section-prefix") || "";
+  if (!key) return;
+  const state = _consultaDownPollers.get(key);
+  if (state && state.timerId) clearTimeout(state.timerId);
+  _consultaDownPollers.delete(key);
+}
+
+function _consultaStopAllDownPolls() {
+  _consultaDownPollers.forEach((state) => {
+    if (state && state.timerId) clearTimeout(state.timerId);
+  });
+  _consultaDownPollers.clear();
+}
+
+function _consultaDownPollCountdownCells(pre, root) {
+  const cells = [];
+  const tx = _potCell(pre, "tx");
+  const rx = _potCell(pre, "rx");
+  const al = _potCell(pre, "alarmas");
+  const nv = _nvStatusEl(pre);
+  if (tx) cells.push(tx);
+  if (rx) cells.push(rx);
+  if (al && !al.querySelector(".consulta-alarmas-block")) cells.push(al);
+  if (nv && !nv.hidden) cells.push(nv);
+  return cells;
+}
+
+function _setConsultaDownPollCountdown(el, sec) {
+  if (!el) return;
+  el.classList.remove("consulta-potencia-loading", "status-down", "status-up");
+  el.classList.add("consulta-down-poll-counting");
+  el.setAttribute("aria-busy", "true");
+  el.setAttribute("aria-label", "Próxima consulta en " + sec + " segundos");
+  el.innerHTML =
+    '<span class="consulta-down-poll-countdown" title="Próxima consulta…">' +
+    '<span class="consulta-down-poll-countdown__n">' +
+    String(sec) +
+    "</span>" +
+    '<span class="consulta-down-poll-countdown__label">s</span></span>';
+}
+
+function _consultaRunDownPollCycle(root, valor) {
+  const key = root.id || root.getAttribute("data-section-prefix") || "";
+  const pre = root.getAttribute("data-section-prefix") || "";
+  if (!_consultaDownPollers.has(key)) return;
+  if (!_consultaDetallePollShouldContinue(pre, root)) {
+    _consultaStopDownPoll(root);
+    return;
+  }
+
+  const cells = _consultaDownPollCountdownCells(pre, root);
+  let sec = _CONSULTA_DOWN_POLL_COUNTDOWN_SEC;
+
+  const step = () => {
+    if (!_consultaDownPollers.has(key)) return;
+    if (!_consultaDetallePollShouldContinue(pre, root)) {
+      _consultaStopDownPoll(root);
+      return;
+    }
+    if (sec > 0) {
+      cells.forEach((el) => _setConsultaDownPollCountdown(el, sec));
+      sec -= 1;
+      const timerId = setTimeout(step, 1000);
+      _consultaDownPollers.set(key, { timerId: timerId });
+      return;
+    }
+    const tok = (root.getAttribute("data-query-token") || valor || "").trim();
+    if (!tok) {
+      _consultaStopDownPoll(root);
+      return;
+    }
+    Promise.resolve(cargarPotenciasSeccion(tok, root, root)).finally(() => {
+      if (!_consultaDownPollers.has(key)) return;
+      if (!_consultaDetallePollShouldContinue(pre, root)) {
+        _consultaStopDownPoll(root);
+        return;
+      }
+      _consultaRunDownPollCycle(root, valor);
+    });
+  };
+  step();
+}
+
+function _consultaSyncDownPoll(root, valor) {
+  if (!root) return;
+  const key = root.id || root.getAttribute("data-section-prefix") || "";
+  const pre = root.getAttribute("data-section-prefix") || "";
+  if (!_consultaDetalleTxRxBothDown(pre)) {
+    _consultaStopDownPoll(root);
+    return;
+  }
+  if (_consultaDownPollers.has(key)) return;
+
+  _consultaDownPollers.set(key, { timerId: null });
+  _consultaRunDownPollCycle(root, valor);
+}
+
+function _consultaRecargarBusqueda() {
+  const modo = (document.getElementById("consulta_modo") || {}).value || "individual";
+  const value = _consultaExportValue();
+  const form = document.createElement("form");
+  form.method = "POST";
+  form.action = window.location.pathname || "/";
+  form.style.display = "none";
+  const modoInp = document.createElement("input");
+  modoInp.type = "hidden";
+  modoInp.name = "consulta_modo";
+  modoInp.value = modo;
+  form.appendChild(modoInp);
+  if (value) {
+    const valInp = document.createElement("input");
+    valInp.type = "hidden";
+    valInp.name = "value";
+    valInp.value = value;
+    form.appendChild(valInp);
+  }
+  document.body.appendChild(form);
+  form.submit();
+}
+
 function _setConsultaPotenciaLoading(el, loading) {
   if (!el) return;
   if (loading) {
+    el.classList.remove("consulta-down-poll-counting");
     el.classList.add("consulta-potencia-loading");
     el.classList.remove("loading", "status-down", "status-up");
     el.setAttribute("aria-busy", "true");
@@ -248,7 +475,7 @@ function _setConsultaPotenciaLoading(el, loading) {
     el.innerHTML = _CONSULTA_POT_SPINNER_HTML;
     return;
   }
-  el.classList.remove("consulta-potencia-loading", "loading");
+  el.classList.remove("consulta-potencia-loading", "consulta-down-poll-counting", "loading");
   el.removeAttribute("aria-busy");
   el.removeAttribute("aria-label");
 }
@@ -482,12 +709,16 @@ function toggleOntAdminDesdeUI(accessId, operador, objectName, currentAdmin, btn
     return;
   }
   const next = cur === "UNLOCKED" ? "LOCKED" : "UNLOCKED";
-  const title = next === "LOCKED" ? "Lock" : "Unlock";
-  const msg =
-    next === "LOCKED"
-      ? "¿Seguro que querés bloquear (apagar) la ONT?"
-      : "¿Seguro que querés desbloquear (encender) la ONT?";
-  if (!window.confirm(title + "\n\n" + msg)) return;
+  const apagar = next === "LOCKED";
+  const title = apagar ? "Apagar ONT (bloquear)" : "Encender ONT (desbloquear)";
+  const msg = apagar
+    ? "Se bloqueará el admin de la ONT en Altiplano (equivalente a apagar)."
+    : "Se desbloqueará el admin de la ONT en Altiplano (equivalente a encender).";
+
+  if (!window.runConsultaAltiplanoAuth) {
+    toast("Diálogo de autenticación no disponible");
+    return;
+  }
 
   const section =
     btn && btn.closest ? btn.closest(".consulta-section") : null;
@@ -498,34 +729,44 @@ function toggleOntAdminDesdeUI(accessId, operador, objectName, currentAdmin, btn
     btn.setAttribute("aria-busy", "true");
   }
 
-  fetch("/ont/admin-status", {
-    method: "POST",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({
-      access_id: String(accessId || "").trim(),
-      operador: String(operador || "").trim(),
-      object_name: String(objectName || "").trim(),
-      toggle: true,
-      current_admin: cur,
-    }),
-  })
-    .then((r) => r.json().then((j) => ({ok: r.ok, json: j})))
-    .then(({ok, json}) => {
-      if (!ok || !json || !json.ok) {
-        throw new Error((json && json.message) || "No se pudo cambiar el estado admin");
-      }
+  runConsultaAltiplanoAuth({
+    dialog: {
+      title: title,
+      message: msg + " Credenciales de Altiplano (INP).",
+      danger: apagar,
+      okLabel: apagar ? "Apagar ONT" : "Encender ONT",
+    },
+    execute: (creds) =>
+      fetch("/ont/admin-status", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          access_id: String(accessId || "").trim(),
+          operador: String(operador || "").trim(),
+          object_name: String(objectName || "").trim(),
+          toggle: true,
+          current_admin: cur,
+          altiplano_user: creds.username,
+          altiplano_password: creds.password,
+        }),
+      }).then((r) => r.json().then((j) => ({ok: r.ok, status: r.status, json: j}))),
+    onSuccess: (json) => {
       toast(json.message || "Estado admin actualizado");
       if (section && token) {
         cargarPotenciasSeccion(token, section, section);
       }
-    })
-    .catch((err) => toast(err.message || "Error al cambiar estado admin"))
-    .finally(() => {
+    },
+    onFinally: () => {
       if (btn) {
         btn.disabled = false;
         btn.removeAttribute("aria-busy");
       }
-    });
+    },
+  }).catch((err) => {
+    if (err && err.message === "cancelled") return;
+    if (err && err.authError) return;
+    toast(err.message || "Error al cambiar estado admin");
+  });
 }
 
 function toggleOntAdminDesdeUIBtn(btn) {
@@ -549,17 +790,23 @@ function toggleOntAdminDesdeUIBtn(btn) {
   );
 }
 
-function _applyAlarmasDetalle(pre, data) {
+function _applyAlarmasDetalle(pre, data, root) {
   const el = _potCell(pre, "alarmas");
   if (!el) return;
+  const pollPending = root && _consultaDetallePollShouldContinue(pre, root);
   _setConsultaPotenciaLoading(el, false);
   if (!data || typeof data !== "object") {
-    _setAlarmasDetalleRowVisible(pre, false);
+    if (!pollPending) _setAlarmasDetalleRowVisible(pre, false);
     return;
   }
   const list = Array.isArray(data.ALARMAS) ? data.ALARMAS : [];
   if (data.alarmas_label === "Sin Alarmas" || !list.length) {
-    _setAlarmasDetalleRowVisible(pre, false);
+    if (!pollPending) {
+      _setAlarmasDetalleRowVisible(pre, false);
+      return;
+    }
+    _setAlarmasDetalleRowVisible(pre, true);
+    _setConsultaPotenciaLoading(el, true);
     return;
   }
   _setAlarmasDetalleRowVisible(pre, true);
@@ -666,6 +913,8 @@ function cargarPotenciasSeccion(valor, root, scopeEl) {
   const pfx = pre ? pre + "-" : "";
   const scope = scopeEl && scopeEl.querySelectorAll ? scopeEl : root;
 
+  _consultaDetallePollPrepUI(pre, root);
+
   const detSt = (root.getAttribute("data-detalle-fat-status") || "").trim().toUpperCase();
   if (detSt === "FREE" || detSt === "RESERVED") {
     const tx = _potCell(pre, "tx");
@@ -709,7 +958,11 @@ function cargarPotenciasSeccion(valor, root, scopeEl) {
     const tr = el.closest("tr");
     return !tr || !_filaSaltaPotencias(tr);
   });
-  cellsCarga.forEach((el) => _setConsultaPotenciaLoading(el, true));
+  cellsCarga.forEach((el) => {
+    const keepAlarmasRendered =
+      el.id === pfx + "alarmas" && el.querySelector(".consulta-alarmas-block");
+    if (!keepAlarmasRendered) _setConsultaPotenciaLoading(el, true);
+  });
 
   return fetch("/potencias", {
     method: "POST",
@@ -726,7 +979,7 @@ function cargarPotenciasSeccion(valor, root, scopeEl) {
         const rx = _potCell(pre, "rx");
         if (tx) _applyPotenciaDbmCelda(tx, data.TX, true);
         if (rx) _applyPotenciaDbmCelda(rx, data.RX, true);
-        _applyAlarmasDetalle(pre, data);
+        _applyAlarmasDetalle(pre, data, root);
         _applyNvStatusDetalle(pre, data);
         const snEl = document.getElementById(pfx + "sn-value");
         if (snEl && data.SN) {
@@ -746,6 +999,8 @@ function cargarPotenciasSeccion(valor, root, scopeEl) {
         cellsCarga.forEach((el) => _setConsultaPotenciaLoading(el, false));
         _consultaSemaforoDesdePotenciasPayload(root, valor, data, pfx);
         if (window.ConsultaMasivoUi) window.ConsultaMasivoUi.evalRamaAllDown(root);
+        _consultaSyncDownPoll(root, valor);
+        _consultaDetallePollAlarmasTail(pre, root, data);
         return;
       }
       if (Array.isArray(data)) {
@@ -811,47 +1066,64 @@ function cambiarSNDesdeUI(accessId, operador, ontTarget, btn) {
   const snId = pre ? pre + "-sn-value" : "sn-value";
   const currentSnEl = document.getElementById(snId);
   const current = currentSnEl ? currentSnEl.innerText.trim() : "";
-  const raw = window.prompt("Ingresá nuevo SN para la ONT:", current);
-  if (raw === null) return;
-  const sn = raw.trim().toUpperCase();
-  if (!sn) {
-    toast("SN vacío");
-    return;
-  }
-  if (sn.length < 6 || sn.length > 32) {
-    toast("SN inválido (6-32 chars)");
+
+  if (!window.runConsultaAltiplanoAuth) {
+    toast("Diálogo de autenticación no disponible");
     return;
   }
 
-  if (btn) {
-    btn.disabled = true;
-    btn.innerText = "Guardando...";
-  }
+  const opLabel = String(operador || "").trim() || "Altiplano";
+  let reloadScheduled = false;
 
-  fetch("/sn/cambiar", {
-    method: "POST",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({
-      access_id: String(accessId || "").trim(),
-      operador: String(operador || "").trim(),
-      ont_target: String(ontTarget || "").trim(),
-      new_sn: sn,
-    }),
-  })
-  .then((r) => r.json().then((j) => ({ok: r.ok, json: j})))
-  .then(({ok, json}) => {
-    if (!ok || !json || !json.ok) {
-      throw new Error((json && json.message) || "No se pudo cambiar SN");
+  runConsultaAltiplanoAuth({
+    dialog: {
+      title: "Cambiar SN de la ONT",
+      message:
+        "Nuevo serial y credenciales de Altiplano (" + opLabel + ").",
+      showSnField: true,
+      snValue: current,
+      snPlaceholder: "Ej. ALCLF00000002",
+      okLabel: "Cambiar SN",
+    },
+    onCommitStart: () => {
+      _setConsultaSnChanging(currentSnEl, btn, true);
+    },
+    execute: (creds) => {
+      const sn = String(creds.new_sn || "").trim().toUpperCase();
+      return fetch("/sn/cambiar", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          access_id: String(accessId || "").trim(),
+          operador: String(operador || "").trim(),
+          ont_target: String(ontTarget || "").trim(),
+          new_sn: sn,
+          altiplano_user: creds.username,
+          altiplano_password: creds.password,
+        }),
+      }).then((r) => r.json().then((j) => ({ok: r.ok, status: r.status, json: j, sn})));
+    },
+    onSuccess: (json) => {
+      reloadScheduled = true;
+      toast(json.message || "SN actualizado · recargando consulta…");
+      setTimeout(_consultaRecargarBusqueda, _CONSULTA_SN_RELOAD_DELAY_MS);
+    },
+    onFinally: () => {
+      if (!reloadScheduled) {
+        _setConsultaSnChanging(currentSnEl, btn, false);
+        if (currentSnEl && current) currentSnEl.textContent = current;
+      }
+    },
+  }).catch((err) => {
+    if (err && err.message === "cancelled") return;
+    if (err && err.authError) {
+      _setConsultaSnChanging(currentSnEl, btn, false);
+      if (currentSnEl && current) currentSnEl.textContent = current;
+      return;
     }
-    if (currentSnEl) currentSnEl.innerText = json.sn || sn;
-    toast(json.message || "SN actualizado");
-  })
-  .catch((err) => toast(err.message || "Error al cambiar SN"))
-  .finally(() => {
-    if (btn) {
-      btn.disabled = false;
-      btn.innerText = "Cambiar SN";
-    }
+    _setConsultaSnChanging(currentSnEl, btn, false);
+    if (currentSnEl && current) currentSnEl.textContent = current;
+    toast(err.message || "Error al cambiar SN");
   });
 }
 
@@ -888,6 +1160,106 @@ function exportarConsultaCsv() {
   window.location.href = url;
 }
 
+function _consultaTablaEsPuertosCto(table) {
+  if (!table || table.classList.contains("table-kv")) return false;
+  const row = table.querySelector("tr");
+  if (!row) return false;
+  const hdr = Array.from(row.querySelectorAll("th")).map((th) =>
+    th.innerText.trim().toUpperCase()
+  );
+  return hdr.includes("OUT") && hdr.includes("AID");
+}
+
+function _consultaCtoNombreDesdeSection(section) {
+  if (!section) return "";
+  const block = section.querySelector(".consulta-cto-block[data-cto]");
+  if (block) return (block.getAttribute("data-cto") || "").trim();
+  const mapEl = section.querySelector("[data-consulta-cto-map][data-cto]");
+  if (mapEl) return (mapEl.getAttribute("data-cto") || "").trim();
+  const hasCtoTable = Array.from(section.querySelectorAll("table")).some(
+    _consultaTablaEsPuertosCto
+  );
+  if (!hasCtoTable) return "";
+  const tok = (section.getAttribute("data-query-token") || "").trim();
+  if (tok.toUpperCase().includes("FATC")) return tok;
+  const label = section.querySelector(".rama-row-head .rama-row-label");
+  if (label) return label.textContent.trim();
+  return tok;
+}
+
+function _consultaEncabezadoCopiarCto(cto) {
+  const name = String(cto || "").trim();
+  if (!name) return "";
+  return "Estado de los clientes en CTO " + name + "\n\n";
+}
+
+function _consultaMensajeCtoSinInService(cto) {
+  const name = String(cto || "").trim();
+  if (!name) return "";
+  return "LA CTO " + name + " no tiene clientes IN SERVICE\n\n";
+}
+
+function _consultaFilaTextoCopiar(row) {
+  const fila = [];
+  row.querySelectorAll("th, td").forEach((cell) => {
+    const cleanCell = cell.cloneNode(true);
+    cleanCell
+      .querySelectorAll("button, .btn, a.btn, .consulta-sn-btn")
+      .forEach((actionEl) => actionEl.remove());
+    fila.push(cleanCell.innerText.trim());
+  });
+  return fila.join("\t");
+}
+
+function _consultaExtraerTablaCtoInService(table) {
+  let headerLine = "";
+  const dataLines = [];
+  if (!_consultaTablaEsPuertosCto(table)) {
+    return { headerLine: headerLine, dataLines: dataLines };
+  }
+  if (getComputedStyle(table).display === "none") {
+    return { headerLine: headerLine, dataLines: dataLines };
+  }
+
+  table.querySelectorAll("tr").forEach((row) => {
+    if (getComputedStyle(row).display === "none") return;
+    const line = _consultaFilaTextoCopiar(row);
+    if (!line) return;
+    if (row.querySelector("th")) {
+      headerLine = line;
+      return;
+    }
+    const st = (row.getAttribute("data-fat-status") || "").trim().toUpperCase();
+    if (st !== "IN SERVICE") return;
+    dataLines.push(line);
+  });
+
+  return { headerLine: headerLine, dataLines: dataLines };
+}
+
+function _consultaCopiarCtoScope(cto, scope) {
+  const name = String(cto || "").trim();
+  if (!name || !scope) return "";
+
+  let headerLine = "";
+  const dataLines = [];
+  scope.querySelectorAll("table").forEach((table) => {
+    if (!_consultaTablaEsPuertosCto(table)) return;
+    const part = _consultaExtraerTablaCtoInService(table);
+    if (part.headerLine && !headerLine) headerLine = part.headerLine;
+    dataLines.push(...part.dataLines);
+  });
+
+  if (!dataLines.length) {
+    return _consultaMensajeCtoSinInService(name);
+  }
+
+  let out = _consultaEncabezadoCopiarCto(name);
+  if (headerLine) out += headerLine + "\n";
+  out += dataLines.join("\n") + "\n\n";
+  return out;
+}
+
 /* Copiar todos los resultados (masivo) */
 function copiarTodo() {
   let texto = "";
@@ -900,14 +1272,8 @@ function copiarTodo() {
       const rStyle = getComputedStyle(row);
       if (rStyle.display === "none") return;
 
-      const fila = [];
-      row.querySelectorAll("th, td").forEach((cell) => {
-        const cleanCell = cell.cloneNode(true);
-        cleanCell.querySelectorAll("button, .btn, a.btn, .consulta-sn-btn").forEach((actionEl) => actionEl.remove());
-        fila.push(cleanCell.innerText.trim());
-      });
-
-      texto += fila.join("\t") + "\n";
+      const line = _consultaFilaTextoCopiar(row);
+      if (line) texto += line + "\n";
     });
 
     texto += "\n";
@@ -918,20 +1284,27 @@ function copiarTodo() {
     if (secStyle.display === "none") return;
 
     section.querySelectorAll(".consulta-cto-block").forEach((block) => {
+      const blockStyle = getComputedStyle(block);
+      if (blockStyle.display === "none") return;
       const cto = (block.getAttribute("data-cto") || "").trim();
-      if (cto) texto += "CTO " + cto + "\n";
-      block.querySelectorAll("table").forEach(appendTabla);
+      if (cto) texto += _consultaCopiarCtoScope(cto, block);
+    });
+
+    const ctoSuelta = _consultaCtoNombreDesdeSection(section);
+    if (ctoSuelta) {
+      texto += _consultaCopiarCtoScope(ctoSuelta, section);
+    }
+
+    section.querySelectorAll("table").forEach((table) => {
+      if (table.closest(".consulta-cto-block")) return;
+      if (_consultaTablaEsPuertosCto(table)) return;
+      appendTabla(table);
     });
 
     section.querySelectorAll(".cto-header").forEach((el) => {
       const style = getComputedStyle(el);
       if (style.display === "none") return;
       texto += el.innerText.trim() + "\n";
-    });
-
-    section.querySelectorAll("table").forEach((table) => {
-      if (table.closest(".consulta-cto-block")) return;
-      appendTabla(table);
     });
 
     texto += "\n";
@@ -964,7 +1337,12 @@ function consultaPotenciasCola(jobFns, maxConcurrent) {
   return Promise.all(Array.from({ length: workers }, run));
 }
 
+window.addEventListener("beforeunload", () => {
+  _consultaStopAllDownPolls();
+});
+
 window.addEventListener("load", () => {
+  _consultaStopAllDownPolls();
   if (document.querySelector("tr[data-operador][data-fat-status]")) {
     aplicarFiltrosConsulta();
   }
@@ -1668,6 +2046,81 @@ window.addEventListener("load", () => {
     {% endif %}
   </div>
 </div>
+
+<dialog
+  id="consulta-altiplano-auth-dialog"
+  class="altiplano-confirm-dialog consulta-altiplano-auth-dialog"
+  aria-labelledby="consulta-altiplano-auth-title"
+>
+  <div class="altiplano-confirm-dialog-inner consulta-altiplano-auth-dialog__inner">
+    <header class="consulta-altiplano-auth-dialog__head">
+      <h2 id="consulta-altiplano-auth-title" class="altiplano-confirm-dialog-title consulta-altiplano-auth-dialog__title"></h2>
+      <p id="consulta-altiplano-auth-message" class="altiplano-confirm-dialog-message consulta-altiplano-auth-dialog__lead" hidden></p>
+    </header>
+
+    <div id="consulta-altiplano-auth-session" class="consulta-altiplano-auth-session" hidden>
+      <span class="consulta-altiplano-auth-session__icon" aria-hidden="true">🔐</span>
+      <span class="consulta-altiplano-auth-session__text">
+        <span class="consulta-altiplano-auth-session__label">Conectado como</span>
+        <strong id="consulta-altiplano-auth-session-user" class="consulta-altiplano-auth-session__user"></strong>
+        <span id="consulta-altiplano-auth-session-ttl" class="consulta-altiplano-auth-session__ttl muted"></span>
+      </span>
+      <button type="button" id="consulta-altiplano-auth-switch-user" class="btn btn-ghost btn-sm consulta-altiplano-auth-session__switch">
+        Cambiar usuario
+      </button>
+    </div>
+
+    <form id="consulta-altiplano-auth-form" class="consulta-altiplano-auth-fields" autocomplete="off">
+      <div id="consulta-altiplano-auth-creds-wrap" class="consulta-altiplano-auth-creds">
+        <div class="consulta-altiplano-auth-field">
+          <label class="consulta-altiplano-auth-label" for="consulta-altiplano-auth-user">Usuario Altiplano</label>
+          <input
+            id="consulta-altiplano-auth-user"
+            class="consulta-altiplano-auth-input"
+            name="username"
+            type="text"
+            autocomplete="username"
+            autocapitalize="none"
+            spellcheck="false"
+            placeholder="Tu usuario en Altiplano"
+            required
+          >
+        </div>
+        <div class="consulta-altiplano-auth-field">
+          <label class="consulta-altiplano-auth-label" for="consulta-altiplano-auth-password">Contraseña</label>
+          <input
+            id="consulta-altiplano-auth-password"
+            class="consulta-altiplano-auth-input"
+            name="password"
+            type="password"
+            autocomplete="current-password"
+            placeholder="Contraseña"
+            required
+          >
+        </div>
+      </div>
+      <div id="consulta-altiplano-auth-sn-wrap" class="consulta-altiplano-auth-field consulta-altiplano-auth-field--sn" hidden>
+        <label class="consulta-altiplano-auth-label" for="consulta-altiplano-auth-sn">Nuevo SN</label>
+        <input
+          id="consulta-altiplano-auth-sn"
+          class="consulta-altiplano-auth-input mono"
+          name="new_sn"
+          type="text"
+          autocapitalize="characters"
+          spellcheck="false"
+          placeholder="Ej. ALCLF00000002"
+        >
+      </div>
+    </form>
+
+    <p id="consulta-altiplano-auth-error" class="consulta-altiplano-auth-error" role="alert" hidden></p>
+
+    <div class="altiplano-confirm-dialog-actions consulta-altiplano-auth-dialog__actions">
+      <button type="button" id="consulta-altiplano-auth-cancel" class="btn btn-ghost altiplano-confirm-dialog-btn-cancel">Cancelar</button>
+      <button type="button" id="consulta-altiplano-auth-ok" class="btn btn-primary altiplano-confirm-dialog-btn-ok">Confirmar</button>
+    </div>
+  </div>
+</dialog>
 
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 {% if consulta_row_counts %}

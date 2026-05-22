@@ -11,3 +11,4 @@ venv/
 # Salidas locales de análisis / export puntual (no versionar)
 resultado.csv
 resultado.cs
+.aider*

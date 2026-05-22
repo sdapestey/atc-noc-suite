@@ -15,6 +15,66 @@ def test_ema_top_level_state():
     assert altiplano._ema_top_level_state(body, "adminStatus") == "UNLOCKED"
 
 
+def test_ema_state_from_body_nested():
+    import altiplano
+
+    body = {
+        "extraAttributes": {"tx-signal-level": 26},
+        "device": {"operationState": "UP", "adminStatus": "LOCKED"},
+    }
+    assert altiplano._ema_state_from_body(body, "operationState") == "UP"
+    assert altiplano._ema_state_from_body(body, "adminStatus") == "LOCKED"
+
+
+def test_fetch_ont_telemetry_fills_oper_admin_via_inp_ema(monkeypatch):
+    """Si el AC del VNO no devuelve oper/admin, se consulta EMA INP (p. ej. DIRECTV)."""
+    import altiplano
+
+    inp_calls = []
+
+    def fake_get(url, auth_url, **kwargs):
+        if "inp-altiplano-ac/rest/ema/entity" in url:
+            inp_calls.append(url)
+            if "fetchDeviceAttributes=false" in url and "isOne=false" in url:
+                return {"adminStatus": "UNLOCKED"}
+            if "fetchDeviceAttributes=true" in url and "isOne=true" in url:
+                return {"operationState": "UP"}
+        if "dtv-altiplano-ac" in url and "ema/entity" in url:
+            return {"extraAttributes": {"tx-signal-level": 26, "rx-signal-level-ont": -164}}
+        return None
+
+    monkeypatch.setattr(
+        altiplano,
+        "_power_auth_contexts",
+        lambda _op: [
+            ("dtv", "https://10.200.7.107:32443/dtv-altiplano-ac/rest/auth/login", "u", "p"),
+        ],
+    )
+    monkeypatch.setattr(altiplano, "_http_get_altiplano_json", fake_get)
+    monkeypatch.setattr(
+        altiplano,
+        "get_altiplano_nbi_target",
+        lambda op: ("10.200.3.100", "32443", "inp-altiplano-ac")
+        if op == "INP"
+        else ("10.200.7.107", "32443", "dtv-altiplano-ac"),
+    )
+    monkeypatch.setattr(
+        altiplano,
+        "_inp_ema_credentials",
+        lambda _op: ("inp_user", "inp_pwd"),
+    )
+    monkeypatch.setattr(altiplano, "_fetch_intent_health_inp", lambda *a, **k: {})
+
+    out = altiplano._fetch_ont_telemetry_live(
+        "126696694", "BA_OLTA_SF01_01-2-1-35", 3001, "BA_OLTA_SF01_01.LT2"
+    )
+    assert out["tx"] is not None
+    assert out["rx"] is not None
+    assert out["oper"] == "UP"
+    assert out["admin"] == "UNLOCKED"
+    assert any("inp-altiplano-ac/rest/ema/entity" in u for u in inp_calls)
+
+
 def test_nv_health_display_timestamp_prefers_onu_detected_when_newer():
     import altiplano
 

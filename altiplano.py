@@ -40,6 +40,13 @@ _ALTIPLANO_POWER_TARGETS_BY_OPERATOR_ID = {
     2805: ("atc", "https://10.200.5.105:32446/atc-altiplano-ac/rest/auth/login"),
     2806: ("atc", "https://10.200.5.105:32446/atc-altiplano-ac/rest/auth/login"),
 }
+_VNO_SLUG_TO_OPERATOR_NAME = {
+    "tasa": "TASA",
+    "dtv": "DIRECTV",
+    "metro": "METROTEL",
+    "iplan": "IPLAN",
+    "atc": "ATC",
+}
 
 
 def _extract_rpc_error_message_from_xml(xml_text: str) -> str | None:
@@ -282,7 +289,15 @@ def obtener_token_entorno_nbi(entorno_nbi: str, username: str, password, *, forc
     return _obtener_token(auth_url, username=u, password=pwd, force_refresh=force_refresh)
 
 
-def cambiar_sn_ont(access_id, operador, ont_target, new_sn):
+def cambiar_sn_ont(
+    access_id,
+    operador,
+    ont_target,
+    new_sn,
+    *,
+    nbi_username=None,
+    nbi_password=None,
+):
     """
     Cambia el serial esperado de una ONT en Altiplano.
 
@@ -319,9 +334,15 @@ def cambiar_sn_ont(access_id, operador, ont_target, new_sn):
     if not host or not port or not base_url:
         return {"ok": False, "message": f"Operador no soportado para cambio SN: {op or 'N/A'}"}
 
-    username, pwd = get_altiplano_operator_credentials(op)
-    if not username or not pwd:
-        return {"ok": False, "message": f"Credenciales no configuradas para operador {op}"}
+    ui_user = (nbi_username or "").strip() if nbi_username else ""
+    ui_pwd = nbi_password if isinstance(nbi_password, str) else (nbi_password or "")
+    ui_pwd = ui_pwd if isinstance(ui_pwd, str) else str(ui_pwd)
+    if ui_user and ui_pwd != "":
+        username, pwd = ui_user, ui_pwd
+    else:
+        username, pwd = get_altiplano_operator_credentials(op)
+        if not username or not pwd:
+            return {"ok": False, "message": f"Credenciales no configuradas para operador {op}"}
 
     auth_url = f"https://{host}:{port}/{base_url}/rest/auth/login"
     token = _obtener_token(auth_url, username=username, password=pwd)
@@ -3768,6 +3789,14 @@ def _altiplano_power_target(operator_id) -> tuple[str, str] | None:
     return _ALTIPLANO_POWER_TARGETS_BY_OPERATOR_ID.get(op_key)
 
 
+def _operator_name_from_id(operator_id) -> str | None:
+    """Nombre de operador para credenciales NBI (sin importar ``services.domain``)."""
+    legacy = _altiplano_power_target(operator_id)
+    if not legacy:
+        return None
+    return _VNO_SLUG_TO_OPERATOR_NAME.get(str(legacy[0]).strip().lower())
+
+
 def _vno_slug_from_base_url(base_url: str) -> str:
     base = (base_url or "").strip()
     if base.endswith("-altiplano-ac"):
@@ -4010,6 +4039,111 @@ def _ema_top_level_state(body: object, key: str) -> str | None:
         return None
     s = str(val).strip()
     return s.upper() if s else None
+
+
+def _deep_find_ema_scalar(
+    obj: object, key: str, depth: int = 0, max_depth: int = 14
+) -> str | None:
+    """Busca una clave escalar EMA (``operationState``, ``adminStatus``) en cualquier nivel."""
+    if depth > max_depth:
+        return None
+    want = (key or "").strip()
+    if not want:
+        return None
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            if isinstance(k, str) and k == want and v is not None:
+                s = str(v).strip()
+                if s:
+                    return s.upper()
+        for v in obj.values():
+            found = _deep_find_ema_scalar(v, want, depth + 1, max_depth)
+            if found:
+                return found
+    elif isinstance(obj, list):
+        for item in obj:
+            found = _deep_find_ema_scalar(item, want, depth + 1, max_depth)
+            if found:
+                return found
+    return None
+
+
+def _ema_state_from_body(body: object, key: str) -> str | None:
+    """Estado oper/admin: raíz del JSON EMA o anidado (p. ej. AC DTV)."""
+    top = _ema_top_level_state(body, key)
+    if top:
+        return top
+    return _deep_find_ema_scalar(body, key)
+
+
+def _inp_ema_credentials(operator_name: str | None) -> tuple[str, str]:
+    """Credenciales para EMA INP (misma cadena que lock/unlock en Network Views)."""
+    op = str(operator_name or "").strip().upper()
+    user, pwd = get_altiplano_operator_credentials("INP")
+    if user and pwd:
+        return user, pwd
+    if op:
+        user, pwd = get_altiplano_operator_credentials(op)
+        if user and pwd:
+            return user, pwd
+    return get_altiplano_credentials()
+
+
+def _fetch_ema_oper_admin_inp(
+    access_id: str,
+    object_name_raw: str,
+    ne: str,
+    *,
+    operator_name: str | None = None,
+) -> dict[str, str | None]:
+    """
+    operationState / adminStatus vía EMA del AC INP (como la GUI y ``cambiar_admin_status_ont``).
+
+    En operadores como DIRECTV las potencias pueden venir del AC del VNO, pero el estado
+    Up/Locked suele exponerse solo en INP.
+    """
+    out: dict[str, str | None] = {"oper": None, "admin": None}
+    host, port, base_url = get_altiplano_nbi_target("INP")
+    if not host or not port or not base_url:
+        return out
+    user, pwd = _inp_ema_credentials(operator_name)
+    if not user or not pwd:
+        return out
+    auth_url = f"https://{host}:{port}/{base_url}/rest/auth/login"
+    base_host = f"{host}:{port}"
+    vno = _vno_slug_from_base_url(base_url) or "inp"
+
+    ema_body = _http_get_altiplano_json(
+        _ema_potencias_url(base_host, vno, ne, object_name_raw),
+        auth_url,
+        access_id=access_id,
+        ne=ne,
+        log_label=f"EMA oper INP ({vno})",
+        username=user,
+        password=pwd,
+    )
+    if ema_body:
+        out["oper"] = _ema_state_from_body(ema_body, "operationState")
+
+    ema_admin_body = _http_get_altiplano_json(
+        _ema_entity_url(
+            base_host,
+            vno,
+            ne,
+            object_name_raw,
+            fetch_device_attributes=False,
+            is_one=False,
+        ),
+        auth_url,
+        access_id=access_id,
+        ne=ne,
+        log_label=f"EMA admin INP ({vno})",
+        username=user,
+        password=pwd,
+    )
+    if ema_admin_body:
+        out["admin"] = _ema_state_from_body(ema_admin_body, "adminStatus")
+    return out
 
 
 def _normalize_altiplano_iso8601_for_js(raw: str | None) -> str | None:
@@ -4400,6 +4534,8 @@ def cambiar_admin_status_ont(
     admin_status: str,
     *,
     ne: str | None = None,
+    nbi_username: str | None = None,
+    nbi_password: str | None = None,
 ) -> dict:
     """
     Bloquea o desbloquea la ONT (admin lock) vía EMA INP.
@@ -4424,13 +4560,19 @@ def cambiar_admin_status_ont(
         return {"ok": False, "message": "Entorno NBI INP no configurado"}
 
     op = str(operador or "").strip().upper()
-    user, pwd = get_altiplano_operator_credentials("INP")
-    if not user or not pwd:
-        user, pwd = get_altiplano_operator_credentials(op)
-    if not user or not pwd:
-        user, pwd = get_altiplano_credentials()
-    if not user or not pwd:
-        return {"ok": False, "message": "Credenciales Altiplano INP no configuradas"}
+    ui_user = (nbi_username or "").strip() if nbi_username else ""
+    ui_pwd = nbi_password if isinstance(nbi_password, str) else (nbi_password or "")
+    ui_pwd = ui_pwd if isinstance(ui_pwd, str) else str(ui_pwd)
+    if ui_user and ui_pwd != "":
+        user, pwd = ui_user, ui_pwd
+    else:
+        user, pwd = get_altiplano_operator_credentials("INP")
+        if not user or not pwd:
+            user, pwd = get_altiplano_operator_credentials(op)
+        if not user or not pwd:
+            user, pwd = get_altiplano_credentials()
+        if not user or not pwd:
+            return {"ok": False, "message": "Credenciales Altiplano INP no configuradas"}
 
     auth_url = f"https://{host}:{port}/{base_url}/rest/auth/login"
     base_host = f"{host}:{port}"
@@ -4610,7 +4752,7 @@ def _fetch_ont_telemetry_live(
                 if pair is not None:
                     out["tx"], out["rx"] = pair
             if out["oper"] is None:
-                out["oper"] = _ema_top_level_state(ema_body, "operationState")
+                out["oper"] = _ema_state_from_body(ema_body, "operationState")
             _merge_onu_detected(ema_body)
 
         if out["admin"] is None:
@@ -4631,7 +4773,7 @@ def _fetch_ont_telemetry_live(
                 password=pwd,
             )
             if ema_admin_body:
-                out["admin"] = _ema_top_level_state(ema_admin_body, "adminStatus")
+                out["admin"] = _ema_state_from_body(ema_admin_body, "adminStatus")
                 _merge_onu_detected(ema_admin_body)
 
         if out["health"] is None:
@@ -4668,6 +4810,18 @@ def _fetch_ont_telemetry_live(
             and out["health"]
         ):
             break
+
+    if out["oper"] is None or out["admin"] is None:
+        inp_states = _fetch_ema_oper_admin_inp(
+            access_id,
+            object_name_raw,
+            ne,
+            operator_name=_operator_name_from_id(operator_id),
+        )
+        if out["oper"] is None and inp_states.get("oper"):
+            out["oper"] = inp_states["oper"]
+        if out["admin"] is None and inp_states.get("admin"):
+            out["admin"] = inp_states["admin"]
 
     return out
 

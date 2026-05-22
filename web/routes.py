@@ -90,6 +90,55 @@ _ALTIPLANO_INTENT_UUID_RE = re.compile(
 _ALTIPLANO_BY_ID_ACCESS_TOKEN_RE = re.compile(r"^[A-Za-z0-9_.\-]{1,256}$")
 ALTIPLANO_BORRADO_LOTE_MAX_ITEMS = 300
 
+_ALTIPLANO_UI_LOGIN_FAIL_MSG = (
+    "Usuario o contraseña incorrectos. Verificá las credenciales de Altiplano."
+)
+
+
+def _extract_altiplano_ui_credentials(data: dict) -> tuple[str, str | None]:
+    """Usuario/contraseña enviados desde popups de consulta (lock ONT, cambio SN)."""
+    user = (
+        data.get("altiplano_user")
+        or data.get("username")
+        or data.get("nbi_user")
+        or ""
+    )
+    user = str(user).strip()
+    pwd = data.get("altiplano_password")
+    if pwd is None:
+        pwd = data.get("password")
+    if pwd is not None and not isinstance(pwd, str):
+        pwd = str(pwd)
+    return user, pwd
+
+
+def _nbi_entorno_for_operador(operador: str) -> str:
+    """Entorno NBI usado para validar credenciales según operador comercial."""
+    op = (operador or "").strip().upper()
+    if op in ("TASA", "DIRECTV", "METROTEL", "IPLAN", "ATC", "SION"):
+        return op
+    return "INP"
+
+
+def _validate_altiplano_ui_credentials(entorno_nbi: str, username: str, password) -> tuple[dict, int] | None:
+    """
+    Valida login REST contra Altiplano. None si OK; si no, (payload_json, http_status).
+    """
+    if not username or password is None or str(password) == "":
+        return (
+            {"ok": False, "message": "Usuario y contraseña de Altiplano requeridos"},
+            400,
+        )
+    token = obtener_token_entorno_nbi(
+        entorno_nbi,
+        username,
+        password,
+        force_refresh=True,
+    )
+    if not token:
+        return ({"ok": False, "message": _ALTIPLANO_UI_LOGIN_FAIL_MSG}, 401)
+    return None
+
 # Consulta INP (dashboard): solo device ``BA_OLTA_…`` (prefijo o ``…#VNO#gpon``) o Access ID, no ambos.
 _INP_CONSULTA_DEVICE_PREFIX = "BA_OLTA_"
 
@@ -778,6 +827,7 @@ def register(app):
         operador = (data.get("operador") or "").strip()
         ont_target = (data.get("ont_target") or "").strip()
         new_sn = (data.get("new_sn") or "").strip()
+        alt_user, alt_pwd = _extract_altiplano_ui_credentials(data)
 
         if not access_id:
             return jsonify({"ok": False, "message": "access_id requerido"}), 400
@@ -789,11 +839,19 @@ def register(app):
         if len(new_sn) < 6 or len(new_sn) > 32:
             return jsonify({"ok": False, "message": "SN inválido (largo fuera de rango)"}), 400
 
+        auth_err = _validate_altiplano_ui_credentials(
+            _nbi_entorno_for_operador(operador), alt_user, alt_pwd
+        )
+        if auth_err:
+            return jsonify(auth_err[0]), auth_err[1]
+
         result = cambiar_sn_ont(
             access_id=access_id,
             operador=operador,
             ont_target=ont_target,
             new_sn=new_sn,
+            nbi_username=alt_user,
+            nbi_password=alt_pwd,
         )
         code = 200 if result.get("ok") else 502
         return jsonify(result), code
@@ -807,6 +865,7 @@ def register(app):
         admin_status = (data.get("admin_status") or "").strip().upper()
         toggle = str(data.get("toggle") or "").lower() in ("1", "true", "yes")
         current = (data.get("current_admin") or "").strip().upper()
+        alt_user, alt_pwd = _extract_altiplano_ui_credentials(data)
 
         if not access_id:
             return jsonify({"ok": False, "message": "access_id requerido"}), 400
@@ -826,11 +885,17 @@ def register(app):
                 {"ok": False, "message": "admin_status debe ser LOCKED o UNLOCKED"}
             ), 400
 
+        auth_err = _validate_altiplano_ui_credentials("INP", alt_user, alt_pwd)
+        if auth_err:
+            return jsonify(auth_err[0]), auth_err[1]
+
         result = cambiar_admin_status_access_id(
             access_id,
             operador,
             admin_status,
             object_name=object_name,
+            nbi_username=alt_user,
+            nbi_password=alt_pwd,
         )
         code = 200 if result.get("ok") else 502
         return jsonify(result), code

@@ -30,9 +30,16 @@ def test_index_access_id_bajada_muestra_cambiar_sn(client, monkeypatch):
     assert 'onclick="cambiarSNDesdeUIBtn(this)"' in html
 
 
+def _mock_altiplano_login_ok(monkeypatch):
+    import web.routes as routes
+
+    monkeypatch.setattr(routes, "obtener_token_entorno_nbi", lambda *_a, **_k: "tok-test")
+
+
 def test_cambiar_sn_endpoint_success(client, monkeypatch):
     import web.routes as routes
 
+    _mock_altiplano_login_ok(monkeypatch)
     monkeypatch.setattr(
         routes,
         "cambiar_sn_ont",
@@ -46,6 +53,8 @@ def test_cambiar_sn_endpoint_success(client, monkeypatch):
             "operador": "TASA",
             "ont_target": "BA_OLTA_TG01_02-2-15-8",
             "new_sn": "ALCLF0000002",
+            "altiplano_user": "noc_user",
+            "altiplano_password": "secret",
         },
     )
     assert r.status_code == 200
@@ -57,6 +66,7 @@ def test_cambiar_sn_endpoint_success(client, monkeypatch):
 def test_cambiar_sn_endpoint_error_from_altiplano(client, monkeypatch):
     import web.routes as routes
 
+    _mock_altiplano_login_ok(monkeypatch)
     monkeypatch.setattr(
         routes,
         "cambiar_sn_ont",
@@ -70,6 +80,8 @@ def test_cambiar_sn_endpoint_error_from_altiplano(client, monkeypatch):
             "operador": "TASA",
             "ont_target": "BA_OLTA_TG01_02-2-15-8",
             "new_sn": "ALCLF0000002",
+            "altiplano_user": "noc_user",
+            "altiplano_password": "secret",
         },
     )
     assert r.status_code == 502
@@ -86,9 +98,48 @@ def test_cambiar_sn_endpoint_validates_sn(client):
             "operador": "TASA",
             "ont_target": "BA_OLTA_TG01_02-2-15-8",
             "new_sn": " A ",
+            "altiplano_user": "u",
+            "altiplano_password": "p",
         },
     )
     assert r.status_code == 400
     payload = r.get_json()
     assert payload["ok"] is False
     assert "SN inválido" in payload["message"]
+
+
+def test_cambiar_sn_endpoint_rechaza_credenciales_invalidas(client, monkeypatch):
+    import web.routes as routes
+
+    monkeypatch.setattr(routes, "obtener_token_entorno_nbi", lambda *_a, **_k: None)
+
+    r = client.post(
+        "/sn/cambiar",
+        json={
+            "access_id": "105",
+            "operador": "TASA",
+            "ont_target": "BA_OLTA_TG01_02-2-15-8",
+            "new_sn": "ALCLF0000002",
+            "altiplano_user": "bad",
+            "altiplano_password": "bad",
+        },
+    )
+    assert r.status_code == 401
+    assert "incorrectos" in (r.get_json() or {}).get("message", "")
+
+
+def test_index_template_incluye_dialogo_altiplano_auth(client, monkeypatch):
+    import web.routes as routes
+
+    monkeypatch.setattr(
+        routes,
+        "consultar_access_id_detalle_desde_bajada_inventario",
+        lambda _aid: _mock_access_result_bajada(),
+    )
+    monkeypatch.setattr(routes, "consultar_cto_coordenadas", lambda _cto: None)
+
+    r = client.post("/", data={"value": "105"})
+    html = r.get_data(as_text=True)
+    assert "consulta-altiplano-auth-dialog" in html
+    assert "consulta-altiplano-auth.js" in html
+    assert "runConsultaAltiplanoAuth" in html

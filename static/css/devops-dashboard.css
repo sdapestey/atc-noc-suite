@@ -1286,6 +1286,44 @@ tr:hover td {
   margin: 0;
 }
 
+.consulta-down-poll-counting {
+  text-align: left;
+  vertical-align: middle;
+}
+
+.consulta-down-poll-countdown {
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: flex-start;
+  gap: 3px;
+  line-height: 1.2;
+}
+
+.consulta-down-poll-countdown__n {
+  font-size: 15px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+  min-width: 1ch;
+  text-align: center;
+}
+
+.consulta-down-poll-countdown__label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fg-muted, var(--fg-subtle));
+  text-transform: lowercase;
+}
+
+.theme-devops .consulta-nv-status.consulta-down-poll-counting {
+  justify-content: flex-end;
+}
+
+.theme-devops .consulta-nv-status.consulta-down-poll-counting .consulta-down-poll-countdown {
+  width: 100%;
+  justify-content: flex-end;
+}
+
 .section-title--detalle {
   flex-direction: column;
   align-items: stretch;
@@ -5079,6 +5117,224 @@ html[data-theme="light"] .altiplano-confirm-dialog-btn-cancel.btn-ghost {
 
 .altiplano-result-dialog .altiplano-confirm-dialog-actions {
   justify-content: flex-end;
+}
+
+/* Consulta índice: popup credenciales Altiplano (lock ONT / cambio SN) */
+.consulta-altiplano-auth-dialog {
+  max-width: 440px;
+}
+
+.consulta-altiplano-auth-dialog__inner {
+  gap: 0;
+}
+
+.consulta-altiplano-auth-dialog__head {
+  margin-bottom: 4px;
+}
+
+.consulta-altiplano-auth-dialog__title {
+  margin-bottom: 6px;
+}
+
+.consulta-altiplano-auth-dialog__lead {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.consulta-altiplano-auth-session {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 12px;
+  margin: 14px 0 4px;
+  padding: 11px 13px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-muted);
+  background: linear-gradient(
+    135deg,
+    rgba(56, 139, 253, 0.08) 0%,
+    var(--canvas-inset) 55%
+  );
+}
+
+.consulta-altiplano-auth-session__icon {
+  font-size: 1.1rem;
+  line-height: 1;
+  opacity: 0.9;
+}
+
+.consulta-altiplano-auth-session__text {
+  flex: 1 1 160px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12.5px;
+}
+
+.consulta-altiplano-auth-session__label {
+  color: var(--fg-muted, var(--fg-subtle));
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.consulta-altiplano-auth-session__user {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--fg-default);
+  word-break: break-all;
+}
+
+.consulta-altiplano-auth-session__ttl {
+  font-size: 11.5px;
+}
+
+.consulta-altiplano-auth-session__switch {
+  flex-shrink: 0;
+  min-height: 32px;
+  padding: 5px 10px;
+  font-size: 12px;
+}
+
+.consulta-altiplano-auth-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.consulta-altiplano-auth-creds {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.consulta-altiplano-auth-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.consulta-altiplano-auth-label {
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--fg-muted, var(--fg-subtle));
+}
+
+.consulta-altiplano-auth-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-default);
+  background: var(--canvas-inset);
+  color: var(--fg-default);
+  font-size: 14px;
+  font-family: inherit;
+  line-height: 1.35;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.consulta-altiplano-auth-input::placeholder {
+  color: var(--fg-subtle);
+  opacity: 0.85;
+}
+
+.consulta-altiplano-auth-input:hover:not(:disabled) {
+  border-color: var(--fg-subtle);
+}
+
+.consulta-altiplano-auth-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-muted);
+}
+
+.consulta-altiplano-auth-input:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.consulta-altiplano-auth-field--sn .consulta-altiplano-auth-input {
+  font-size: 13.5px;
+  letter-spacing: 0.02em;
+}
+
+.consulta-altiplano-auth-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 14px 0 0;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  border: 1px solid rgba(248, 81, 73, 0.4);
+  background: rgba(248, 81, 73, 0.12);
+  color: var(--danger, #f85149);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.consulta-altiplano-auth-error::before {
+  content: "⚠";
+  flex-shrink: 0;
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.consulta-altiplano-auth-error[hidden] {
+  display: none !important;
+}
+
+.consulta-altiplano-auth-dialog__actions {
+  margin-top: 18px;
+}
+
+.consulta-altiplano-auth-dialog--loading .altiplano-confirm-dialog-btn-ok {
+  opacity: 0.85;
+  pointer-events: none;
+}
+
+/* SN en detalle consulta: estado «Cambiando» (mismo spinner que potencias) */
+.consulta-sn-changing-wrap {
+  gap: 8px;
+  min-width: auto;
+  padding: 2px 0;
+}
+
+.consulta-sn-changing-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg-muted, var(--fg-subtle));
+  letter-spacing: 0.02em;
+}
+
+#sn-value.consulta-sn-changing .consulta-sn-changing-wrap,
+[id$="-sn-value"].consulta-sn-changing .consulta-sn-changing-wrap {
+  display: inline-flex;
+  align-items: center;
+}
+
+.consulta-altiplano-auth-dialog--danger .consulta-altiplano-auth-dialog__title {
+  color: var(--danger, #f85149);
+}
+
+html[data-theme="light"] .consulta-altiplano-auth-session {
+  background: linear-gradient(
+    135deg,
+    rgba(9, 105, 218, 0.06) 0%,
+    var(--canvas-inset) 60%
+  );
+}
+
+html[data-theme="light"] .consulta-altiplano-auth-input {
+  background: #fff;
 }
 
 /* Modal de error estilo GUI Altiplano INP (sincronizar intent) */
