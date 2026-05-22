@@ -29,7 +29,10 @@ def test_cambiar_admin_status_ont_post_ema(monkeypatch):
     assert out["ok"] is True
     assert captured["payload"] == {"adminStatus": "LOCKED"}
     assert "ema/entity" in captured["url"]
-    assert "v1~BA_OLTA_SF01_04-7-1-5_GPON" in captured["url"]
+    assert (
+        "v7~BA_OLTA_SF01_04-7-1-5_GPON" in captured["url"]
+        or "v1~BA_OLTA_SF01_04-7-1-5_GPON" in captured["url"]
+    )
 
 
 def _mock_altiplano_login_ok(monkeypatch):

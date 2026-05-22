@@ -31,7 +31,7 @@ def test_resumen_semaforo_desde_rx_values():
 def test_dashboards_use_noc_power():
     rama = Path("static/js/dashboard-rama.js").read_text(encoding="utf-8")
     olt = Path("static/js/dashboard-olt.js").read_text(encoding="utf-8")
-    index = Path("templates/index.html").read_text(encoding="utf-8")
+    index_js = Path("static/js/consulta-index.js").read_text(encoding="utf-8")
     assert "NocPower" in rama
     assert "NocPower" in olt
-    assert "window.NocPower" in index
+    assert "window.NocPower" in index_js

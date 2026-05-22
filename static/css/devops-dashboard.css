@@ -1,4 +1,4 @@
-﻿/* =============================================================================
+/* =============================================================================
    Dashboard DevOps — tema unificado (GitHub-dark + acento azul operaciones)
    ============================================================================= */
 :root {
@@ -1341,18 +1341,54 @@ tr:hover td {
   width: 100%;
 }
 
-.consulta-nv-status {
+.section-title__detalle-meta {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
-  align-self: stretch;
-  width: 100%;
-  gap: 0.35rem 1.25rem;
-  padding: 0.35rem 0 0.15rem;
-  border-top: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
-  min-height: 2rem;
+  gap: 0.45rem 0.75rem;
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
+.page-consulta-index .section-title--detalle .section-title__detalle-meta .consulta-nv-status {
+  border-top: none;
+  padding: 0;
+  min-height: 0;
+  width: auto;
+  flex: 0 1 auto;
+  align-self: center;
+}
+
+.consulta-nv-status {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem 0.85rem;
   text-align: right;
+}
+
+.consulta-nv-oper-slot {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.35rem;
+  min-width: 1.35rem;
+}
+
+.consulta-nv-oper-slot.consulta-potencia-loading .olt-txrx-loading-wrap {
+  margin: 0;
+}
+
+.consulta-nv-pon-slot {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.consulta-nv-admin-slot {
+  display: inline-flex;
+  align-items: center;
 }
 
 .consulta-nv-status.consulta-potencia-loading {
@@ -1432,6 +1468,48 @@ tr:hover td {
   gap: 0.35rem;
 }
 
+.consulta-nv-status__group-oper-pon {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.65rem;
+  flex-shrink: 0;
+}
+
+.consulta-nv-status__group-oper-pon .consulta-nv-status__chip--oper {
+  margin: 0;
+}
+
+.consulta-nv-pon-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.18rem 0.55rem;
+  border: 1px solid rgba(234, 179, 8, 0.5);
+  border-radius: 999px;
+  background: rgba(234, 179, 8, 0.12);
+  color: var(--warn-text, #fde047);
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  cursor: pointer;
+  font-family: inherit;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+.consulta-nv-pon-action-btn:hover:not(:disabled) {
+  background: rgba(234, 179, 8, 0.28);
+  border-color: rgba(234, 179, 8, 0.75);
+  color: #fef08a;
+}
+
+.consulta-nv-pon-action-btn:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
 .consulta-nv-admin-edit {
   margin-left: 0.15rem;
   padding: 0.1rem 0.35rem;
@@ -1452,6 +1530,38 @@ tr:hover td {
 .consulta-nv-admin-edit:disabled {
   opacity: 0.5;
   cursor: wait;
+}
+
+.consulta-nv-pon-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  margin-left: 0.35rem;
+  padding: 0.12rem 0.45rem 0.12rem 0.35rem;
+  border: 1px solid rgba(234, 179, 8, 0.45);
+  border-radius: 999px;
+  color: var(--warn-text, #facc15);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: rgba(234, 179, 8, 0.1);
+}
+
+.consulta-nv-pon-edit__glyph {
+  font-size: 0.85rem;
+  font-weight: 400;
+  line-height: 1;
+}
+
+.consulta-nv-pon-edit__label {
+  line-height: 1;
+}
+
+.consulta-nv-pon-edit:hover:not(:disabled) {
+  color: var(--warn-text, #fde047);
+  border-color: rgba(234, 179, 8, 0.65);
+  background: rgba(234, 179, 8, 0.18);
 }
 
 .consulta-alarmas-cell {
@@ -5265,6 +5375,11 @@ html[data-theme="light"] .altiplano-confirm-dialog-btn-cancel.btn-ghost {
 .consulta-altiplano-auth-field--sn .consulta-altiplano-auth-input {
   font-size: 13.5px;
   letter-spacing: 0.02em;
+}
+
+/* ``display:flex`` del campo puede anular el ``[hidden]`` del UA tras otro modal */
+.consulta-altiplano-auth-sn-wrap[hidden] {
+  display: none !important;
 }
 
 .consulta-altiplano-auth-error {

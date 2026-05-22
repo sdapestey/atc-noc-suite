@@ -836,8 +836,18 @@ def register(app):
         if not new_sn:
             return jsonify({"ok": False, "message": "new_sn requerido"}), 400
 
-        if len(new_sn) < 6 or len(new_sn) > 32:
-            return jsonify({"ok": False, "message": "SN inválido (largo fuera de rango)"}), 400
+        import importlib.util
+        from pathlib import Path
+
+        _sn_path = Path(__file__).resolve().parents[1] / "services" / "sn_altiplano.py"
+        _sn_spec = importlib.util.spec_from_file_location("sn_altiplano", _sn_path)
+        _sn_mod = importlib.util.module_from_spec(_sn_spec)
+        _sn_spec.loader.exec_module(_sn_mod)
+
+        new_sn_norm = _sn_mod.normalize_change_sn(new_sn, operador)
+        sn_fmt_err = _sn_mod.validate_ont_sn_for_altiplano(new_sn_norm)
+        if sn_fmt_err:
+            return jsonify({"ok": False, "message": sn_fmt_err}), 400
 
         auth_err = _validate_altiplano_ui_credentials(
             _nbi_entorno_for_operador(operador), alt_user, alt_pwd
@@ -849,7 +859,7 @@ def register(app):
             access_id=access_id,
             operador=operador,
             ont_target=ont_target,
-            new_sn=new_sn,
+            new_sn=new_sn_norm,
             nbi_username=alt_user,
             nbi_password=alt_pwd,
         )
@@ -890,6 +900,50 @@ def register(app):
             return jsonify(auth_err[0]), auth_err[1]
 
         result = cambiar_admin_status_access_id(
+            access_id,
+            operador,
+            admin_status,
+            object_name=object_name,
+            nbi_username=alt_user,
+            nbi_password=alt_pwd,
+        )
+        code = 200 if result.get("ok") else 502
+        return jsonify(result), code
+
+    @app.route("/pon/admin-status", methods=["POST"])
+    def cambiar_admin_status_pon_route():
+        data = request.get_json(silent=True) or request.form
+        access_id = (data.get("access_id") or "").strip()
+        operador = (data.get("operador") or "").strip()
+        object_name = (data.get("object_name") or "").strip() or None
+        admin_status = (data.get("admin_status") or "").strip().upper()
+        toggle = str(data.get("toggle") or "").lower() in ("1", "true", "yes")
+        current = (data.get("current_pon_admin") or "").strip().upper()
+        alt_user, alt_pwd = _extract_altiplano_ui_credentials(data)
+
+        if not access_id:
+            return jsonify({"ok": False, "message": "access_id requerido"}), 400
+
+        if toggle:
+            if current == "LOCKED":
+                admin_status = "UNLOCKED"
+            elif current == "UNLOCKED":
+                admin_status = "LOCKED"
+            else:
+                admin_status = "LOCKED"
+
+        if admin_status not in ("LOCKED", "UNLOCKED"):
+            return jsonify(
+                {"ok": False, "message": "admin_status debe ser LOCKED o UNLOCKED"}
+            ), 400
+
+        auth_err = _validate_altiplano_ui_credentials("INP", alt_user, alt_pwd)
+        if auth_err:
+            return jsonify(auth_err[0]), auth_err[1]
+
+        from services.inventory import cambiar_pon_admin_access_id
+
+        result = cambiar_pon_admin_access_id(
             access_id,
             operador,
             admin_status,

@@ -15,6 +15,14 @@ def test_ema_top_level_state():
     assert altiplano._ema_top_level_state(body, "adminStatus") == "UNLOCKED"
 
 
+def test_ema_onu_gpon_name_candidates_v7_before_v1():
+    import altiplano
+
+    names = altiplano._ema_onu_gpon_name_candidates("BA_OLTA_SF01_01-2-1-35")
+    assert names[0] == "v7~BA_OLTA_SF01_01-2-1-35_GPON"
+    assert names[1] == "v1~BA_OLTA_SF01_01-2-1-35_GPON"
+
+
 def test_ema_state_from_body_nested():
     import altiplano
 
@@ -35,6 +43,8 @@ def test_fetch_ont_telemetry_fills_oper_admin_via_inp_ema(monkeypatch):
     def fake_get(url, auth_url, **kwargs):
         if "inp-altiplano-ac/rest/ema/entity" in url:
             inp_calls.append(url)
+            if "v1~" in url:
+                return None
             if "fetchDeviceAttributes=false" in url and "isOne=false" in url:
                 return {"adminStatus": "UNLOCKED"}
             if "fetchDeviceAttributes=true" in url and "isOne=true" in url:
@@ -73,6 +83,7 @@ def test_fetch_ont_telemetry_fills_oper_admin_via_inp_ema(monkeypatch):
     assert out["oper"] == "UP"
     assert out["admin"] == "UNLOCKED"
     assert any("inp-altiplano-ac/rest/ema/entity" in u for u in inp_calls)
+    assert any("v7~BA_OLTA_SF01_01-2-1-35_GPON" in u for u in inp_calls)
 
 
 def test_nv_health_display_timestamp_prefers_onu_detected_when_newer():

@@ -76,13 +76,13 @@ def test_cambiar_sn_ont_non_tasa_no_hex_normalization(monkeypatch):
         access_id="105",
         operador="DIRECTV",
         ont_target="X-1-1-1",
-        new_sn="41534B5900435645",
+        new_sn="53444D435C73B3AF",
     )
     assert out["ok"] is True
-    assert out["sn"] == "41534B5900435645"
+    assert out["sn"] == "SDMC5C73B3AF"
     assert (
         captured["json"]["ibn:intent"]["intent-specific-data"]["ont:ont"][
             "expected-serial-number"
         ]
-        == "41534B5900435645"
+        == "SDMC5C73B3AF"
     )

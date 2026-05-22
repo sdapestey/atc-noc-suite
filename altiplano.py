@@ -4,6 +4,7 @@ import json
 import os
 import re
 import time
+from functools import lru_cache
 import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -313,22 +314,24 @@ def cambiar_sn_ont(
     aid = str(access_id or "").strip()
     op = str(operador or "").strip().upper()
     ont = str(ont_target or "").strip()
-    raw_sn = str(new_sn or "").strip()
-    if op == "TASA":
-        from services.sn_tasa import normalize_tasa_change_sn
+    import importlib.util
+    from pathlib import Path
 
-        sn = normalize_tasa_change_sn(raw_sn)
-    else:
-        sn = raw_sn.upper()
+    _sn_path = Path(__file__).resolve().parent / "services" / "sn_altiplano.py"
+    _sn_spec = importlib.util.spec_from_file_location("sn_altiplano", _sn_path)
+    _sn_mod = importlib.util.module_from_spec(_sn_spec)
+    _sn_spec.loader.exec_module(_sn_mod)
+
+    raw_sn = str(new_sn or "").strip()
+    sn = _sn_mod.normalize_change_sn(raw_sn, op)
+    sn_err = _sn_mod.validate_ont_sn_for_altiplano(sn)
+    if sn_err:
+        return {"ok": False, "message": sn_err}
 
     if not aid:
         return {"ok": False, "message": "Access ID requerido"}
     if not ont:
         return {"ok": False, "message": "ONT target requerido"}
-    if not sn:
-        return {"ok": False, "message": "SN requerido"}
-    if len(sn) < 6 or len(sn) > 32:
-        return {"ok": False, "message": "SN inválido (largo fuera de rango)"}
 
     host, port, base_url = get_altiplano_nbi_target(op)
     if not host or not port or not base_url:
@@ -3765,6 +3768,7 @@ def borrar_intent_ont_connection_inp(
     }
 
 
+@lru_cache(maxsize=4096)
 def normalizar_object_name(object_name_raw: str) -> str:
     """
     Convierte el object_name de Postgres al formato que Altiplano espera.
@@ -3804,7 +3808,8 @@ def _vno_slug_from_base_url(base_url: str) -> str:
     return base.split("-")[0] if base else ""
 
 
-def _power_auth_contexts(operator_id) -> list[tuple[str, str, str, str]]:
+@lru_cache(maxsize=64)
+def _power_auth_contexts(operator_id) -> tuple[tuple[str, str, str, str], ...]:
     """
     Contextos (vno, auth_url, user, password) para leer potencias.
 
@@ -3843,16 +3848,16 @@ def _power_auth_contexts(operator_id) -> list[tuple[str, str, str, str]]:
     _append_operator("INP")
 
     if contexts:
-        return contexts
+        return tuple(contexts)
 
     legacy = _altiplano_power_target(operator_id)
     if not legacy:
-        return []
+        return ()
     vno, auth_url = legacy
     user, pwd = get_altiplano_credentials()
     if user and pwd:
-        return [(vno, auth_url, user, pwd)]
-    return []
+        return ((vno, auth_url, user, pwd),)
+    return ()
 
 
 def _ne_from_object_name_raw(object_name_raw: str) -> str | None:
@@ -3961,18 +3966,29 @@ def _restconf_potencias_url(base_host: str, vno: str, ne: str, object_name_raw: 
     )
 
 
+# Prefijos EMA de la ONT en Network Views (HAR INP: ``v7~…_GPON``; legado: ``v1~``).
+_EMA_ONU_GPON_VERSION_TRY_ORDER = ("v7", "v1")
+
+
+def _ema_onu_gpon_name_candidates(object_name_raw: str) -> list[str]:
+    """Nombres ``vN~{onu}_GPON`` a probar en EMA (orden GUI reciente primero)."""
+    onu = normalizar_object_name(str(object_name_raw or "").strip())
+    if not onu:
+        return []
+    return [f"{ver}~{onu}_GPON" for ver in _EMA_ONU_GPON_VERSION_TRY_ORDER]
+
+
 def _ema_entity_url(
     base_host: str,
     vno: str,
     ne: str,
-    object_name_raw: str,
+    onu_gpon_name: str,
     *,
     fetch_device_attributes: bool,
     is_one: bool,
 ) -> str:
     """URL API EMA de Network Views (potencias, oper/admin, SN)."""
-    object_name_altiplano = normalizar_object_name(object_name_raw)
-    onu_name = quote(f"v1~{object_name_altiplano}_GPON", safe="")
+    onu_enc = quote(str(onu_gpon_name or "").strip(), safe="")
     ne_enc = quote(ne, safe="")
     qs = urlencode(
         {
@@ -3984,32 +4000,122 @@ def _ema_entity_url(
     )
     return (
         f"https://{base_host}/{vno}-altiplano-ac/rest/ema/entity/"
-        f"LS-FX-MF-SF-LT/ONT/{ne_enc}/{onu_name}?{qs}"
+        f"LS-FX-MF-SF-LT/ONT/{ne_enc}/{onu_enc}?{qs}"
     )
 
 
-def _ema_potencias_url(base_host: str, vno: str, ne: str, object_name_raw: str) -> str:
+def _ema_potencias_url(
+    base_host: str, vno: str, ne: str, onu_gpon_name: str
+) -> str:
     return _ema_entity_url(
         base_host,
         vno,
         ne,
-        object_name_raw,
+        onu_gpon_name,
         fetch_device_attributes=True,
         is_one=True,
     )
 
 
-def _ema_entity_resource_url(
-    base_host: str, vno: str, ne: str, object_name_raw: str
-) -> str:
+def _ema_entity_resource_url(base_host: str, vno: str, ne: str, onu_gpon_name: str) -> str:
     """URL base EMA de la ONT (POST lock/unlock admin, HAR Network Views)."""
-    object_name_altiplano = normalizar_object_name(object_name_raw)
-    onu_name = quote(f"v1~{object_name_altiplano}_GPON", safe="")
+    onu_enc = quote(str(onu_gpon_name or "").strip(), safe="")
     ne_enc = quote(ne, safe="")
     return (
         f"https://{base_host}/{vno}-altiplano-ac/rest/ema/entity/"
-        f"LS-FX-MF-SF-LT/ONT/{ne_enc}/{onu_name}"
+        f"LS-FX-MF-SF-LT/ONT/{ne_enc}/{onu_enc}"
     )
+
+
+@lru_cache(maxsize=4096)
+def _channel_partition_name_from_object_name(object_name_raw: str) -> str | None:
+    """
+    Partición PON (ChannelPartition) desde ``object_name`` de inventario.
+
+    Ej.: ``BA_OLTA_SF01_01-2-1-35`` → ``BA_OLTA_SF01_01-2-1_CPART_GPON`` (HAR INP).
+    """
+    onu = normalizar_object_name(str(object_name_raw or "").strip())
+    if not onu:
+        return None
+    parts = onu.split("-")
+    if len(parts) >= 4 and parts[0].startswith("BA_OLTA_"):
+        return f"{parts[0]}-{parts[1]}-{parts[2]}_CPART_GPON"
+    return None
+
+
+@lru_cache(maxsize=4096)
+def _pon_index_from_object_name(object_name_raw: str) -> str | None:
+    """Índice PON (tercer segmento numérico) para mostrar en UI."""
+    onu = normalizar_object_name(str(object_name_raw or "").strip())
+    if not onu:
+        return None
+    parts = onu.split("-")
+    if len(parts) >= 4 and str(parts[2]).isdigit():
+        return parts[2]
+    return None
+
+
+def _ema_channel_partition_entity_url(
+    base_host: str, vno: str, ne: str, channel_partition_name: str
+) -> str:
+    """URL EMA ChannelPartition (lock/unlock PON, HAR Network Views)."""
+    ne_enc = quote(ne, safe="")
+    cpart_enc = quote(str(channel_partition_name or "").strip(), safe="")
+    return (
+        f"https://{base_host}/{vno}-altiplano-ac/rest/ema/entity/"
+        f"LS-FX-MF-SF-LT/ChannelPartition/{ne_enc}/{cpart_enc}"
+    )
+
+
+def _ema_channel_partition_admin_get_url(
+    base_host: str, vno: str, ne: str, channel_partition_name: str
+) -> str:
+    qs = urlencode(
+        {
+            "fetchDeviceAttributes": "false",
+            "isChild": "false",
+            "isOne": "false",
+            "forCondition": "false",
+        }
+    )
+    return f"{_ema_channel_partition_entity_url(base_host, vno, ne, channel_partition_name)}?{qs}"
+
+
+def _http_get_ema_entity_try_versions(
+    base_host: str,
+    vno: str,
+    ne: str,
+    object_name_raw: str,
+    auth_url: str,
+    *,
+    access_id: str,
+    log_label: str,
+    fetch_device_attributes: bool,
+    is_one: bool,
+    username: str | None = None,
+    password: str | None = None,
+) -> object | None:
+    """GET EMA probando ``v7~`` y ``v1~`` (404 en un AC no implica fallo en el otro)."""
+    for onu_name in _ema_onu_gpon_name_candidates(object_name_raw):
+        body = _http_get_altiplano_json(
+            _ema_entity_url(
+                base_host,
+                vno,
+                ne,
+                onu_name,
+                fetch_device_attributes=fetch_device_attributes,
+                is_one=is_one,
+            ),
+            auth_url,
+            access_id=access_id,
+            ne=ne,
+            log_label=f"{log_label} ({onu_name})",
+            username=username,
+            password=password,
+        )
+        if body is not None:
+            return body
+    return None
 
 
 def _ont_connection_full_target(object_name_raw: str, operator_id) -> str:
@@ -4113,31 +4219,32 @@ def _fetch_ema_oper_admin_inp(
     base_host = f"{host}:{port}"
     vno = _vno_slug_from_base_url(base_url) or "inp"
 
-    ema_body = _http_get_altiplano_json(
-        _ema_potencias_url(base_host, vno, ne, object_name_raw),
+    ema_body = _http_get_ema_entity_try_versions(
+        base_host,
+        vno,
+        ne,
+        object_name_raw,
         auth_url,
         access_id=access_id,
-        ne=ne,
         log_label=f"EMA oper INP ({vno})",
+        fetch_device_attributes=True,
+        is_one=True,
         username=user,
         password=pwd,
     )
     if ema_body:
         out["oper"] = _ema_state_from_body(ema_body, "operationState")
 
-    ema_admin_body = _http_get_altiplano_json(
-        _ema_entity_url(
-            base_host,
-            vno,
-            ne,
-            object_name_raw,
-            fetch_device_attributes=False,
-            is_one=False,
-        ),
+    ema_admin_body = _http_get_ema_entity_try_versions(
+        base_host,
+        vno,
+        ne,
+        object_name_raw,
         auth_url,
         access_id=access_id,
-        ne=ne,
         log_label=f"EMA admin INP ({vno})",
+        fetch_device_attributes=False,
+        is_one=False,
         username=user,
         password=pwd,
     )
@@ -4576,8 +4683,138 @@ def cambiar_admin_status_ont(
 
     auth_url = f"https://{host}:{port}/{base_url}/rest/auth/login"
     base_host = f"{host}:{port}"
-    url = _ema_entity_resource_url(base_host, "inp", ne_val, obj)
     payload = {"adminStatus": status}
+    vno = _vno_slug_from_base_url(base_url) or "inp"
+
+    last_out: dict = {
+        "ok": False,
+        "message": "No se pudo bloquear/desbloquear la ONT en EMA INP",
+    }
+    for onu_name in _ema_onu_gpon_name_candidates(obj):
+        url = _ema_entity_resource_url(base_host, vno, ne_val, onu_name)
+        out = _http_post_altiplano_expect_ok(
+            url,
+            auth_url,
+            payload,
+            access_id=str(access_id or "").strip(),
+            ne=ne_val,
+            log_label=f"EMA admin {status} ({onu_name})",
+            username=user,
+            password=pwd,
+        )
+        if out.get("ok"):
+            label = "Locked" if status == "LOCKED" else "Unlocked"
+            out["admin_status"] = status
+            out["message"] = f"ONT {label.lower()} correctamente en Altiplano"
+            return out
+        last_out = out
+    return last_out
+
+
+def _fetch_channel_partition_admin_inp(
+    object_name_raw: str,
+    ne: str,
+    *,
+    access_id: str = "",
+    operator_name: str | None = None,
+    username: str | None = None,
+    password: str | None = None,
+) -> dict[str, str | None]:
+    """adminStatus del ChannelPartition PON (INP / EMA)."""
+    out: dict[str, str | None] = {
+        "pon_admin": None,
+        "channel_partition": None,
+        "pon_index": None,
+    }
+    cpart = _channel_partition_name_from_object_name(object_name_raw)
+    if not cpart:
+        return out
+    out["channel_partition"] = cpart
+    out["pon_index"] = _pon_index_from_object_name(object_name_raw)
+
+    host, port, base_url = get_altiplano_nbi_target("INP")
+    if not host or not port or not base_url:
+        return out
+    user = username
+    pwd = password
+    if not user or not pwd:
+        user, pwd = _inp_ema_credentials(operator_name)
+    if not user or not pwd:
+        return out
+
+    auth_url = f"https://{host}:{port}/{base_url}/rest/auth/login"
+    base_host = f"{host}:{port}"
+    vno = _vno_slug_from_base_url(base_url) or "inp"
+    body = _http_get_altiplano_json(
+        _ema_channel_partition_admin_get_url(base_host, vno, ne, cpart),
+        auth_url,
+        access_id=access_id,
+        ne=ne,
+        log_label=f"EMA PON admin GET ({vno})",
+        username=user,
+        password=pwd,
+    )
+    if body:
+        out["pon_admin"] = _ema_state_from_body(body, "adminStatus")
+    return out
+
+
+def cambiar_admin_status_pon(
+    access_id: str,
+    object_name_raw: str,
+    operador: str,
+    admin_status: str,
+    *,
+    ne: str | None = None,
+    nbi_username: str | None = None,
+    nbi_password: str | None = None,
+) -> dict:
+    """
+    Bloquea o desbloquea la partición PON (ChannelPartition) vía EMA INP.
+
+    Bajar puerto = ``LOCKED``; levantar = ``UNLOCKED`` (HAR ``10.200.3.100``).
+    """
+    status = str(admin_status or "").strip().upper()
+    if status not in ("LOCKED", "UNLOCKED"):
+        return {"ok": False, "message": "admin_status debe ser LOCKED o UNLOCKED"}
+
+    obj = str(object_name_raw or "").strip()
+    if not obj or obj == "—":
+        return {"ok": False, "message": "object_name de ONT requerido"}
+
+    cpart = _channel_partition_name_from_object_name(obj)
+    if not cpart:
+        return {"ok": False, "message": "No se pudo derivar ChannelPartition desde object_name"}
+
+    ne_val = (ne or "").strip() or _ne_from_object_name_raw(obj)
+    if not ne_val:
+        return {"ok": False, "message": "No se pudo derivar NE desde object_name"}
+
+    host, port, base_url = get_altiplano_nbi_target("INP")
+    if not host or not port or not base_url:
+        return {"ok": False, "message": "Entorno NBI INP no configurado"}
+
+    op = str(operador or "").strip().upper()
+    ui_user = (nbi_username or "").strip() if nbi_username else ""
+    ui_pwd = nbi_password if isinstance(nbi_password, str) else (nbi_password or "")
+    ui_pwd = ui_pwd if isinstance(ui_pwd, str) else str(ui_pwd)
+    if ui_user and ui_pwd != "":
+        user, pwd = ui_user, ui_pwd
+    else:
+        user, pwd = get_altiplano_operator_credentials("INP")
+        if not user or not pwd:
+            user, pwd = get_altiplano_operator_credentials(op)
+        if not user or not pwd:
+            user, pwd = get_altiplano_credentials()
+        if not user or not pwd:
+            return {"ok": False, "message": "Credenciales Altiplano INP no configuradas"}
+
+    auth_url = f"https://{host}:{port}/{base_url}/rest/auth/login"
+    base_host = f"{host}:{port}"
+    payload = {"adminStatus": status}
+    vno = _vno_slug_from_base_url(base_url) or "inp"
+    url = _ema_channel_partition_entity_url(base_host, vno, ne_val, cpart)
+    pon_idx = _pon_index_from_object_name(obj) or "?"
 
     out = _http_post_altiplano_expect_ok(
         url,
@@ -4585,14 +4822,18 @@ def cambiar_admin_status_ont(
         payload,
         access_id=str(access_id or "").strip(),
         ne=ne_val,
-        log_label=f"EMA admin {status}",
+        log_label=f"EMA PON {status} ({cpart})",
         username=user,
         password=pwd,
     )
     if out.get("ok"):
-        label = "Locked" if status == "LOCKED" else "Unlocked"
+        label = "bloqueado (bajado)" if status == "LOCKED" else "desbloqueado (arriba)"
         out["admin_status"] = status
-        out["message"] = f"ONT {label.lower()} correctamente en Altiplano"
+        out["channel_partition"] = cpart
+        out["pon_index"] = pon_idx
+        out["message"] = f"PON {pon_idx} {label} correctamente en Altiplano"
+    else:
+        out["message"] = out.get("message") or "No se pudo cambiar el estado del PON"
     return out
 
 
@@ -4697,6 +4938,9 @@ def _fetch_ont_telemetry_live(
         "sn": None,
         "oper": None,
         "admin": None,
+        "pon_admin": None,
+        "pon_index": None,
+        "channel_partition": None,
         "health": None,
         "health_ts": None,
     }
@@ -4726,12 +4970,16 @@ def _fetch_ont_telemetry_live(
             if pair is not None:
                 out["tx"], out["rx"] = pair
 
-        ema_body = _http_get_altiplano_json(
-            _ema_potencias_url(base_host, vno, ne, object_name_raw),
+        ema_body = _http_get_ema_entity_try_versions(
+            base_host,
+            vno,
+            ne,
+            object_name_raw,
             auth_url,
             access_id=access_id,
-            ne=ne,
             log_label=f"EMA entity ({vno})",
+            fetch_device_attributes=True,
+            is_one=True,
             username=user,
             password=pwd,
         )
@@ -4756,19 +5004,16 @@ def _fetch_ont_telemetry_live(
             _merge_onu_detected(ema_body)
 
         if out["admin"] is None:
-            ema_admin_body = _http_get_altiplano_json(
-                _ema_entity_url(
-                    base_host,
-                    vno,
-                    ne,
-                    object_name_raw,
-                    fetch_device_attributes=False,
-                    is_one=False,
-                ),
+            ema_admin_body = _http_get_ema_entity_try_versions(
+                base_host,
+                vno,
+                ne,
+                object_name_raw,
                 auth_url,
                 access_id=access_id,
-                ne=ne,
                 log_label=f"EMA admin ({vno})",
+                fetch_device_attributes=False,
+                is_one=False,
                 username=user,
                 password=pwd,
             )
@@ -4822,6 +5067,27 @@ def _fetch_ont_telemetry_live(
             out["oper"] = inp_states["oper"]
         if out["admin"] is None and inp_states.get("admin"):
             out["admin"] = inp_states["admin"]
+
+    inp_user: str | None = None
+    inp_pwd: str | None = None
+    for vno, auth_url, user, pwd in contexts:
+        if vno == "inp" or "inp-altiplano-ac" in (auth_url or ""):
+            inp_user, inp_pwd = user, pwd
+            break
+    pon_info = _fetch_channel_partition_admin_inp(
+        object_name_raw,
+        ne,
+        access_id=access_id,
+        operator_name=_operator_name_from_id(operator_id),
+        username=inp_user,
+        password=inp_pwd,
+    )
+    if pon_info.get("pon_admin"):
+        out["pon_admin"] = pon_info["pon_admin"]
+    if pon_info.get("pon_index"):
+        out["pon_index"] = pon_info["pon_index"]
+    if pon_info.get("channel_partition"):
+        out["channel_partition"] = pon_info["channel_partition"]
 
     return out
 
@@ -5001,6 +5267,9 @@ def obtener_telemetry_ont(
         "sn": None,
         "oper": None,
         "admin": None,
+        "pon_admin": None,
+        "pon_index": None,
+        "channel_partition": None,
         "health": None,
         "health_ts": None,
     }

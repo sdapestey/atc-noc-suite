@@ -342,6 +342,8 @@ class Config:
     HOST = os.environ.get("FLASK_HOST", "0.0.0.0")
     PORT = int(os.environ.get("FLASK_PORT", "9002"))
     DEBUG = os.environ.get("FLASK_DEBUG", "1").lower() in ("1", "true", "yes")
+    # Caché navegador para /static/ (segundos). En DEBUG suele ser 0.
+    STATIC_CACHE_MAX_AGE = int(os.environ.get("STATIC_CACHE_MAX_AGE", "0" if DEBUG else "86400"))
     DB_POOL_MIN, DB_POOL_MAX = get_db_pool_bounds()
     DB_CONNECT_TIMEOUT_SECS = _int_env_at_least("DB_CONNECT_TIMEOUT_SECS", 5, 1)
     DB_STATEMENT_TIMEOUT_MS = _int_env_positive_or_zero("DB_STATEMENT_TIMEOUT_MS", 30000)

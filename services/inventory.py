@@ -859,6 +859,50 @@ def cambiar_admin_status_access_id(
     )
 
 
+def cambiar_pon_admin_access_id(
+    access_id: str,
+    operador: str,
+    admin_status: str,
+    *,
+    object_name: str | None = None,
+    nbi_username: str | None = None,
+    nbi_password: str | None = None,
+) -> dict:
+    """Lock/unlock ChannelPartition PON (bajar/subir puerto) vía EMA INP."""
+    from altiplano import cambiar_admin_status_pon
+
+    aid = str(access_id or "").strip()
+    if not aid:
+        return {"ok": False, "message": "Access ID requerido"}
+
+    status = str(admin_status or "").strip().upper()
+    if status not in ("LOCKED", "UNLOCKED"):
+        return {"ok": False, "message": "admin_status debe ser LOCKED o UNLOCKED"}
+
+    obj = (str(object_name or "").strip() if object_name else "") or None
+    if not obj:
+        base = consultar_access_id_estructura(aid)
+        cto = base.get("CTO") if base else None
+        if base and _sin_potencias_por_status(base.get("Status")):
+            return {
+                "ok": False,
+                "message": "ONT en estado FREE/RESERVED (sin PON en Altiplano)",
+            }
+        obj, _op_id = _resolver_object_name_operator_potencias(aid, cto)
+
+    if not obj:
+        return {"ok": False, "message": "No se encontró object_name para el Access ID"}
+
+    return cambiar_admin_status_pon(
+        aid,
+        obj,
+        operador,
+        status,
+        nbi_username=nbi_username,
+        nbi_password=nbi_password,
+    )
+
+
 def consultar_access_id_potencias(access_id):
     """Consulta TX/RX y SN (Expected Serial Number en Altiplano) de un Access ID puntual.
 
@@ -928,11 +972,23 @@ def consultar_access_id_potencias(access_id):
     oper = telem.get("oper") or None
     if not health and str(oper or "").strip().upper() == "UP":
         health = "Healthy"
+    from altiplano import (
+        _channel_partition_name_from_object_name,
+        _pon_index_from_object_name,
+    )
+
+    pon_idx = telem.get("pon_index") or _pon_index_from_object_name(obj)
+    cpart = telem.get("channel_partition") or _channel_partition_name_from_object_name(
+        obj
+    )
     out["NV_STATUS"] = {
         "health": health,
         "health_ts": telem.get("health_ts") or None,
         "oper": oper,
         "admin": telem.get("admin") or None,
+        "pon_admin": telem.get("pon_admin") or None,
+        "pon_index": pon_idx,
+        "channel_partition": cpart,
         "alarms_active": n_alarms,
     }
     if op_id is not None:

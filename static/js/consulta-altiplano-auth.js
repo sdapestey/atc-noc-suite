@@ -102,6 +102,26 @@
     err.hidden = !msg;
   }
 
+  function setSnFieldVisible(visible, opts) {
+    var snWrap = el("consulta-altiplano-auth-sn-wrap");
+    var snEl = el("consulta-altiplano-auth-sn");
+    if (!snWrap) return;
+    var show = Boolean(visible);
+    snWrap.hidden = !show;
+    snWrap.setAttribute("aria-hidden", show ? "false" : "true");
+    if (snEl) {
+      if (show) {
+        snEl.value = opts && opts.snValue != null ? String(opts.snValue) : "";
+        if (opts && opts.snPlaceholder) snEl.placeholder = opts.snPlaceholder;
+        snEl.required = true;
+      } else {
+        snEl.value = "";
+        snEl.required = false;
+        snEl.removeAttribute("aria-invalid");
+      }
+    }
+  }
+
   function setSessionBar(cache, forceHidden) {
     var bar = el("consulta-altiplano-auth-session");
     var userTxt = el("consulta-altiplano-auth-session-user");
@@ -125,6 +145,7 @@
   function showCredentialsForm(prefill) {
     clearCache();
     setSessionBar(null, true);
+    setSnFieldVisible(false);
     var userEl = el("consulta-altiplano-auth-user");
     var pwdEl = el("consulta-altiplano-auth-password");
     if (userEl) userEl.value = (prefill && prefill.username) || "";
@@ -135,6 +156,7 @@
   function closeDialog(result) {
     var dlg = el("consulta-altiplano-auth-dialog");
     setDialogLoading(false);
+    setSnFieldVisible(false);
     if (dlg && dlg.open) dlg.close();
     var res = pendingResolve;
     var rej = pendingReject;
@@ -219,6 +241,7 @@
     var snEl = el("consulta-altiplano-auth-sn");
     var snWrap = el("consulta-altiplano-auth-sn-wrap");
     var credsWrap = el("consulta-altiplano-auth-creds-wrap");
+    var showSn = Boolean(lastDialogOpts && lastDialogOpts.showSnField);
     var cache = readCache();
     var credsHidden = credsWrap && credsWrap.hidden && cache;
 
@@ -242,15 +265,17 @@
     }
 
     var payload = { username: username, password: password };
-    if (snWrap && !snWrap.hidden && snEl) {
+    if (showSn && snWrap && !snWrap.hidden && snEl) {
       var sn = String(snEl.value || "").trim().toUpperCase();
       if (!sn) {
         showError("Ingresá el nuevo SN.");
         snEl.focus();
         return null;
       }
-      if (sn.length < 6 || sn.length > 32) {
-        showError("SN inválido (entre 6 y 32 caracteres).");
+      if (sn.length !== 12 && sn.length !== 16) {
+        showError(
+          "SN inválido: usá 12 caracteres (ej. SDMC5C73B3AF) o los 16 hex del rótulo de la ONT."
+        );
         snEl.focus();
         return null;
       }
@@ -294,10 +319,9 @@
     var msgEl = el("consulta-altiplano-auth-message");
     var userEl = el("consulta-altiplano-auth-user");
     var pwdEl = el("consulta-altiplano-auth-password");
-    var snEl = el("consulta-altiplano-auth-sn");
-    var snWrap = el("consulta-altiplano-auth-sn-wrap");
     var btnOk = el("consulta-altiplano-auth-ok");
     var cache = opts.useCache !== false ? readCache() : null;
+    var showSnField = opts.showSnField === true;
 
     if (titleEl) titleEl.textContent = opts.title || "Confirmar en Altiplano";
     if (msgEl) {
@@ -305,14 +329,10 @@
       msgEl.textContent = msg;
       msgEl.hidden = !msg;
     }
-    if (snWrap) snWrap.hidden = !opts.showSnField;
-    if (snEl && opts.showSnField) {
-      snEl.value = opts.snValue != null ? String(opts.snValue) : "";
-      if (opts.snPlaceholder) snEl.placeholder = opts.snPlaceholder;
-    }
+    setSnFieldVisible(showSnField, opts);
     if (btnOk) {
       btnOk.textContent =
-        opts.okLabel || (opts.showSnField ? "Cambiar SN" : "Confirmar");
+        opts.okLabel || (showSnField ? "Cambiar SN" : "Confirmar");
       btnOk.classList.toggle(
         "altiplano-confirm-dialog-btn-ok--danger",
         Boolean(opts.danger)
@@ -363,7 +383,15 @@
       var snWrap = el("consulta-altiplano-auth-sn-wrap");
       var snEl = el("consulta-altiplano-auth-sn");
       var credsWrap = el("consulta-altiplano-auth-creds-wrap");
-      if (snWrap && !snWrap.hidden && snEl) snEl.focus();
+      if (
+        lastDialogOpts &&
+        lastDialogOpts.showSnField === true &&
+        snWrap &&
+        !snWrap.hidden &&
+        snEl
+      ) {
+        snEl.focus();
+      }
       else if (credsWrap && !credsWrap.hidden) {
         var userEl = el("consulta-altiplano-auth-user");
         if (userEl) userEl.focus();

@@ -38,6 +38,9 @@ def create_app() -> Flask:
             "Permissions-Policy",
             "accelerometer=(), camera=(), geolocation=(), gyroscope=(), microphone=(), payment=(), usb=()",
         )
+        max_age = int(getattr(Config, "STATIC_CACHE_MAX_AGE", 0) or 0)
+        if max_age > 0 and request.path.startswith("/static/"):
+            resp.headers.setdefault("Cache-Control", f"public, max-age={max_age}")
         return resp
 
     @app.context_processor

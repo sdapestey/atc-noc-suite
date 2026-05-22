@@ -60,3 +60,11 @@ python -m ruff check web services altiplano.py db.py queries.py config.py
 2. **Leaflet head partial:** `templates/partials/head_leaflet.html` (índice, RAMA, camino óptico; flag `leaflet_rama_map_css`).
 3. **Histórico potencias:** JS en `static/js/dashboard-potencias-historico.js`; CSS en `dashboard-historico-potencias.css`; Chart.js vía `partials/head_chartjs.html` al pie del body.
 4. **Código muerto:** ejecutar búsqueda dirigida por módulo (p. ej. `services/exports.py` vs rutas de export) y anotar candidatos; usar `vulture` solo como pista, confirmar con grep + tests antes de borrar.
+
+## 6. Optimizaciones (2026-05)
+
+| Cambio | Efecto |
+|--------|--------|
+| `static/js/consulta-index.js` | ~1.6k líneas salen del HTML; el navegador cachea el bundle (`?v=1`). |
+| `STATIC_CACHE_MAX_AGE` + `Cache-Control` en `/static/` | Menos re-descargas de CSS/JS en producción (default 24 h si `FLASK_DEBUG=0`). |
+| `@lru_cache` en `normalizar_object_name`, partición PON, `_power_auth_contexts` | Menos trabajo repetido en consultas masivas CTO/RAMA. |
