@@ -3,10 +3,21 @@ let _calidadRules = [];
 let _pageOffset = 0;
 const _pageSize = 50;
 let _rulesChart = null;
-let _historicoChart = null;
-let _historicoDays = 90;
 let _lastResumen = null;
 let _reglasInitialized = false;
+
+const _CD = window.CalidadDashboard || {};
+const _calidadApi = () => _CD.api || {};
+const _esc =
+  _CD.esc ||
+  function (v) {
+    return String(v || "");
+  };
+const _fmtCount =
+  _CD.fmtCount ||
+  function (n) {
+    return String(n);
+  };
 
 function qualityToast(msg) {
   const el = document.getElementById("toast");
@@ -15,15 +26,6 @@ function qualityToast(msg) {
   el.classList.add("show");
   if (_qualityToastTimer) clearTimeout(_qualityToastTimer);
   _qualityToastTimer = setTimeout(() => el.classList.remove("show"), 1400);
-}
-
-function _esc(v) {
-  return String(v || "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
 }
 
 function _filters() {
@@ -55,7 +57,7 @@ function syncExportLink(filters) {
   const a = document.getElementById("btn-export");
   if (!a) return;
   const qs = _queryString(filters);
-  a.href = "/dashboard/calidad-inventario/export.csv" + (qs ? `?${qs}` : "");
+  a.href = _calidadApi().reglasExportCsv + (qs ? `?${qs}` : "");
 }
 
 function renderKpiGrid(resumen) {
@@ -242,27 +244,15 @@ function renderFindings(payload) {
 }
 
 async function fetchResumen() {
-  const r = await fetch("/dashboard/calidad-inventario/resumen.json");
+  const r = await fetch(_calidadApi().reglasResumen);
   if (!r.ok) throw new Error("No se pudo obtener resumen");
   return r.json();
 }
 
 async function fetchFindings(filters) {
   const qs = _queryString(filters, { limit: _pageSize, offset: _pageOffset });
-  const r = await fetch(`/dashboard/calidad-inventario/hallazgos.json?${qs}`);
+  const r = await fetch(`${_calidadApi().reglasHallazgos}?${qs}`);
   if (!r.ok) throw new Error("No se pudo obtener hallazgos");
-  return r.json();
-}
-
-async function fetchConciliacion() {
-  const r = await fetch("/dashboard/calidad-inventario/conciliacion.json");
-  if (!r.ok) throw new Error("No se pudo obtener conciliación");
-  return r.json();
-}
-
-async function fetchHistorico(days) {
-  const r = await fetch(`/dashboard/calidad-inventario/historico.json?days=${days}`);
-  if (!r.ok) throw new Error("No se pudo obtener histórico");
   return r.json();
 }
 
@@ -293,236 +283,24 @@ async function refreshCalidadDashboard() {
   }
 }
 
-function _fmtCount(n) {
-  const x = Number(n);
-  if (!Number.isFinite(x)) return "—";
-  return x.toLocaleString("es-AR");
-}
-
-function _opSlug(label) {
-  return String(label || "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "");
-}
-
-function _bigNumberCard(title, value, footLabel, operatorId, variant) {
-  const opAttr = operatorId ? ` data-operator-id="${_esc(operatorId)}"` : "";
-  const clickable = operatorId ? " calidad-big-card--clickable" : "";
-  const variantCls = variant ? ` calidad-big-card--${variant}` : "";
-  const slugCls = footLabel ? ` calidad-big-card--op-${_opSlug(footLabel)}` : "";
-  const titleAttr = operatorId
-    ? ` title="Filtrar hallazgos por operador ${_esc(operatorId)}"`
-    : "";
-  const tag =
-    operatorId || variant === "hero-cm" || variant === "hero-alt"
-      ? "button"
-      : "div";
-  const typeAttr = tag === "button" ? ' type="button"' : "";
-  const kpiBody = `
-      <span class="calidad-big-card__value mono">${_esc(_fmtCount(value))}</span>
-      ${footLabel ? `<span class="calidad-big-card__foot">${_esc(footLabel)}</span>` : ""}`;
-  return `
-    <${tag} class="calidad-big-card${variantCls}${slugCls}${clickable}"${typeAttr}${opAttr}${titleAttr}>
-      <span class="calidad-big-card__title">${_esc(title)}</span>
-      <div class="calidad-big-card__kpi">${kpiBody}</div>
-    </${tag}>`;
-}
-
-function _bindOperatorCards(root) {
-  if (!root) return;
-  root.querySelectorAll(".calidad-big-card[data-operator-id]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const opId = btn.getAttribute("data-operator-id");
-      const opInput = document.getElementById("f-operador");
-      if (opInput && opId) opInput.value = opId;
-      switchTab("reglas");
-      _pageOffset = 0;
-      refreshCalidadDashboard();
-    });
-  });
-}
-
-function renderConciliacion(data) {
-  const board = document.getElementById("conciliacion-dashboard");
-  const body = document.getElementById("conciliacion-body");
-  if (!board || !body || !data) return;
-
-  const t = data.totals || {};
-  const cmTotal =
-    t.connect_master_in_service != null
-      ? t.connect_master_in_service
-      : t.bajada_inventario_in_service;
-  const altTotal = t.altiplano_activos;
-
-  const ops = Array.isArray(data.operators) ? data.operators : [];
-  const altiplanoCards = ops
-    .map((o) =>
-      _bigNumberCard(
-        `Activos ${o.label}`,
-        o.altiplano != null ? o.altiplano : 0,
-        o.label,
-        o.id,
-        "op"
-      )
-    )
-    .join("");
-  const cmCards = ops
-    .map((o) => {
-      const cm = o.connect_master != null ? o.connect_master : o.in_service;
-      return _bigNumberCard(`Activos ${o.label}`, cm, o.label, o.id, "op");
-    })
-    .join("");
-
-  board.classList.add("calidad-activos-board--loaded");
-  board.innerHTML = `
-    <div class="calidad-activos-shell">
-      <section class="calidad-activos-hero" aria-labelledby="calidad-total-activos-title">
-        <header class="calidad-zone-header calidad-zone-header--hero">
-          <h2 class="calidad-board-title" id="calidad-total-activos-title">Total activos</h2>
-        </header>
-        <div class="calidad-big-row calidad-big-row--2 calidad-big-row--hero">
-          ${_bigNumberCard("Total Activos en Connect Master", cmTotal, "", null, "hero-cm")}
-          ${_bigNumberCard("Activos Totales Altiplano", altTotal, "", null, "hero-alt")}
-        </div>
-      </section>
-      <section class="calidad-activos-zone calidad-activos-zone--altiplano" aria-labelledby="calidad-altiplano-title">
-        <header class="calidad-zone-header">
-          <span class="calidad-zone-badge calidad-zone-badge--alt">Altiplano</span>
-          <h2 class="calidad-board-title" id="calidad-altiplano-title">Activos por operador</h2>
-        </header>
-        <div class="calidad-big-row calidad-big-row--5">${altiplanoCards}</div>
-      </section>
-      <section class="calidad-activos-zone calidad-activos-zone--cm" aria-labelledby="calidad-cm-title">
-        <header class="calidad-zone-header">
-          <span class="calidad-zone-badge calidad-zone-badge--cm">Connect Master</span>
-          <h2 class="calidad-board-title" id="calidad-cm-title">Activos por operador</h2>
-        </header>
-        <div class="calidad-big-row calidad-big-row--5">${cmCards}</div>
-      </section>
-    </div>
-  `;
-  _bindOperatorCards(board);
-
-  if (!ops.length) {
-    body.innerHTML = '<tr><td colspan="4">Sin datos.</td></tr>';
-    return;
-  }
-  body.innerHTML = ops
-    .map(
-      (o) => `
-    <tr data-operator-id="${_esc(o.id)}" title="Filtrar hallazgos por operador ${_esc(o.id)}">
-      <td>${_esc(o.label)}</td>
-      <td class="mono">${_esc(o.id)}</td>
-      <td class="mono">${_fmtCount(o.connect_master != null ? o.connect_master : o.in_service)}</td>
-      <td class="mono">${_fmtCount(o.reserved)}</td>
-    </tr>
-  `
-    )
-    .join("");
-
-  body.querySelectorAll("tr[data-operator-id]").forEach((row) => {
-    row.addEventListener("click", () => {
-      const opId = row.getAttribute("data-operator-id");
-      const opInput = document.getElementById("f-operador");
-      if (opInput && opId) opInput.value = opId;
-      switchTab("reglas");
-      _pageOffset = 0;
-      refreshCalidadDashboard();
-    });
-  });
-}
-
-function renderHistorico(data) {
-  const canvas = document.getElementById("calidad-historico-chart");
-  const empty = document.getElementById("historico-empty");
-  if (!canvas || typeof Chart === "undefined") return;
-
-  const series = data && Array.isArray(data.series) ? data.series : [];
-  if (!series.length) {
-    if (_historicoChart) {
-      _historicoChart.destroy();
-      _historicoChart = null;
-    }
-    if (empty) empty.hidden = false;
-    return;
-  }
-  if (empty) empty.hidden = true;
-
-  const labels = series.map((p) => p.fecha);
-  if (_historicoChart) _historicoChart.destroy();
-  _historicoChart = new Chart(canvas, {
-    type: "line",
-    data: {
-      labels,
-      datasets: [
-        {
-          label: "CM no Nokia",
-          data: series.map((p) => p.cm_no_nokia),
-          borderColor: "rgba(88, 166, 255, 0.9)",
-          backgroundColor: "rgba(88, 166, 255, 0.15)",
-          fill: true,
-          tension: 0.2,
-        },
-        {
-          label: "Nokia no CM",
-          data: series.map((p) => p.nokia_no_cm),
-          borderColor: "rgba(248, 81, 73, 0.9)",
-          backgroundColor: "rgba(248, 81, 73, 0.12)",
-          fill: true,
-          tension: 0.2,
-        },
-      ],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: { legend: { labels: { color: "#9aa7b2" } } },
-      scales: {
-        x: { ticks: { color: "#9aa7b2", maxTicksLimit: 12 } },
-        y: { beginAtZero: true, ticks: { color: "#9aa7b2", precision: 0 } },
-      },
-    },
-  });
-}
-
-async function loadConciliacionPanel() {
-  try {
-    const data = await fetchConciliacion();
-    renderConciliacion(data);
-  } catch (_err) {
-    qualityToast("No se pudo cargar conciliación");
-  }
-}
-
-async function loadHistoricoPanel() {
-  try {
-    const data = await fetchHistorico(_historicoDays);
-    renderHistorico(data);
-  } catch (_err) {
-    qualityToast("No se pudo cargar histórico");
-  }
-}
-
 function switchTab(tabId) {
   document.querySelectorAll(".calidad-tab").forEach((btn) => {
     const active = btn.getAttribute("data-tab") === tabId;
     btn.classList.toggle("is-active", active);
     btn.setAttribute("aria-selected", active ? "true" : "false");
   });
-  const panelResumen = document.getElementById("panel-resumen");
-  const panelConciliacion = document.getElementById("panel-conciliacion");
-  if (panelResumen) panelResumen.hidden = tabId !== "resumen";
-  if (panelConciliacion) panelConciliacion.hidden = tabId !== "resumen" && tabId !== "conciliacion";
+  const panelInventario = document.getElementById("panel-inventario");
+  if (panelInventario) panelInventario.hidden = tabId !== "inventario";
   document.getElementById("panel-reglas").hidden = tabId !== "reglas";
-  const panelHistorico = document.getElementById("panel-historico");
-  if (panelHistorico) panelHistorico.hidden = tabId !== "historico";
+  const panelAltasBajas = document.getElementById("panel-altas-bajas");
+  if (panelAltasBajas) panelAltasBajas.hidden = tabId !== "altas-bajas";
 
-  if (tabId === "resumen" && typeof window.loadCalidadResumenGeneral === "function") {
+  if (tabId === "altas-bajas" && typeof window.loadCalidadEstadisticas === "function") {
+    window.loadCalidadEstadisticas();
+  }
+  if (tabId === "inventario" && typeof window.loadCalidadResumenGeneral === "function") {
     window.loadCalidadResumenGeneral();
   }
-  if (tabId === "conciliacion" && typeof loadConciliacionPanel === "function") loadConciliacionPanel();
-  if (tabId === "historico" && typeof loadHistoricoPanel === "function") loadHistoricoPanel();
   if (tabId === "reglas" && !_reglasInitialized) {
     _reglasInitialized = true;
     refreshCalidadDashboard();
@@ -536,6 +314,8 @@ window.resetCalidadHallazgosPage = function () {
 
 window.addEventListener("load", () => {
   document.querySelectorAll(".calidad-tab").forEach((btn) => {
+    if (btn.dataset.calidadTabBound === "1") return;
+    btn.dataset.calidadTabBound = "1";
     btn.addEventListener("click", () => switchTab(btn.getAttribute("data-tab")));
   });
 
@@ -572,15 +352,6 @@ window.addEventListener("load", () => {
     refreshFindingsOnly();
   });
 
-  document.querySelectorAll("#historico-range [data-days]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      document.querySelectorAll("#historico-range [data-days]").forEach((b) => {
-        b.classList.toggle("is-active", b === btn);
-      });
-      _historicoDays = parseInt(btn.getAttribute("data-days"), 10) || 90;
-      loadHistoricoPanel();
-    });
-  });
 
   if (window.initNocPage) {
     initNocPage({
@@ -595,8 +366,10 @@ window.addEventListener("load", () => {
     });
   }
 
-  if (typeof window.loadCalidadResumenGeneral === "function") {
-    switchTab("resumen");
+  if (typeof window.loadCalidadEstadisticas === "function") {
+    switchTab("altas-bajas");
+  } else if (typeof window.loadCalidadResumenGeneral === "function") {
+    switchTab("inventario");
   } else {
     switchTab("reglas");
     _reglasInitialized = true;

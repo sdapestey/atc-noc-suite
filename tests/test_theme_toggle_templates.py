@@ -37,7 +37,7 @@ def test_dashboard_pages_have_no_attribution_line(client):
     paths = [
         "/",
         "/dashboard/olt",
-        "/dashboard/calidad-inventario",
+        "/dashboard/estadisticas",
         "/dashboard/rama",
         "/dashboard/potencias-historico",
         "/dashboard/camino-optico",

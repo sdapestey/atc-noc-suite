@@ -113,7 +113,16 @@ def test_discover_svlans_from_legacy_input_response(monkeypatch):
     def fake_post(url, **kwargs):
         call_n["n"] += 1
         if call_n["n"] == 1:
-            return type("R", (), {"status_code": 404, "text": ""})()
+
+            class _NotFound:
+                status_code = 404
+                text = ""
+
+                @staticmethod
+                def json():
+                    raise ValueError("no body")
+
+            return _NotFound()
         return FakeResp()
 
     monkeypatch.setattr(

@@ -147,6 +147,34 @@ def test_access_id_potencias_usa_aid_canonico_para_lookup(monkeypatch):
             "health_ts": None,
             "oper": "UP",
             "admin": "UNLOCKED",
+            "pon_admin": None,
+            "pon_index": "3",
+            "channel_partition": "BA_OLTA_SM01_05-10-3_CPART_GPON",
             "alarms_active": 0,
         },
     }
+
+
+def test_altiplano_por_ont_varias_ctos_en_paralelo(monkeypatch):
+    """Histórico Consultar RX: varias CTO en la misma RAMA → un Altiplano por CTO en paralelo."""
+    calls = []
+
+    def capture(ne, onts):
+        calls.append((ne, len(onts)))
+        if not onts:
+            return {}
+        return {str(onts[0][0]): (-20.0, -19.0)}
+
+    monkeypatch.setattr(inv, "obtener_potencias_por_cto", capture)
+
+    obj_a = "BA_OLTA_ES01_01:1-1-2-1-1"
+    obj_b = "BA_OLTA_ES01_01:1-1-2-1-2"
+    rows = [
+        (100, "IN SERVICE", "CTO-A", "R", obj_a, obj_a, None, 1),
+        (101, "IN SERVICE", "CTO-B", "R", obj_b, obj_b, None, 1),
+    ]
+    out = inv._altiplano_potencias_grupos_cto_paralelo(rows)
+    assert len(calls) == 2
+    assert len(out) == 2
+    assert out[0]["rx_dbm"] == -19.0
+    assert out[1]["rx_dbm"] == -19.0

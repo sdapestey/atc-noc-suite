@@ -891,10 +891,13 @@ def _json_loads_altiplano_http_response(res: requests.Response) -> object | None
     elif text.startswith(")]}'"):
         text = text[4:].lstrip("\n\r\t ")
     if not text:
-        try:
-            return res.json()
-        except ValueError:
-            return None
+        json_fn = getattr(res, "json", None)
+        if callable(json_fn):
+            try:
+                return json_fn()
+            except ValueError:
+                return None
+        return None
     try:
         return json.loads(text)
     except ValueError:
@@ -2326,24 +2329,22 @@ def _format_intent_ui_label(raw: str, mapping: dict) -> str:
 
 
 def _match_entry_rn_edit_allowed(rn_raw: str) -> bool:
-    """¿Habilitar lápiz «cambiar required network state» en consulta INP? Active → no."""
+    """¿Habilitar lápiz «cambiar required network state» en consulta INP?"""
     if rn_raw is None or str(rn_raw).strip() == "":
         return False
     s = str(rn_raw).strip().lower().replace("_", "-").replace(" ", "-")
     while "--" in s:
         s = s.replace("--", "-")
-    if s == "active":
-        return False
+    if s == "notpresent":
+        s = "not-present"
+    if s in ("delete", "deleted", "to-be-deleted", "tobedeleted"):
+        s = "not-present"
     return s in frozenset(
         {
+            "active",
             "suspended",
             "suspend",
             "not-present",
-            "notpresent",
-            "delete",
-            "deleted",
-            "to-be-deleted",
-            "tobedeleted",
         }
     )
 

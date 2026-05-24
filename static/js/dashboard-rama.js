@@ -1,5 +1,6 @@
 let _toastTimer = null;
 let _jumpTimer = null;
+let _filtroRamaTimer = null;
 let _lastJumpKey = "";
 let _restoringRamaState = false;
 const _ramaPotenciasCache = {};
@@ -167,9 +168,17 @@ function limpiarBusquedaRama() {
   el.focus();
 }
 
+function limpiarSeleccionCtoRama() {
+  document.querySelectorAll(".cto-select, .cto-select-all-in-rama").forEach((cb) => {
+    cb.checked = false;
+  });
+}
+
 function colapsarTodoYLimpiarRama() {
   expandAll(false);
   limpiarBusquedaRama();
+  limpiarSeleccionCtoRama();
+  _persistRamaDashboardState();
 }
 
 function _pathnameIsRamaDashboard(pathname) {
@@ -183,6 +192,8 @@ function colapsarArbolRamaDashboard() {
 
 function _bindRamaDashboardTabCollapse() {
   if (!_pathnameIsRamaDashboard(window.location.pathname)) return;
+  if (window.__ramaDashboardTabCollapseBound) return;
+  window.__ramaDashboardTabCollapseBound = true;
   document.addEventListener(
     "click",
     (e) => {
@@ -356,6 +367,8 @@ function _expandCtoByKey(key) {
       if (ctoBody) {
         ctoBody.classList.remove("hidden");
         setExpanded(ctoNode, true);
+        ensureCtoAddressForCtoNode(ctoNode);
+        _autoConsultarCtoPotenciasAlExpandir(ctoNode);
       }
     });
   });
@@ -390,6 +403,9 @@ async function restoreRamaDashboardState(preQ) {
       await _expandRamaByValueEnsuringInventory(rama);
     }
     state.expandedCto.forEach(_expandCtoByKey);
+    document.querySelectorAll("[data-rama-card]").forEach((card) => {
+      _ramaPotenciasParaCtosExpandidosEn(card);
+    });
     aplicarFiltro();
   } finally {
     _restoringRamaState = false;
@@ -503,33 +519,45 @@ function ensureCtoMapForCtoNode(ctoNode) {
       canvas.hidden = false;
 
       if (!mapPanel._leafletMap) {
-        const mapOpts =
-          window.NocLeafletMap && window.NocLeafletMap.baseMapOptions
-            ? window.NocLeafletMap.baseMapOptions()
-            : { attributionControl: true, zoomControl: true, scrollWheelZoom: false };
-        const map = window.L.map(canvas, mapOpts).setView([lat, lon], 17);
-        if (window.NocMapTiles && window.NocMapTiles.addBasemapLayer) {
-          shell._nocMapBasemap = window.NocMapTiles.addBasemapLayer(map, window.L);
+        if (window.NocMapTiles && window.NocMapTiles.createLeafletMap) {
+          const created = window.NocMapTiles.createLeafletMap(canvas, { lat, lon, zoom: 17, marker: true });
+          if (!created) {
+            msg.textContent = "No se pudo inicializar el mapa.";
+            canvas.hidden = true;
+            mapPanel.dataset.mapReady = "nocords";
+            return;
+          }
+          mapPanel._leafletMap = created.map;
+          shell._nocMapBasemap = created.basemap;
         } else {
-          window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+          const mapOpts =
+            window.NocLeafletMap && window.NocLeafletMap.baseMapOptions
+              ? window.NocLeafletMap.baseMapOptions()
+              : { attributionControl: true, zoomControl: true, scrollWheelZoom: false };
+          const map = window.L.map(canvas, mapOpts).setView([lat, lon], 17);
+          window.L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
+            attribution: "&copy; OpenStreetMap &copy; CARTO",
             maxZoom: 19,
           }).addTo(map);
+          window.L.marker([lat, lon]).addTo(map);
+          mapPanel._leafletMap = map;
+          if (window.NocLeafletMap && window.NocLeafletMap.attachScrollActivation) {
+            window.NocLeafletMap.attachScrollActivation(map, canvas);
+          }
+          if (window.NocMapFullscreen) {
+            window.NocMapFullscreen.attachMapFullscreen(map, canvas);
+          }
+          if (window.NocMapTiles && window.NocMapTiles.refreshLeafletMapLayout) {
+            window.NocMapTiles.refreshLeafletMapLayout(map);
+          }
         }
-        window.L.marker([lat, lon]).addTo(map);
-        mapPanel._leafletMap = map;
-        if (window.NocLeafletMap && window.NocLeafletMap.attachScrollActivation) {
-          window.NocLeafletMap.attachScrollActivation(map, canvas);
-        }
-        requestAnimationFrame(() => {
-          map.invalidateSize();
-        });
-      } else {
-        requestAnimationFrame(() => {
-          mapPanel._leafletMap.invalidateSize();
-        });
+      } else if (window.NocMapTiles && window.NocMapTiles.updateMapMarker) {
+        window.NocMapTiles.updateMapMarker(mapPanel._leafletMap, lat, lon, 17);
+      } else if (window.NocMapTiles && window.NocMapTiles.refreshLeafletMapLayout) {
+        window.NocMapTiles.refreshLeafletMapLayout(mapPanel._leafletMap);
       }
       mapPanel.dataset.mapReady = "done";
+      _ramaRefreshMapTiles(mapPanel._leafletMap, shell._nocMapBasemap);
     })
     .catch(() => {
       msg.textContent = "No se pudo obtener la ubicación.";
@@ -596,6 +624,8 @@ function verMapaCto(btn) {
     return;
   }
 
+  const shell = body.querySelector("[data-cto-map-shell]");
+
   const openPanel = () => {
     panel.classList.remove("hidden");
     panel.setAttribute("aria-hidden", "false");
@@ -603,6 +633,7 @@ function verMapaCto(btn) {
     btn.setAttribute("aria-expanded", "true");
     ensureCtoAddressForCtoNode(ctoNode);
     ensureCtoMapForCtoNode(ctoNode);
+    _ramaRefreshMapTiles(panel._leafletMap, shell?._nocMapBasemap || panel._nocMapBasemap);
     _saveStateSoon();
   };
 
@@ -611,6 +642,17 @@ function verMapaCto(btn) {
     setExpanded(ctoNode, true);
   }
   openPanel();
+}
+
+function _ramaRefreshMapTiles(map, basemapCtrl) {
+  if (basemapCtrl && typeof basemapCtrl.redraw === "function") {
+    basemapCtrl.redraw();
+  } else if (map && window.NocMapTiles && window.NocMapTiles.refreshLeafletMapLayout) {
+    window.NocMapTiles.refreshLeafletMapLayout(map);
+    setTimeout(() => {
+      if (map && window.NocMapTiles) window.NocMapTiles.refreshLeafletMapLayout(map);
+    }, 120);
+  }
 }
 
 function verMapaRama(btn) {
@@ -725,23 +767,28 @@ function _loadRamaMapPanel(card, rama, panel) {
 
       let map = panel._ramaLeafletMap;
       if (!map) {
-        const mapOpts =
-          window.NocLeafletMap && window.NocLeafletMap.baseMapOptions
-            ? window.NocLeafletMap.baseMapOptions()
-            : { attributionControl: true, zoomControl: true, scrollWheelZoom: false };
-        map = window.L.map(canvas, mapOpts);
-        if (window.NocMapTiles && window.NocMapTiles.addBasemapLayer) {
-          panel._nocMapBasemap = window.NocMapTiles.addBasemapLayer(map, window.L);
-        } else {
-          window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-            maxZoom: 19,
-          }).addTo(map);
+        if (window.NocMapTiles && window.NocMapTiles.createLeafletMap) {
+          const created = window.NocMapTiles.createLeafletMap(canvas, { marker: false, zoom: 11 });
+          map = created ? created.map : null;
+          if (created) panel._nocMapBasemap = created.basemap;
+        }
+        if (!map) {
+          const mapOpts =
+            window.NocLeafletMap && window.NocLeafletMap.baseMapOptions
+              ? window.NocLeafletMap.baseMapOptions()
+              : { attributionControl: true, zoomControl: true, scrollWheelZoom: false };
+          map = window.L.map(canvas, mapOpts);
+          if (window.NocMapTiles && window.NocMapTiles.addBasemapLayer) {
+            panel._nocMapBasemap = window.NocMapTiles.addBasemapLayer(map, window.L);
+          }
+          if (window.NocLeafletMap && window.NocLeafletMap.attachScrollActivation) {
+            window.NocLeafletMap.attachScrollActivation(map, canvas);
+          }
+          if (window.NocMapFullscreen) {
+            window.NocMapFullscreen.attachMapFullscreen(map, canvas);
+          }
         }
         panel._ramaLeafletMap = map;
-        if (window.NocLeafletMap && window.NocLeafletMap.attachScrollActivation) {
-          window.NocLeafletMap.attachScrollActivation(map, canvas);
-        }
       }
 
       if (panel._ramaMarkerLayer) {
@@ -789,10 +836,10 @@ function _loadRamaMapPanel(card, rama, panel) {
       }
 
       requestAnimationFrame(() => {
-        map.invalidateSize();
         if (!_fitRamaMapToData(map, gj, markers)) {
           map.setView([-34.6, -58.38], 11);
         }
+        _ramaRefreshMapTiles(map, panel._nocMapBasemap);
       });
     })
     .catch(() => {
@@ -895,6 +942,7 @@ function expandPathToCard(card, q) {
     if (body) {
       body.classList.remove("hidden");
       setExpanded(ctoNode, true);
+      ensureCtoAddressForCtoNode(ctoNode);
     }
   });
 }
@@ -1030,12 +1078,38 @@ function _formatPowerDbm(v) {
 }
 
 function _applyPotenciaEnFilaRama(tr, txVal, rxVal) {
-  if (!tr || _ramaFatSkipPotencias(tr) || !_np()) return;
+  if (!tr || _ramaFatSkipPotencias(tr)) return;
   const tdTx = tr.children[RAMA_COL_TX];
   const tdRx = tr.children[RAMA_COL_RX];
-  _np().finalizeTxRxLoadingCell(tdTx, txVal, tr);
-  _np().finalizeTxRxLoadingCell(tdRx, rxVal, tr);
+  const np = _np();
+  if (np) {
+    np.finalizeTxRxLoadingCell(tdTx, txVal, tr);
+    np.finalizeTxRxLoadingCell(tdRx, rxVal, tr);
+  } else {
+    [tdTx, tdRx].forEach((td, i) => {
+      if (!td) return;
+      td.classList.remove("olt-txrx-cell--loading");
+      td.removeAttribute("aria-busy");
+      td.removeAttribute("aria-label");
+      const v = i === 0 ? txVal : rxVal;
+      td.textContent = v != null && String(v).trim() !== "" ? String(v) : "-";
+    });
+  }
   if (tdRx) _aplicarResaltadoFila(tr, tdRx.textContent);
+}
+
+/** Consulta TX/RX en CTOs ya expandidas (restaurar estado, inventario recién pintado). */
+function _ramaPotenciasParaCtosExpandidosEn(root) {
+  if (!root) return;
+  const card = root.matches && root.matches("[data-rama-card]")
+    ? root
+    : root.closest && root.closest("[data-rama-card]");
+  if (card && card._skipAutoPotenciasCto) return;
+  root.querySelectorAll("[data-cto-node][aria-expanded='true']").forEach((ctoNode) => {
+    const ctoBody = ctoNode.nextElementSibling;
+    if (!ctoBody || ctoBody.classList.contains("hidden")) return;
+    _autoConsultarCtoPotenciasAlExpandir(ctoNode);
+  });
 }
 
 function _ramaRowCellsHtml(o, rama, cto, outNum) {
@@ -1152,6 +1226,7 @@ function renderInventarioRama(rama, inv, container) {
       consultarCtoRama(decodeURIComponent(btnCto.getAttribute("data-pot-cto") || ""), btnCto);
     });
   });
+  _ramaPotenciasParaCtosExpandidosEn(container.closest("[data-rama-card]") || container);
 }
 
 function cargarInventarioRama(rama, card, container) {
@@ -1206,14 +1281,18 @@ function _expandRamaCardAndEnsureInventory(card, rama) {
   return cargarInventarioRama(rama, card, detail);
 }
 
-function _expandAllCtosInRamaCard(card) {
+function _expandAllCtosInRamaCard(card, autoPotencias) {
   if (!card) return;
+  const fetchPotencias = autoPotencias !== false;
   card.querySelectorAll("[data-cto-node]").forEach((ctoNode) => {
     const ctoBody = ctoNode.nextElementSibling;
     if (!ctoBody) return;
     ctoBody.classList.remove("hidden");
     setExpanded(ctoNode, true);
     ensureCtoAddressForCtoNode(ctoNode);
+    if (fetchPotencias) {
+      _autoConsultarCtoPotenciasAlExpandir(ctoNode);
+    }
   });
 }
 
@@ -1333,12 +1412,13 @@ function _setRamaPotButtonLoading(btn, loading) {
 function _autoConsultarCtoPotenciasAlExpandir(ctoNode) {
   const ctoBody = ctoNode.nextElementSibling;
   if (!ctoBody) return;
+  const card = ctoNode.closest("[data-rama-card]");
+  if (card && card._skipAutoPotenciasCto) return;
   if (!_ctoBodyTieneFilasPendientesPotencias(ctoBody)) {
     _sincronizarResaltadoPotenciasEn(ctoBody);
     return;
   }
   const cto = (ctoNode.getAttribute("data-cto") || "").trim();
-  const card = ctoNode.closest("[data-rama-card]");
   if (!cto || !card) return;
   _ejecutarConsultaPotenciasCto(cto, ctoNode, card, null, { silentToast: true });
 }
@@ -1439,7 +1519,7 @@ function consultarRama(rama, btn) {
       _aplicarDataRama(rama, cached.data, row, card);
       toast(`Potencias (cache): ${rama}`);
       _saveStateSoon();
-      return;
+      return Promise.resolve();
     }
 
     _setRamaPotButtonLoading(btn, true);
@@ -1447,7 +1527,7 @@ function consultarRama(rama, btn) {
       _setRamaCardTxRxCellsLoading(card);
     }
 
-    fetch("/dashboard/rama/consultar", {
+    return fetch("/dashboard/rama/consultar", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: "rama=" + encodeURIComponent(rama),
@@ -1474,9 +1554,12 @@ function consultarRama(rama, btn) {
   };
 
   _expandRamaCardAndEnsureInventory(card, rama).then(() => {
-    _expandAllCtosInRamaCard(card);
+    if (card) card._skipAutoPotenciasCto = true;
+    _expandAllCtosInRamaCard(card, false);
     _saveStateSoon();
-    ejecutarConsulta();
+    return ejecutarConsulta();
+  }).finally(() => {
+    if (card) delete card._skipAutoPotenciasCto;
   });
 }
 
@@ -1488,7 +1571,8 @@ window.addEventListener("load", () => {
   if (input) {
     input.addEventListener("input", () => {
       _lastJumpKey = "";
-      aplicarFiltro();
+      if (_filtroRamaTimer) clearTimeout(_filtroRamaTimer);
+      _filtroRamaTimer = setTimeout(aplicarFiltro, 220);
     });
 
     input.addEventListener("keydown", (e) => {

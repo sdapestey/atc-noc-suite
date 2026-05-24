@@ -78,12 +78,110 @@ html[data-theme="light"] .rama-cto-address__loading {
   min-height: 1.25em;
 }
 
+/* Contenedor pantalla completa (RAMA / CTO / consulta) */
+.noc-map-fs-wrap {
+  position: relative;
+  width: 100%;
+}
+
+.noc-map-fs-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 1002;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid var(--border-default, #30363d);
+  border-radius: 4px;
+  background: var(--canvas-subtle, #161b22);
+  color: var(--fg-default, #e6edf3);
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+}
+
+.noc-map-fs-btn:hover {
+  background: var(--canvas-inset, #0f141b);
+}
+
+html[data-theme="light"] .noc-map-fs-btn {
+  background: #ffffff;
+  color: #1f2328;
+  border-color: #d0d7de;
+  box-shadow: 0 1px 3px rgba(31, 35, 40, 0.12);
+}
+
+.noc-map-fs-icon--close {
+  display: none;
+}
+
+.noc-map-fs-btn--active .noc-map-fs-icon--open {
+  display: none;
+}
+
+.noc-map-fs-btn--active .noc-map-fs-icon--close {
+  display: block;
+}
+
+.noc-map-fs-wrap:fullscreen,
+.noc-map-fs-wrap:-webkit-full-screen {
+  border-radius: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  width: 100%;
+  max-height: 100vh;
+  background: var(--canvas-inset, #0f141b);
+}
+
+html[data-theme="light"] .noc-map-fs-wrap:fullscreen,
+html[data-theme="light"] .noc-map-fs-wrap:-webkit-full-screen {
+  background: #e8eaed;
+}
+
+.noc-map-fs-wrap:fullscreen > .leaflet-container,
+.noc-map-fs-wrap:-webkit-full-screen > .leaflet-container,
+.noc-map-fs-wrap:fullscreen > .rama-mapa-canvas,
+.noc-map-fs-wrap:-webkit-full-screen > .rama-mapa-canvas,
+.noc-map-fs-wrap:fullscreen > .rama-cto-map-canvas,
+.noc-map-fs-wrap:-webkit-full-screen > .rama-cto-map-canvas {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: auto !important;
+  width: 100%;
+  border-radius: 0;
+}
+
+.noc-map-fs-wrap:fullscreen .noc-map-fs-btn,
+.noc-map-fs-wrap:-webkit-full-screen .noc-map-fs-btn {
+  top: 12px;
+  right: 12px;
+}
+
 .rama-cto-map-canvas {
   height: 220px;
   width: 100%;
+  min-height: 220px;
   border-radius: 8px;
   overflow: hidden;
   border: 1px solid var(--border-default, #30363d);
+}
+
+.rama-cto-map-canvas.leaflet-container,
+.rama-mapa-canvas.leaflet-container,
+.consulta-mapa-cto-leaflet.leaflet-container,
+.consulta-mapa-rama-leaflet.leaflet-container {
+  background: #0c0e12;
+}
+
+html[data-theme="light"] .rama-cto-map-canvas.leaflet-container,
+html[data-theme="light"] .rama-mapa-canvas.leaflet-container,
+html[data-theme="light"] .consulta-mapa-cto-leaflet.leaflet-container,
+html[data-theme="light"] .consulta-mapa-rama-leaflet.leaflet-container {
+  background: #e8eaed;
 }
 
 /* Mapa por CTO (colapsable con Ver mapa) */

@@ -10,6 +10,8 @@ def test_dashboard_potencias_historico_uses_external_js_bundle():
     assert "function resetDashboard(" in js
     assert "function _historicoPanelVisible(" in js
     assert "function mergeSnapshot(" in js
+    assert "_copyHistoricoAccessId" in js
+    assert "historico-cto-summary__ont-label--copy" in js
     assert "dashboard-historico-potencias.css" in html
     assert "motion.div" not in html
     assert "motion.div" not in js

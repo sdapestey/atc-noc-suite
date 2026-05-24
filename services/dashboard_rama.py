@@ -130,7 +130,7 @@ def consultar_dashboard_rama(rama):
     rama_norm = str(rama).strip()
 
     def _compute():
-        inv = consultar_rama_estructura(rama_norm)
+        inv = inventario_dashboard_rama(rama_norm)
         plist = consultar_rama_potencias(rama_norm)
         pot_by_aid = {p["AID"]: p for p in plist}
 

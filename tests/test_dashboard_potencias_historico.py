@@ -28,7 +28,8 @@ def test_dashboard_potencias_historico_get_renders(client):
     assert "Umbral -27 dBm" in js
     assert "Umbral -25 dBm" in js
     assert "clasificar_rx_dbm" in js
-    assert "Access ID:" in js
+    assert "_copyHistoricoAccessId" in js
+    assert "data-access-id" in js
 def test_api_potencias_historico_consultar_ahora_success(client, monkeypatch):
     import web.routes as routes
 
@@ -166,7 +167,8 @@ def test_export_potencias_historico_csv_success(client, monkeypatch):
     assert r.status_code == 200
     assert "text/csv" in r.headers["Content-Type"]
     cd = r.headers["Content-Disposition"]
-    assert "attachment; filename=potencias_historico_MR01-RATC-0-000200_7d_" in cd
+    assert cd.startswith("attachment;")
+    assert "potencias_historico_MR01-RATC-0-000200_7d_" in cd
     assert re.search(r"\d{8}_\d{4}\.csv", cd)
     assert "timestamp,objectname,ont,rx_dbm,pon" in r.get_data(as_text=True)
 
@@ -197,6 +199,50 @@ def test_api_potencias_historico_internal_error_includes_request_id(client, monk
     payload = r.get_json()
     assert "error" in payload
     assert "request_id" in payload
+
+
+def test_ont_key_from_object_name_strips_altiplano_prefix():
+    import services.historico_potencias as historico
+
+    assert historico._ont_key_from_object_name("BA_OLTA_ES01_01:1-1-2-1-4") == "4"
+    assert historico._ont_key_from_object_name("BA_OLTA_ES01_01-2-1-6") == "6"
+    assert historico._ont_key_from_object_name("") == ""
+
+
+def test_ont_inventory_maps_uses_object_name_ui(monkeypatch):
+    import services.historico_potencias as historico
+
+    rows = [
+        (
+            "1051999888",
+            "IN SERVICE",
+            "ES01-FATC-8-105124",
+            "ES01-RATC-0-000002",
+            None,
+            "BA_OLTA_ES01_01-2-1-2",
+            None,
+            1,
+        ),
+    ]
+
+    class _Cur:
+        def execute(self, *_a, **_k):
+            pass
+
+        def fetchall(self):
+            return rows
+
+    class _Ctx:
+        def __enter__(self):
+            return _Cur()
+
+        def __exit__(self, *_a):
+            return False
+
+    monkeypatch.setattr(historico, "db_cursor", lambda: _Ctx())
+    cto_map, access_map = historico._ont_inventory_maps("ES01-RATC-0-000002")
+    assert cto_map.get("2") == "ES01-FATC-8-105124"
+    assert access_map.get("2") == "1051999888"
 
 
 def test_service_consultar_ahora_excludes_empty_ont_key(monkeypatch):

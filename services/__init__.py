@@ -27,8 +27,6 @@ from .dashboard_olt import dashboard_olts, estructura_dashboard_lt
 from .dashboard_rama import (
     consultar_dashboard_rama,
     dashboard_rama_bundle,
-    dashboard_rama_totales,
-    dashboard_ramas,
     inventario_dashboard_rama,
 )
 from .exports import (
@@ -37,6 +35,7 @@ from .exports import (
     export_index_csv_filename,
     export_index_query_csv,
 )
+from .inventario_estadisticas import dashboard_calidad_inventario_estadisticas
 from .historico_potencias import (
     ALLOWED_HISTORICO_DAYS,
     consultar_potencias_altiplano_ahora_rama,
@@ -49,11 +48,13 @@ from .inventory import (
     consultar_access_id_detalle_desde_bajada_inventario,
     consultar_access_id_estructura,
     consultar_cto_coordenadas,
+    consultar_cto_coordenadas_batch,
     consultar_cto_direccion_postal,
     cambiar_admin_status_access_id,
     consultar_access_id_potencias,
     consultar_cto_estructura,
     consultar_cto_potencias,
+    consultar_cto_potencias_cached,
     consultar_rama_estructura,
     consultar_rama_potencias,
 )
@@ -66,19 +67,20 @@ __all__ = [
     "cambiar_admin_status_access_id",
     "consultar_access_id_potencias",
     "consultar_cto_coordenadas",
+    "consultar_cto_coordenadas_batch",
     "consultar_cto_direccion_postal",
     "consultar_cto_estructura",
     "consultar_cto_potencias",
+    "consultar_cto_potencias_cached",
     "consultar_rama_estructura",
     "consultar_rama_potencias",
-    "dashboard_ramas",
     "dashboard_rama_bundle",
-    "dashboard_rama_totales",
     "dashboard_calidad_inventario_resumen",
     "dashboard_calidad_inventario_hallazgos",
     "dashboard_calidad_inventario_conciliacion",
     "dashboard_calidad_inventario_historico",
     "dashboard_calidad_inventario_resumen_general",
+    "dashboard_calidad_inventario_estadisticas",
     "dashboard_calidad_dtv_sin_serial",
     "dashboard_calidad_aids_inconsistencia_datos",
     "dashboard_calidad_fat_sin_nfc_tabla",

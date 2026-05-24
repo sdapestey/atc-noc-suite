@@ -1169,13 +1169,16 @@
     if (window.NocMapTiles && window.NocMapTiles.addBasemapLayer) {
       window.NocMapTiles.addBasemapLayer(gisMap, L);
     } else {
-      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
         maxZoom: 19,
-        attribution: "&copy; OpenStreetMap",
+        attribution: "&copy; OpenStreetMap &copy; CARTO",
       }).addTo(gisMap);
     }
     if (window.NocLeafletMap && window.NocLeafletMap.attachScrollActivation) {
       window.NocLeafletMap.attachScrollActivation(gisMap, mapEl);
+    }
+    if (window.NocMapTiles && window.NocMapTiles.refreshLeafletMapLayout) {
+      window.NocMapTiles.refreshLeafletMapLayout(gisMap);
     }
     return gisMap;
   }

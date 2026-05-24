@@ -56,3 +56,21 @@ def test_ttl_refreshes_after_expiry(monkeypatch):
     t["v"] += 11
     assert dc.get_cached_rama(10, factory) == 2
     assert calls["n"] == 2
+
+
+def test_get_cached_cto_potencias_by_key(monkeypatch):
+    t = {"v": 0.0}
+    monkeypatch.setattr(dc.time, "monotonic", lambda: t["v"])
+    calls = {"n": 0}
+
+    def factory():
+        calls["n"] += 1
+        return [{"AID": "1"}]
+
+    a = dc.get_cached_cto_potencias(60, "CTO-A", factory)
+    t["v"] += 10
+    b = dc.get_cached_cto_potencias(60, "CTO-A", factory)
+    c = dc.get_cached_cto_potencias(60, "CTO-B", factory)
+    assert a is b
+    assert a is not c
+    assert calls["n"] == 2

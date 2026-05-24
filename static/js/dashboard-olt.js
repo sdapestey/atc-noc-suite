@@ -2,6 +2,8 @@ const state = {};
 const ltInventarioCargado = {};
 const ltCargando = {};
 const ltInventarioData = {};
+const _oltRamaPotenciasCache = {};
+const _oltRamaPotenciasCacheMs = 45000;
 const _OLT_STATE_KEY = "oltDashboardStateV1";
 let _toastTimerOlt = null;
 let _restoringOltState = false;
@@ -90,6 +92,40 @@ function _normExportOp(raw) {
   return String(raw || "").trim().toUpperCase();
 }
 
+/** Mismo orden que ``OPERADORES_CONSULTA_ORDEN`` en ``services/domain.py``. */
+const _OLT_OPERADORES_ORDEN = ["TASA", "DIRECTV", "METROTEL", "SION", "IPLAN", "ATC"];
+
+const _OLT_OPERADOR_ALIASES = {
+  TASA: "TASA",
+  DIRECTV: "DIRECTV",
+  DTV: "DIRECTV",
+  METROTEL: "METROTEL",
+  IPLAN: "IPLAN",
+  ATC: "ATC",
+  SION: "SION",
+};
+
+function _canonicalOperadorOlt(raw) {
+  const key = String(raw || "")
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, "");
+  if (!key || key === "-" || key === "—" || key === "0" || key === "NONE" || key === "NULL") {
+    return null;
+  }
+  if (_OLT_OPERADOR_ALIASES[key]) return _OLT_OPERADOR_ALIASES[key];
+  if (_OLT_OPERADORES_ORDEN.includes(key)) return key;
+  return null;
+}
+
+function _emptyOperadorCounts() {
+  const out = {};
+  _OLT_OPERADORES_ORDEN.forEach((op) => {
+    out[op] = 0;
+  });
+  return out;
+}
+
 /** Valores basura (BD / serialización) que no deben aparecer en el selector de operador */
 function _shouldListExportOperator(norm) {
   return !!norm && norm !== "NONE" && norm !== "NULL";
@@ -170,6 +206,7 @@ function _buildPonExportLines(opts) {
   const selectedRamas = new Set();
   const selectedCtos = new Set();
   let selectedOnts = 0;
+  const operadorCounts = _emptyOperadorCounts();
 
   selected.forEach((cb) => {
     const uid = cb.getAttribute("data-uid") || "";
@@ -189,6 +226,8 @@ function _buildPonExportLines(opts) {
           selectedRamas.add(rama);
           selectedCtos.add(rama + "||" + cto);
           selectedOnts += 1;
+          const opCanon = _canonicalOperadorOlt(o.OPERADOR);
+          if (opCanon) operadorCounts[opCanon] = (operadorCounts[opCanon] || 0) + 1;
           lines.push([
             pon,
             rama,
@@ -225,6 +264,10 @@ function _buildPonExportLines(opts) {
   lines.push("RAMAS: " + String(selectedRamas.size));
   lines.push("CTO: " + String(selectedCtos.size));
   lines.push("ONT: " + String(selectedOnts));
+  _OLT_OPERADORES_ORDEN.forEach((op) => {
+    const nOp = operadorCounts[op] || 0;
+    if (nOp > 0) lines.push(op + ": " + String(nOp));
+  });
   return {
     error: null,
     lines: lines,
@@ -233,6 +276,7 @@ function _buildPonExportLines(opts) {
       ramas: selectedRamas.size,
       ctos: selectedCtos.size,
       onts: selectedOnts,
+      operadores: operadorCounts,
     },
   };
 }
@@ -285,19 +329,6 @@ function exportarPonesSeleccionadosCsv() {
   toastOlt("CSV exportado");
 }
 
-function exportarPonesSeleccionados() {
-  copiarPonesSeleccionados();
-}
-
-function exportarPonesSeleccionadosPortapapeles() {
-  const res = _rowsPonesSeleccionados();
-  if (res.error) {
-    toastOlt(res.error);
-    return;
-  }
-  copyTextToClipboardOlt(res.lines.join("\n"));
-}
-
 function _oltMetricPillHtml(n, label, kind, title) {
   const v = String(Math.max(0, Number(n) || 0));
   const empty = v === "0";
@@ -317,13 +348,48 @@ function _oltMetricPillHtml(n, label, kind, title) {
   );
 }
 
-function _oltPonSummaryHtml(pon, ramas, cto, ont) {
+function _oltOperadorPillHtml(n, operador) {
+  const op = String(operador || "").trim().toUpperCase();
+  const slug = op.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+  const v = String(Math.max(0, Number(n) || 0));
+  return (
+    '<span class="dashboard-metric-pill olt-metric-pill olt-metric-pill--operador olt-metric-pill--op-' +
+    slug +
+    '" title="ONT IN SERVICE · operador ' +
+    op +
+    '">' +
+    '<span class="dashboard-metric-pill__n olt-metric-pill__n">' +
+    v +
+    "</span> " +
+    '<span class="dashboard-metric-pill__l olt-metric-pill__l">' +
+    op +
+    "</span></span>"
+  );
+}
+
+function _oltOperadorSummaryHtml(operadores) {
+  const counts = operadores || _emptyOperadorCounts();
+  const active = _OLT_OPERADORES_ORDEN.filter((op) => (counts[op] || 0) > 0);
+  if (!active.length) return "";
+  const pills = active
+    .map((op) => _oltOperadorPillHtml(counts[op], op))
+    .join(' <span class="olt-summary-sep" aria-hidden="true">·</span> ');
+  return (
+    '<span class="olt-selection-summary-operadores" aria-label="ONT IN SERVICE por operador">' +
+    '<span class="olt-selection-operadores-label">Operador:</span> ' +
+    pills +
+    "</span>"
+  );
+}
+
+function _oltPonSummaryHtml(pon, ramas, cto, ont, operadores) {
   const p = String(Math.max(0, Number(pon) || 0));
   const r = String(Math.max(0, Number(ramas) || 0));
   const c = String(Math.max(0, Number(cto) || 0));
   const o = String(Math.max(0, Number(ont) || 0));
   const emptyPon = p === "0";
-  return (
+  const main =
+    '<span class="olt-selection-summary-main">' +
     '<span class="olt-selection-summary-label">Seleccionados:</span> ' +
     '<span class="olt-pon-selected-kicker' +
     (emptyPon ? " olt-pon-selected-kicker--empty" : "") +
@@ -352,8 +418,9 @@ function _oltPonSummaryHtml(pon, ramas, cto, ont) {
       "ONT",
       "ont",
       "Filas de inventario con estado IN SERVICE (copiar / exportar)"
-    )
-  );
+    ) +
+    "</span>";
+  return main + _oltOperadorSummaryHtml(operadores);
 }
 
 function updatePonesSelectionSummary() {
@@ -374,8 +441,20 @@ function updatePonesSelectionSummary() {
     selectedPones,
     res.resumen.ramas,
     res.resumen.ctos,
-    res.resumen.onts
+    res.resumen.onts,
+    res.resumen.operadores
   );
+}
+
+function limpiarBusquedaOlt() {
+  const input = document.getElementById("bus-olt");
+  if (input) {
+    input.value = "";
+    if (typeof aplicarBusquedaOlt === "function") aplicarBusquedaOlt();
+    input.focus();
+  }
+  const opSel = document.getElementById("olt-export-operador");
+  if (opSel) opSel.value = "";
 }
 
 function colapsarTodoOlt() {
@@ -388,6 +467,7 @@ function colapsarTodoOlt() {
     cb.checked = false;
   });
   updatePonesSelectionSummary();
+  limpiarBusquedaOlt();
   _saveOltStateSoon();
 }
 
@@ -536,7 +616,7 @@ function closeNode(id, skipSave) {
   }
 }
 
-function toggleNode(id) {
+function toggleNode(id, autoPotencias) {
   if (state[id]) {
     closeNode(id);
     return;
@@ -549,7 +629,9 @@ function toggleNode(id) {
   childrenByParent(id).forEach((el) => {
     el.classList.remove("hidden");
   });
-  _autoPotenciaCtoOltAlExpandir(id);
+  if (autoPotencias !== false) {
+    _autoPotenciaCtoOltAlExpandir(id);
+  }
   _saveOltStateSoon();
 }
 
@@ -577,6 +659,7 @@ function _autoPotenciaCtoOltAlExpandir(nodeId) {
   const cto = decodeURIComponent((firstTr && firstTr.getAttribute("data-cto")) || "").trim();
   if (!cto) return;
   const wrap = ctoNode.closest("td");
+  if (wrap && wrap._skipAutoPotenciasCto) return;
   const detailTr = ctoNode.closest("tr");
   const uid =
     detailTr && detailTr.id && detailTr.id.indexOf("detail-") === 0 ? detailTr.id.slice("detail-".length) : "";
@@ -586,19 +669,23 @@ function _autoPotenciaCtoOltAlExpandir(nodeId) {
   }
 }
 
-function ensureNodeOpen(id) {
-  if (!id || state[id]) {
+function ensureNodeOpen(id, autoPotencias) {
+  if (!id) {
     return;
   }
-  state[id] = true;
-  const arrow = document.getElementById("arrow-" + id);
-  if (arrow) {
-    arrow.textContent = "▼";
+  if (!state[id]) {
+    state[id] = true;
+    const arrow = document.getElementById("arrow-" + id);
+    if (arrow) {
+      arrow.textContent = "▼";
+    }
+    childrenByParent(id).forEach((el) => {
+      el.classList.remove("hidden");
+    });
   }
-  childrenByParent(id).forEach((el) => {
-    el.classList.remove("hidden");
-  });
-  _autoPotenciaCtoOltAlExpandir(id);
+  if (autoPotencias !== false) {
+    _autoPotenciaCtoOltAlExpandir(id);
+  }
   _saveOltStateSoon();
 }
 
@@ -614,17 +701,17 @@ function _openAncestorsForNode(nodeId) {
   }
 }
 
-function _expandAllDescendantNodes(rootNodeId) {
+function _expandAllDescendantNodes(rootNodeId, autoPotencias) {
   const rootId = String(rootNodeId || "").trim();
   if (!rootId) return;
-  ensureNodeOpen(rootId);
+  ensureNodeOpen(rootId, autoPotencias);
   const stack = [rootId];
   while (stack.length) {
     const parentId = stack.pop();
     childrenByParent(parentId).forEach((child) => {
       const childId = (child.getAttribute("data-node-id") || "").trim();
       if (!childId) return;
-      ensureNodeOpen(childId);
+      ensureNodeOpen(childId, autoPotencias);
       stack.push(childId);
     });
   }
@@ -950,11 +1037,20 @@ function bindPotenciaButtons(wrap, row) {
       e.preventDefault();
       e.stopPropagation();
       const ramaNode = br.closest("[data-node-id]");
+      const detailTd = wrap.nodeType === 1 ? wrap : null;
       if (ramaNode) {
         _openAncestorsForNode(ramaNode.getAttribute("data-node-id"));
-        _expandAllDescendantNodes(ramaNode.getAttribute("data-node-id"));
+        if (detailTd) detailTd._skipAutoPotenciasCto = true;
+        _expandAllDescendantNodes(ramaNode.getAttribute("data-node-id"), false);
       }
-      potenciaRama(decodeURIComponent(br.getAttribute("data-pot-rama") || ""), wrap, row, br);
+      const p = potenciaRama(decodeURIComponent(br.getAttribute("data-pot-rama") || ""), wrap, row, br);
+      if (detailTd && p && typeof p.finally === "function") {
+        p.finally(() => {
+          delete detailTd._skipAutoPotenciasCto;
+        });
+      } else if (detailTd) {
+        delete detailTd._skipAutoPotenciasCto;
+      }
     });
   });
   wrap.querySelectorAll("button.pot-cto").forEach((bc) => {
@@ -1057,10 +1153,45 @@ function _oltTxRxCellsStuckToDashForRama(wrap, rama) {
   _oltFinalizeTxRxPendientesEn(wrap, (tr) => decodeURIComponent(tr.getAttribute("data-rama") || "") === rama);
 }
 
+function _aplicarPotenciaRamaOlt(rama, wrap, row, data) {
+  const res = data.__dashboard_resumen__;
+  if (res) _addSem(row, res);
+
+  Object.keys(data).forEach((k) => {
+    if (k === "__dashboard_resumen__") return;
+    const byAid = data[k];
+    Object.keys(byAid).forEach((aid) => {
+      const cell = byAid[aid];
+      const tr = findTrByAid(wrap, String(aid));
+      if (!tr) return;
+      if (decodeURIComponent(tr.getAttribute("data-rama") || "") !== rama) return;
+      if (_oltFatSkipPotencias(tr)) return;
+      _applyPotenciaEnFilaOlt(tr, cell.TX, cell.RX, row);
+    });
+  });
+  wrap.querySelectorAll("tr[data-aid]").forEach((tr) => {
+    if (decodeURIComponent(tr.getAttribute("data-rama") || "") !== rama) return;
+    if (_oltFatSkipPotencias(tr)) return;
+    const tdTx = tr.children[OLT_COL_TX];
+    if (tdTx && tdTx.classList.contains("olt-txrx-cell--loading")) {
+      _applyPotenciaEnFilaOlt(tr, null, null, row);
+    }
+  });
+  _recomputePeor(wrap, row);
+}
+
 function potenciaRama(rama, wrap, row, btnEl) {
+  const cacheKey = String(rama || "").trim().toUpperCase();
+  const cached = _oltRamaPotenciasCache[cacheKey];
+  if (cached && Date.now() - cached.ts < _oltRamaPotenciasCacheMs) {
+    _aplicarPotenciaRamaOlt(rama, wrap, row, cached.data);
+    toastOlt(`Potencias (cache): ${rama}`);
+    return Promise.resolve();
+  }
+
   _setPotButtonLoading(btnEl, true);
   _setOltTxRxCellsLoadingForRama(wrap, rama);
-  fetch("/dashboard/rama/consultar", {
+  return fetch("/dashboard/rama/consultar", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: "rama=" + encodeURIComponent(rama),
@@ -1070,30 +1201,9 @@ function potenciaRama(rama, wrap, row, btnEl) {
       return r.json();
     })
     .then((data) => {
-      const res = data.__dashboard_resumen__;
-      if (res) _addSem(row, res);
-
-      Object.keys(data).forEach((k) => {
-        if (k === "__dashboard_resumen__") return;
-        const byAid = data[k];
-        Object.keys(byAid).forEach((aid) => {
-          const cell = byAid[aid];
-          const tr = findTrByAid(wrap, String(aid));
-          if (!tr) return;
-          if (decodeURIComponent(tr.getAttribute("data-rama") || "") !== rama) return;
-          if (_oltFatSkipPotencias(tr)) return;
-          _applyPotenciaEnFilaOlt(tr, cell.TX, cell.RX, row);
-        });
-      });
-      wrap.querySelectorAll("tr[data-aid]").forEach((tr) => {
-        if (decodeURIComponent(tr.getAttribute("data-rama") || "") !== rama) return;
-        if (_oltFatSkipPotencias(tr)) return;
-        const tdTx = tr.children[OLT_COL_TX];
-        if (tdTx && tdTx.classList.contains("olt-txrx-cell--loading")) {
-          _applyPotenciaEnFilaOlt(tr, null, null, row);
-        }
-      });
-      _recomputePeor(wrap, row);
+      _oltRamaPotenciasCache[cacheKey] = { ts: Date.now(), data };
+      _aplicarPotenciaRamaOlt(rama, wrap, row, data);
+      toastOlt(`Potencias actualizadas: ${rama}`);
     })
     .catch(() => {
       toastOlt("Error al consultar potencias (rama)");
@@ -1287,9 +1397,16 @@ function aplicarBusquedaOlt() {
   _saveOltStateSoon();
 }
 
+let _busOltTimer = null;
+
 window.addEventListener("load", () => {
   const inp = document.getElementById("bus-olt");
-  if (inp) inp.addEventListener("input", aplicarBusquedaOlt);
+  if (inp) {
+    inp.addEventListener("input", () => {
+      if (_busOltTimer) clearTimeout(_busOltTimer);
+      _busOltTimer = setTimeout(aplicarBusquedaOlt, 220);
+    });
+  }
 
   function ltFromToggleCell(td) {
     if (!td) return null;

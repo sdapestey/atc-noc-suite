@@ -1,6 +1,16 @@
 """Filtros de consulta índice: orden de operadores (sin chip de estado en toolbar)."""
 
-from web.routes import _consulta_operadores_union, sort_consulta_operadores_chips
+from web.routes import (
+    _consulta_operadores_union,
+    operador_metric_pill_slug,
+    sort_consulta_operadores_chips,
+)
+
+
+def test_operador_metric_pill_slug():
+    assert operador_metric_pill_slug("TASA") == "tasa"
+    assert operador_metric_pill_slug("DIRECTV") == "directv"
+    assert operador_metric_pill_slug("  ATC  ") == "atc"
 
 
 def test_sort_consulta_operadores_chips_solo_validos():

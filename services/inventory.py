@@ -3,8 +3,10 @@ import logging
 from collections import defaultdict
 from typing import Any
 from datetime import date, datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from itertools import groupby
 
+from config import get_altiplano_power_cto_workers
 from db import db_cursor
 from psycopg2.errors import UndefinedColumn
 from queries import QUERIES
@@ -1036,6 +1038,28 @@ def consultar_cto_estructura(cto):
     return out
 
 
+def _potencias_desde_grupos_cto_paralelo(rows) -> list[dict]:
+    """Agrupa filas por CTO y consulta Altiplano en paralelo (varios CTO por RAMA)."""
+    if not rows:
+        return []
+    grupos = [list(g) for _, g in groupby(rows, key=lambda r: r[2])]
+    if len(grupos) <= 1:
+        return _potencias_desde_filas_ont_cto(grupos[0]) if grupos else []
+
+    max_workers = min(len(grupos), get_altiplano_power_cto_workers())
+    resultado: list[dict] = []
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = [
+            executor.submit(_potencias_desde_filas_ont_cto, grp) for grp in grupos
+        ]
+        for fut in as_completed(futures):
+            try:
+                resultado.extend(fut.result())
+            except Exception:
+                logger.exception("potencias paralelo por CTO")
+    return resultado
+
+
 def _potencias_desde_filas_ont_cto(rows):
     """Filas con la misma forma que `onts_por_cto` / `onts_por_rama`."""
     if not rows:
@@ -1084,6 +1108,22 @@ def consultar_cto_potencias(cto):
     return _potencias_desde_filas_ont_cto(rows)
 
 
+def consultar_cto_potencias_cached(cto):
+    """Potencias CTO con TTL (dashboards); consultas en vivo sin caché usan ``consultar_cto_potencias``."""
+    from config import get_dashboard_rama_power_cache_seconds
+
+    from .dashboard_cache import get_cached_cto_potencias
+
+    cto_norm = str(cto or "").strip()
+    if not cto_norm:
+        return []
+    return get_cached_cto_potencias(
+        get_dashboard_rama_power_cache_seconds(),
+        cto_norm,
+        lambda: consultar_cto_potencias(cto_norm),
+    )
+
+
 def consultar_cto_coordenadas(cto):
     """
     Devuelve coordenadas de la CTO desde aux.bajada_inventario.
@@ -1119,6 +1159,39 @@ def consultar_cto_coordenadas(cto):
 
     lat, lon = row
     return {"lat": float(lat), "lon": float(lon)}
+
+
+def consultar_cto_coordenadas_batch(ctos: list[str]) -> dict[str, dict]:
+    """Coordenadas de varias CTO en una consulta (misma regla que ``consultar_cto_coordenadas``)."""
+    cleaned = sorted({str(c).strip() for c in (ctos or []) if c and str(c).strip()})
+    if not cleaned:
+        return {}
+    with db_cursor() as cur:
+        cur.execute(
+            """
+            SELECT DISTINCT ON (f.location_description)
+                f.location_description AS cto,
+                COALESCE(b.splitter_2_lat, b.ont_lat) AS lat,
+                COALESCE(b.splitter_2_lon, b.ont_lon) AS lon
+            FROM cm.inventory_fat_occupation f
+            JOIN aux.bajada_inventario b
+              ON b.access_id::text = f.access_id::text
+            WHERE f.location_description = ANY(%s)
+              AND f.status IN ('IN SERVICE', 'RESERVED', 'FREE')
+              AND (b.cto = f.location_description OR b.cm_description = f.location_description)
+              AND COALESCE(b.splitter_2_lat, b.ont_lat) IS NOT NULL
+              AND COALESCE(b.splitter_2_lon, b.ont_lon) IS NOT NULL
+            ORDER BY f.location_description, f.access_id ASC
+            """,
+            (cleaned,),
+        )
+        rows = cur.fetchall()
+    out: dict[str, dict] = {}
+    for cto, lat, lon in rows:
+        if cto is None or lat is None or lon is None:
+            continue
+        out[str(cto)] = {"lat": float(lat), "lon": float(lon)}
+    return out
 
 
 def consultar_cto_direccion_postal(cto: str) -> str | None:
@@ -1252,18 +1325,83 @@ def consultar_rama_potencias(rama):
     if not rows:
         return []
 
-    resultado = []
-    for _cto, group in groupby(rows, key=lambda r: r[2]):
-        resultado.extend(_potencias_desde_filas_ont_cto(list(group)))
+    return _potencias_desde_grupos_cto_paralelo(rows)
+
+
+def _ont_key_desde_fila_inventario(row) -> str:
+    obj_raw = row[4]
+    if not obj_raw:
+        return ""
+    s = str(obj_raw).strip()
+    if ":1-1" in s:
+        s = s.split(":1-1", 1)[-1]
+    parts = s.split("-")
+    return parts[-1].strip() if parts else ""
+
+
+def _altiplano_potencias_por_ont_desde_filas_cto(rows) -> list[dict]:
+    """Una CTO: Altiplano en paralelo por ONT (`obtener_potencias_por_cto`)."""
+    if not rows:
+        return []
+    cto_ref = _cto_ref_desde_filas_ont(rows)
+    ne = _ne_para_potencias_desde_filas_ont(rows)
+    potencias: dict[str, tuple] = {}
+    if ne:
+        onts = [
+            (str(r[0]), r[4], r[7])
+            for r in rows
+            if r[0] is not None and r[4] and not _sin_potencias_por_status(r[1])
+        ]
+        if onts:
+            potencias = obtener_potencias_por_cto(ne, onts)
+    out: list[dict] = []
+    for idx, r in enumerate(rows):
+        aid_key = _aid_clave_fila(r[0], idx, cto_ref)
+        raw_id = r[0]
+        ont_key = _ont_key_desde_fila_inventario(r)
+        if _sin_potencias_por_status(r[1]):
+            tx, rx = None, None
+        elif raw_id is not None:
+            tx, rx = potencias.get(str(raw_id), (None, None))
+        else:
+            tx, rx = None, None
+        out.append({
+            "aid": aid_key,
+            "ont_key": ont_key,
+            "rx_dbm": None if rx is None else float(rx),
+            "tx_dbm": None if tx is None else float(tx),
+        })
+    return out
+
+
+def _altiplano_potencias_grupos_cto_paralelo(rows) -> list[dict]:
+    """Varias CTO en la misma RAMA: consulta Altiplano en paralelo (como `consultar_rama_potencias`)."""
+    if not rows:
+        return []
+    grupos = [list(g) for _, g in groupby(rows, key=lambda r: r[2])]
+    if len(grupos) <= 1:
+        return _altiplano_potencias_por_ont_desde_filas_cto(grupos[0]) if grupos else []
+
+    max_workers = min(len(grupos), get_altiplano_power_cto_workers())
+    resultado: list[dict] = []
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = [
+            executor.submit(_altiplano_potencias_por_ont_desde_filas_cto, grp) for grp in grupos
+        ]
+        for fut in as_completed(futures):
+            try:
+                resultado.extend(fut.result())
+            except Exception:
+                logger.exception("historico altiplano paralelo por CTO")
     return resultado
 
 
 def consultar_rama_potencias_altiplano_por_ont(rama: str) -> list[dict]:
     """TX/RX en vivo vía Altiplano, misma agrupación por CTO que `consultar_rama_potencias`.
 
-    Por CTO se llama a `obtener_potencias_por_cto` (worker pool en altiplano).
-    Si `operator_id` no tiene target en el mapa de Altiplano (`_ALTIPLANO_POWER_TARGETS_BY_OPERATOR_ID` en `altiplano.py`),
-    esa ONT no obtiene lectura y se devuelve `rx_dbm` / `tx_dbm` en null.
+    Varias CTO en la RAMA se consultan en paralelo; dentro de cada CTO las ONT van en
+    paralelo (`obtener_potencias_por_cto`). Sin target en
+    `_ALTIPLANO_POWER_TARGETS_BY_OPERATOR_ID`, la ONT queda con `rx_dbm` / `tx_dbm` en null.
     """
     if rama is None or not str(rama).strip():
         return []
@@ -1272,32 +1410,4 @@ def consultar_rama_potencias_altiplano_por_ont(rama: str) -> list[dict]:
         cur.execute(QUERIES["onts_por_rama"], (str(rama).strip(),))
         rows = cur.fetchall()
 
-    out: list[dict] = []
-    for _cto, group in groupby(rows, key=lambda r: r[2]):
-        grp = list(group)
-        ne = _ne_para_potencias_desde_filas_ont(grp)
-        onts = [
-            (str(r[0]), r[4], r[7])
-            for r in grp
-            if r[0] is not None and r[4] and not _sin_potencias_por_status(r[1])
-        ]
-        potencias = obtener_potencias_por_cto(ne, onts) if ne and onts else {}
-        cto_ref = str(grp[0][2] or "").strip()
-        for idx, r in enumerate(grp):
-            aid_key = _aid_clave_fila(r[0], idx, cto_ref)
-            raw_id = r[0]
-            obj_raw = r[4]
-            ont_key = str(obj_raw).split("-")[-1] if obj_raw else ""
-            if _sin_potencias_por_status(r[1]):
-                tx, rx = None, None
-            elif raw_id is not None:
-                tx, rx = potencias.get(str(raw_id), (None, None))
-            else:
-                tx, rx = None, None
-            out.append({
-                "aid": aid_key,
-                "ont_key": ont_key,
-                "rx_dbm": None if rx is None else float(rx),
-                "tx_dbm": None if tx is None else float(tx),
-            })
-    return out
+    return _altiplano_potencias_grupos_cto_paralelo(rows)

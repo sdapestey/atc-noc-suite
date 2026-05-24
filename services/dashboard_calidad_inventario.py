@@ -4,8 +4,14 @@ import io
 
 from config import get_dashboard_calidad_cache_seconds
 from db import db_cursor
+from services.domain import (
+    CALIDAD_OPERATORS,
+    all_calidad_operator_member_ids as all_operator_member_ids,
+    calidad_operator_member_ids as operator_member_ids,
+    canonical_calidad_operator_id as canonical_operator_id,
+)
 
-from .dashboard_cache import get_cached_calidad_resumen
+from .dashboard_cache import get_cached_calidad_conciliacion, get_cached_calidad_resumen
 
 RULES = {
     "missing_serial_match": {
@@ -64,13 +70,8 @@ RULES = {
     },
 }
 
-OPERATORS = (
-    {"id": "1001", "label": "TASA", "vno": "1001"},
-    {"id": "3001", "label": "DTV", "vno": "3001"},
-    {"id": "3950", "label": "iPlan", "vno": "3950"},
-    {"id": "4000", "label": "Metrotel", "vno": "4000"},
-    {"id": "962", "label": "SION", "vno": "962"},
-)
+# Alias histórico usado en tests y módulos del dashboard.
+OPERATORS = CALIDAD_OPERATORS
 
 _ALTIPLANO_SERIAL_ACTIVE = """
     s.serial_number IS NOT NULL
@@ -535,15 +536,18 @@ def dashboard_calidad_inventario_hallazgos(
 
 def dashboard_calidad_inventario_conciliacion() -> dict:
     """Conteos estilo Superset: totales, activos por operador CM y Altiplano."""
-    op_ids = [o["id"] for o in OPERATORS]
-    vnos = [o["vno"] for o in OPERATORS]
-    placeholders = ", ".join(["%s"] * len(op_ids))
+    return get_cached_calidad_conciliacion(
+        get_dashboard_calidad_cache_seconds(),
+        _dashboard_calidad_inventario_conciliacion_compute,
+    )
+
+
+def _dashboard_calidad_inventario_conciliacion_compute() -> dict:
+    member_ids = all_operator_member_ids()
+    placeholders = ", ".join(["%s"] * len(member_ids))
 
     sql = f"""
-    WITH ops AS (
-        SELECT unnest(ARRAY[{placeholders}]::text[]) AS operator_id
-    ),
-    in_service AS (
+    WITH in_service AS (
         SELECT btrim(operatorid::text) AS operator_id, COUNT(*)::int AS n
         FROM aux.bajada_inventario
         WHERE observaciones = 'IN SERVICE'
@@ -558,13 +562,12 @@ def dashboard_calidad_inventario_conciliacion() -> dict:
         GROUP BY 1
     )
     SELECT
-        o.operator_id,
+        COALESCE(i.operator_id, r.operator_id) AS operator_id,
         COALESCE(i.n, 0),
         COALESCE(r.n, 0)
-    FROM ops o
-    LEFT JOIN in_service i ON i.operator_id = o.operator_id
-    LEFT JOIN reserved r ON r.operator_id = o.operator_id
-    ORDER BY o.operator_id
+    FROM in_service i
+    FULL OUTER JOIN reserved r ON r.operator_id = i.operator_id
+    ORDER BY 1
     """
     altiplano_by_vno_sql = f"""
     SELECT btrim(s.vno::text) AS vno, COUNT(*)::int AS n
@@ -583,11 +586,10 @@ def dashboard_calidad_inventario_conciliacion() -> dict:
     FROM aux.bajada_inventario bi
     WHERE bi.observaciones = 'IN SERVICE'
     """
-    params_ops = op_ids + op_ids + op_ids
     with db_cursor() as cur:
-        cur.execute(sql, params_ops)
+        cur.execute(sql, member_ids + member_ids)
         cm_rows = cur.fetchall()
-        cur.execute(altiplano_by_vno_sql, vnos)
+        cur.execute(altiplano_by_vno_sql, member_ids)
         altiplano_by_vno = {r[0]: int(r[1] or 0) for r in cur.fetchall()}
         cur.execute(altiplano_total_sql)
         altiplano_total = int(cur.fetchone()[0] or 0)
@@ -597,9 +599,10 @@ def dashboard_calidad_inventario_conciliacion() -> dict:
     by_id = {r[0]: {"in_service": r[1], "reserved": r[2]} for r in cm_rows}
     operators = []
     for meta in OPERATORS:
-        cm_n = int(by_id.get(meta["id"], {}).get("in_service", 0) or 0)
-        alt_n = int(altiplano_by_vno.get(meta["vno"], 0) or 0)
-        reserved_n = int(by_id.get(meta["id"], {}).get("reserved", 0) or 0)
+        members = operator_member_ids(meta)
+        cm_n = sum(int(by_id.get(mid, {}).get("in_service", 0) or 0) for mid in members)
+        alt_n = sum(int(altiplano_by_vno.get(mid, 0) or 0) for mid in members)
+        reserved_n = sum(int(by_id.get(mid, {}).get("reserved", 0) or 0) for mid in members)
         operators.append({
             "id": meta["id"],
             "label": meta["label"],
@@ -633,9 +636,9 @@ def dashboard_calidad_total_casos_rotos() -> int:
         return int(cur.fetchone()[0] or 0)
 
 
-def dashboard_calidad_comparativa_operadores() -> list[dict]:
+def dashboard_calidad_comparativa_operadores(conciliacion_data: dict | None = None) -> list[dict]:
     """Tabla Resumen de Inconsistencia: Altiplano vs Connect Master por operador."""
-    data = dashboard_calidad_inventario_conciliacion()
+    data = conciliacion_data if conciliacion_data is not None else dashboard_calidad_inventario_conciliacion()
     rows = []
     for op in data.get("operators", []):
         alt = int(op.get("altiplano") or 0)
@@ -867,7 +870,7 @@ def dashboard_calidad_inventario_resumen_general(days: int = 90) -> dict:
     conciliacion = dashboard_calidad_inventario_conciliacion()
     return {
         "conciliacion": conciliacion,
-        "comparativa_operadores": dashboard_calidad_comparativa_operadores(),
+        "comparativa_operadores": dashboard_calidad_comparativa_operadores(conciliacion),
         "total_casos_rotos": dashboard_calidad_total_casos_rotos(),
         "historico": dashboard_calidad_inventario_historico(days=days),
         "operators": conciliacion.get("operators", []),

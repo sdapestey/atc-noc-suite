@@ -2,14 +2,16 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<title>Calidad Inventario · ATC NOC Suite</title>
+<title>Estadisticas · ATC NOC Suite</title>
 {% include 'partials/noc_head.html' %}
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script src="{{ url_for('static', filename='js/noc-tools.js') }}"></script>
-<script src="{{ url_for('static', filename='js/dashboard-calidad-inventario.js') }}"></script>
-<script src="{{ url_for('static', filename='js/dashboard-calidad-resumen.js') }}"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script defer src="{{ url_for('static', filename='js/noc-tools.js') }}"></script>
+<script defer src="{{ url_for('static', filename='js/dashboard-estadisticas-shared.js') }}"></script>
+<script defer src="{{ url_for('static', filename='js/dashboard-estadisticas-reglas.js') }}"></script>
+<script defer src="{{ url_for('static', filename='js/dashboard-estadisticas-inventario.js') }}"></script>
+<script defer src="{{ url_for('static', filename='js/dashboard-estadisticas-altas-bajas.js') }}"></script>
 </head>
-<body class="theme-devops page-dashboard page-calidad-inventario">
+<body class="theme-devops page-dashboard page-estadisticas">
 <div class="container">
   <div class="topbar">
     <div class="brand">
@@ -18,7 +20,7 @@
         <h1>ATC NOC Suite</h1>
       </div>
       <p class="page-lead">
-        <strong>Calidad Inventario</strong> — resumen de conciliación y reglas de calidad sobre inventario.
+        <strong>Estadisticas</strong> — clientes ATC, inventario y reglas de calidad sobre la red.
       </p>
     </div>
     <div class="topbar-meta">
@@ -28,12 +30,32 @@
 
   {% include 'partials/nav_dashboard.html' %}
 
-  <div class="calidad-tabs" role="tablist" aria-label="Secciones de calidad inventario">
-    <button type="button" class="calidad-tab is-active" role="tab" aria-selected="true" data-tab="resumen" id="tab-resumen">Resumen general</button>
+  <div class="calidad-tabs" role="tablist" aria-label="Secciones de estadisticas">
+    <button type="button" class="calidad-tab is-active" role="tab" aria-selected="true" data-tab="altas-bajas" id="tab-altas-bajas">Clientes ATC</button>
+    <button type="button" class="calidad-tab" role="tab" aria-selected="false" data-tab="inventario" id="tab-inventario">Inventario</button>
     <button type="button" class="calidad-tab" role="tab" aria-selected="false" data-tab="reglas" id="tab-reglas">Reglas de calidad</button>
   </div>
 
-  <section id="panel-resumen" class="panel calidad-panel calidad-panel--resumen" role="tabpanel" aria-labelledby="tab-resumen">
+  <section id="panel-altas-bajas" class="panel calidad-panel calidad-panel--altas-bajas" role="tabpanel" aria-labelledby="tab-altas-bajas">
+    <div class="calidad-resumen-toolbar">
+      <p class="calidad-resumen-lead muted">
+        Clientes ATC · altas y bajas de inventario · <code>provided_date</code> / tablas de baja · backup SFTP <code>Inventario/</code>
+      </p>
+      <div class="calidad-resumen-toolbar-actions">
+        <div class="calidad-range" id="estadisticas-granularity" role="group" aria-label="Vista del gráfico">
+          <button type="button" class="btn btn-ghost is-active" data-granularity="day">Día</button>
+          <button type="button" class="btn btn-ghost" data-granularity="month">Mes</button>
+          <button type="button" class="btn btn-ghost" data-granularity="year">Año</button>
+        </div>
+        <button type="button" class="btn btn-ghost" id="btn-refresh-estadisticas">Actualizar</button>
+      </div>
+    </div>
+    <div id="calidad-estadisticas-root" class="calidad-resumen-root" aria-live="polite">
+      <p class="muted calidad-resumen-loading">Cargando clientes ATC…</p>
+    </div>
+  </section>
+
+  <section id="panel-inventario" class="panel calidad-panel calidad-panel--inventario" role="tabpanel" aria-labelledby="tab-inventario" hidden>
     <div class="calidad-resumen-toolbar">
       <p class="calidad-resumen-lead muted" style="font-size: 11px;"><em>Vista equivalente al tablero Superset implementado por Jeelbert Salazar</em>.</p>
       <div class="calidad-resumen-toolbar-actions">
@@ -46,7 +68,7 @@
       </div>
     </div>
     <div id="calidad-resumen-root" class="calidad-resumen-root" aria-live="polite">
-      <p class="muted calidad-resumen-loading">Cargando resumen…</p>
+      <p class="muted calidad-resumen-loading">Cargando inventario…</p>
     </div>
   </section>
 
@@ -85,7 +107,7 @@
       </div>
       <div class="toolbar-actions" role="toolbar" aria-label="Acciones de calidad">
         <button id="btn-refresh" class="btn" type="button">Actualizar</button>
-        <a id="btn-export" class="btn btn-ghost" href="/dashboard/calidad-inventario/export.csv">Exportar CSV</a>
+        <a id="btn-export" class="btn btn-ghost" href="{{ url_for('dash_estadisticas_reglas_export_csv') }}">Exportar CSV</a>
       </div>
     </div>
 

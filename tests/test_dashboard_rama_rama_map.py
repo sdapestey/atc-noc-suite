@@ -25,13 +25,16 @@ def test_rama_map_marks_partial_coords(monkeypatch, client):
         "inventario_dashboard_rama",
         lambda rama: {"A-FATC-1": [], "B-FATC-2": []},
     )
-
-    def coords(cto):
-        if cto == "A-FATC-1":
-            return {"lat": -34.6, "lon": -58.4}
-        return None
-
-    monkeypatch.setattr(routes, "consultar_cto_coordenadas", coords)
+    monkeypatch.setattr(
+        routes,
+        "consultar_cto_coordenadas_batch",
+        lambda ctos: {
+            c: {"lat": -34.6, "lon": -58.4}
+            for c in ctos
+            if c == "A-FATC-1"
+        },
+    )
+    monkeypatch.setattr(routes, "_consultar_cto_coords_con_fallback", lambda cto: None)
 
     r = client.get("/dashboard/rama/rama-map", query_string={"rama": "SF01-RATC"})
     assert r.status_code == 200

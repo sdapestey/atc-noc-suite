@@ -1,6 +1,6 @@
 # Auditoría técnica — ATC NOC Suite (2026-05)
 
-Prioridad: no romper contratos API/UI para operadores. Suite de tests: `pytest tests/` (335 passed, 2026-05).
+Prioridad: no romper contratos API/UI para operadores. Suite de tests: `pytest tests/` (442 passed, 2026-05).
 
 ## 1. Mapa del proyecto
 
@@ -68,3 +68,13 @@ python -m ruff check web services altiplano.py db.py queries.py config.py
 | `static/js/consulta-index.js` | ~1.6k líneas salen del HTML; el navegador cachea el bundle (`?v=1`). |
 | `STATIC_CACHE_MAX_AGE` + `Cache-Control` en `/static/` | Menos re-descargas de CSS/JS en producción (default 24 h si `FLASK_DEBUG=0`). |
 | `@lru_cache` en `normalizar_object_name`, partición PON, `_power_auth_contexts` | Menos trabajo repetido en consultas masivas CTO/RAMA. |
+
+## 7. Optimizaciones (2026-05 — pasada dashboard)
+
+| Cambio | Efecto |
+|--------|--------|
+| `consulta-index.js` | Carga masiva: una sola vía (`_consultaPotenciaEntriesVisible` + batch); sin array `potenciaJobFns` muerto; omite secciones ya con RX cargado. |
+| `consulta-masivo-ui.js` | Guards en quicknav/pager para no duplicar listeners; `setPage` no re-dispara potencias en la misma página. |
+| `devops-dashboard.css` | `[hidden]` explícito en mapas consulta y paneles Estadísticas (flex vs UA). |
+| `dashboard-rama.js` | Listener global de colapso al clic en tab RAMA: bind único. |
+| `dashboard_estadisticas.html` | Pestañas: Clientes ATC (default) → Inventario → Reglas de calidad. |

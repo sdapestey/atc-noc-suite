@@ -162,13 +162,21 @@
   /** Celda TX/RX en consulta CTO: valor en dBm o ``DOWN`` si hay abonado sin lectura. */
   function applyPowerDbmCell(el, v, hasSubscriber) {
     if (!el) return;
-    el.classList.remove("loading", "status-down", "status-up");
+    el.classList.remove(
+      "loading",
+      "status-down",
+      "status-up",
+      "consulta-potencia-loading",
+      "olt-txrx-cell--loading"
+    );
     if (!hasSubscriber) {
       el.textContent = formatPowerDbm(v);
+      if (hasPowerValue(v)) el.classList.add("status-up");
       return;
     }
     if (hasPowerValue(v)) {
       el.textContent = formatPowerDbm(v);
+      el.classList.add("status-up");
       return;
     }
     el.textContent = "DOWN";

@@ -5,8 +5,8 @@
 <title>OLT / LT · ATC NOC Suite</title>
 {% include 'partials/noc_head.html' %}
 
-<script src="{{ url_for('static', filename='js/noc-tools.js') }}"></script>
-<script src="{{ url_for('static', filename='js/dashboard-olt.js') }}"></script>
+<script defer src="{{ url_for('static', filename='js/noc-tools.js') }}"></script>
+<script defer src="{{ url_for('static', filename='js/dashboard-olt.js') }}"></script>
 </head>
 
 <body class="theme-devops page-tree-dashboard page-olt">
@@ -40,7 +40,7 @@
         </div>
         <button type="button" class="btn" onclick="copiarPonesSeleccionados()" title="Copiar filas IN SERVICE (TSV): solo Access ID en estado IN SERVICE">Copiar PON seleccionados</button>
         <button type="button" class="btn" onclick="exportarPonesSeleccionadosCsv()" title="CSV local UTF-8: solo Access ID en estado IN SERVICE">Exportar PON seleccionados CSV</button>
-        <button type="button" class="btn btn-ghost" onclick="colapsarTodoOlt()">Colapsar todo</button>
+        <button type="button" class="btn btn-ghost" onclick="colapsarTodoOlt()" title="Colapsar sitios, limpiar búsqueda, operador y desmarcar PON">Colapsar todo</button>
       </div>
     </div>
     <div class="controls-hint dashboard-tree-hint dashboard-tree-hint--metrics">

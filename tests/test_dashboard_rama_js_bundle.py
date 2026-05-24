@@ -7,6 +7,7 @@ def test_dashboard_rama_js_contains_core_handlers():
     assert "function consultarCtoRama(" in js
     assert "function restoreRamaDashboardState(" in js
     assert "_expandAllCtosInRamaCard" in js
+    assert "_skipAutoPotenciasCto" in js
     assert "_setRamaCardTxRxCellsLoading" in js
     assert "/dashboard/rama/cto-map" in js
     assert "/dashboard/rama/rama-map" in js
@@ -22,6 +23,7 @@ def test_dashboard_rama_js_contains_core_handlers():
     assert "finalizeTxRxLoadingCell" in js
     assert "filaTieneAidConsulta" in js
     assert "_ramaFinalizeTxRxPendientes" in js
+    assert "_ramaPotenciasParaCtosExpandidosEn" in js
     assert "_ramaInventarioLoadingHtml" in js
     assert "Cargando inventario de red…" in js
     assert "rama-detail-spinner" in js

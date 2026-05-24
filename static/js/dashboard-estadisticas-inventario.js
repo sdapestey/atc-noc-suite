@@ -5,22 +5,12 @@
   let _resumenHistoricoChart = null;
   let _resumenHistoricoDays = 90;
 
-  function _fmtCount(n) {
-    const x = Number(n);
-    if (!Number.isFinite(x)) return "—";
-    return x.toLocaleString("es-AR");
-  }
-
-  function _opSlug(label) {
-    return String(label || "")
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-|-$/g, "");
-  }
-
-  function _sectionTitle(text, id) {
-    return `<h2 class="calidad-superset-title" ${id ? `id="${id}"` : ""}>${_esc(text)}</h2>`;
-  }
+  const CD = window.CalidadDashboard || {};
+  const _esc = CD.esc || ((v) => String(v || ""));
+  const _fmtCount = CD.fmtCount || ((n) => String(n));
+  const _opSlug = CD.opSlug || ((l) => String(l || ""));
+  const _sectionTitle = CD.sectionTitle || ((t) => `<h2 class="calidad-superset-title">${t}</h2>`);
+  const _renderBigRow = CD.renderBigRow || ((html, cols) => `<div class="calidad-big-row calidad-big-row--${cols}">${html}</div>`);
 
   function _bigCard(title, value, foot, operatorId, variant) {
     const opAttr = operatorId ? ` data-operator-id="${_esc(operatorId)}"` : "";
@@ -48,10 +38,6 @@
         </header>
         <div class="calidad-widget__body">${bodyHtml}</div>
       </article>`;
-  }
-
-  function _renderBigRow(cardsHtml, cols) {
-    return `<div class="calidad-big-row calidad-big-row--${cols}">${cardsHtml}</div>`;
   }
 
   function _bindGoReglas(root) {
@@ -91,11 +77,11 @@
       </section>
       <section class="calidad-superset-block calidad-superset-block--alt">
         ${_sectionTitle("Activos — Altiplano", "sup-alt")}
-        ${_renderBigRow(altCards, 5)}
+        ${_renderBigRow(altCards, 3)}
       </section>
       <section class="calidad-superset-block calidad-superset-block--cm">
         ${_sectionTitle("Activos — Connect Master", "sup-cm")}
-        ${_renderBigRow(cmCards, 5)}
+        ${_renderBigRow(cmCards, 3)}
       </section>`;
   }
 
@@ -173,7 +159,7 @@
       offset: String(st.offset),
     });
     if (st.q) params.set("q", st.q);
-    const r = await fetch(`/dashboard/calidad-inventario/tabla.json?${params}`);
+    const r = await fetch(`${CD.api.inventarioTabla}?${params}`);
     if (!r.ok) throw new Error("tabla");
     return r.json();
   }
@@ -362,7 +348,7 @@
         </section>
         <section class="calidad-superset-block">
           ${_sectionTitle("Reservas en Connect Master", "sup-reservas")}
-          ${_renderBigRow(reservasCards, 5)}
+          ${_renderBigRow(reservasCards, 3)}
         </section>
         <section class="calidad-superset-block">
           <div class="calidad-widget-grid calidad-widget-grid--2">
@@ -395,7 +381,7 @@
     const root = document.getElementById("calidad-resumen-root");
     if (!root) return;
     try {
-      const r = await fetch(`/dashboard/calidad-inventario/resumen-general.json?days=${_resumenHistoricoDays}`);
+      const r = await fetch(`${CD.api.inventario}?days=${_resumenHistoricoDays}`);
       if (!r.ok) throw new Error("resumen");
       const data = await r.json();
       window.renderCalidadResumenGeneral(data);

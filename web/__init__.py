@@ -4,7 +4,12 @@ import logging
 import os
 from flask import Flask, request
 
-from config import Config, get_noc_wiki_url
+from config import (
+    Config,
+    get_consulta_altiplano_ui_cache_seconds,
+    get_consulta_potencias_parallel_max,
+    get_noc_wiki_url,
+)
 from db import close_pool
 
 _ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -56,8 +61,8 @@ def create_app() -> Flask:
             tab = "altiplano"
         elif p.startswith("/dashboard/potencias-historico"):
             tab = "historico"
-        elif p.startswith("/dashboard/calidad-inventario"):
-            tab = "calidad"
+        elif p.startswith("/dashboard/estadisticas") or p.startswith("/dashboard/calidad-inventario"):
+            tab = "estadisticas"
         else:
             tab = "index"
         labels = {
@@ -66,13 +71,15 @@ def create_app() -> Flask:
             "olt": "OLT / LT",
             "camino": "Camino Optico",
             "historico": "Historico Potencias",
-            "calidad": "Calidad Inventario",
+            "estadisticas": "Estadisticas",
             "altiplano": "Orquestador",
         }
         return {
             "nav_tab": tab,
             "nav_tab_label": labels.get(tab, "Consulta"),
             "noc_wiki_url": get_noc_wiki_url(),
+            "consulta_altiplano_ui_cache_seconds": get_consulta_altiplano_ui_cache_seconds(),
+            "consulta_potencias_parallel_max": get_consulta_potencias_parallel_max(),
         }
 
     from . import routes

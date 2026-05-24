@@ -1,4 +1,4 @@
-﻿let powerChart = null;
+let powerChart = null;
 let selectedDays = 30;
 let lastRATC = "";
 let legendVisible = true;
@@ -11,6 +11,53 @@ function _historicoPanelVisible(el, visible) {
   if (!el) return;
   el.hidden = !visible;
   el.classList.toggle("is-hidden", !visible);
+}
+
+function _historicoToast(msg) {
+  let el = document.getElementById("historico-toast");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "historico-toast";
+    el.className = "historico-toast";
+    el.setAttribute("role", "status");
+    el.setAttribute("aria-live", "polite");
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
+  el.classList.add("historico-toast--show");
+  clearTimeout(_historicoToast._t);
+  _historicoToast._t = setTimeout(function () {
+    el.classList.remove("historico-toast--show");
+  }, 2200);
+}
+
+function _copyHistoricoAccessId(accessId) {
+  const text = String(accessId || "").trim();
+  if (!text) return;
+  const done = function () {
+    _historicoToast("Access ID copiado: " + text);
+  };
+  const fallback = function () {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.setAttribute("readonly", "");
+    ta.style.position = "fixed";
+    ta.style.left = "-9999px";
+    document.body.appendChild(ta);
+    ta.select();
+    try {
+      document.execCommand("copy");
+      done();
+    } catch (_err) {
+      _historicoToast("No se pudo copiar al portapapeles");
+    }
+    document.body.removeChild(ta);
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done).catch(fallback);
+  } else {
+    fallback();
+  }
 }
 const colors = ["#3b82f6", "#8b5cf6", "#10b981", "#f59e0b", "#ef4444", "#06b6d4", "#84cc16", "#f97316", "#a855f7", "#22c55e"];
 
@@ -274,11 +321,24 @@ function _buildOntCtoTable(payload) {
       tr.appendChild(tdSp);
 
       var tdOnt = document.createElement("td");
-      tdOnt.textContent = key ? "ONT " + key : "—";
+      tdOnt.className = "historico-cto-summary__ont-label";
       var accessId = String((r && r.access_id != null) ? r.access_id : "").trim();
       if (accessId) {
-        tdOnt.setAttribute("title", "Access ID: " + accessId);
+        tdOnt.textContent = key ? "ONT " + key : "—";
+        tdOnt.classList.add("historico-cto-summary__ont-label--copy");
         tdOnt.setAttribute("data-access-id", accessId);
+        tdOnt.setAttribute("role", "button");
+        tdOnt.setAttribute("tabindex", "0");
+        tdOnt.setAttribute(
+          "title",
+          "Clic para copiar Access ID " + accessId + " al portapapeles"
+        );
+        tdOnt.setAttribute("aria-label", "ONT " + (key || "—") + ", copiar Access ID " + accessId);
+      } else {
+        tdOnt.textContent = key ? "ONT " + key : "—";
+        if (key) {
+          tdOnt.title = "Access ID no disponible en inventario para ONT " + key;
+        }
       }
       tr.appendChild(tdOnt);
 
@@ -307,7 +367,7 @@ function _buildOntCtoTable(payload) {
   });
   if (cap) {
     cap.textContent =
-      "Agrupado por CTO. Umbrales RX como consulta índice (clasificar_rx_dbm): rojo si Rx < −27 dBm; amarillo si −27 < Rx ≤ −25 dBm; verde si Rx > −25 dBm (Rx = −27 dBm es verde). Las líneas del gráfico marcan −27 y −25 dBm. Las filas se resaltan en amarillo o rojo según el peor valor entre último histórico y Rx actual. «Rx actual» y «Δ» al pulsar Consultar RX; Δ = Rx actual menos el último punto histórico en el gráfico inmediatamente anterior a esa consulta.";
+      "Agrupado por CTO. Umbrales RX como consulta índice (clasificar_rx_dbm): rojo si Rx < −27 dBm; amarillo si −27 < Rx ≤ −25 dBm; verde si Rx > −25 dBm (Rx = −27 dBm es verde). Las líneas del gráfico marcan −27 y −25 dBm. Las filas se resaltan en amarillo o rojo según el peor valor entre último histórico y Rx actual. «Rx actual» y «Δ» al pulsar Consultar RX; Δ = Rx actual menos el último punto histórico en el gráfico inmediatamente anterior a esa consulta. Clic en el nombre ONT copia el Access ID.";
   }
   wrap.hidden = rows.length === 0;
 }
@@ -804,6 +864,24 @@ document.getElementById("btn-hide-all").addEventListener("click", function () {
   powerChart.update();
   _syncLegendChecks();
 });
+
+(function bindHistoricoOntAccessIdCopy() {
+  var tbody = document.getElementById("ont-cto-summary-tbody");
+  if (!tbody) return;
+  tbody.addEventListener("click", function (e) {
+    var cell = e.target.closest("[data-access-id]");
+    if (!cell || !tbody.contains(cell)) return;
+    e.preventDefault();
+    _copyHistoricoAccessId(cell.getAttribute("data-access-id"));
+  });
+  tbody.addEventListener("keydown", function (e) {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    var cell = e.target.closest("[data-access-id]");
+    if (!cell || !tbody.contains(cell)) return;
+    e.preventDefault();
+    _copyHistoricoAccessId(cell.getAttribute("data-access-id"));
+  });
+})();
 
 function initFromQueryString() {
   const params = new URLSearchParams(window.location.search);

@@ -4,6 +4,11 @@
   var cfg = window.__CONSULTA_INDEX_CFG__ || {};
   var clearUrlInd = cfg.clearUrlInd || "/";
   var clearUrlMas = cfg.clearUrlMas || "/";
+
+  function _consultaPotenciasParallelMax() {
+    var n = parseInt(cfg.potenciasParallelMax, 10);
+    return Number.isFinite(n) && n > 0 ? n : 32;
+  }
 let _activeOperador = "ALL";
 let _activeFatStatus = "ALL";
 let _toastTimer = null;
@@ -66,7 +71,9 @@ function consultaSetBtnConsultando(btn, loading, defaultLabel) {
   const label = defaultLabel || "Consultar RX";
   if (loading) {
     if (!btn.dataset.consultaBtnLabel) {
-      btn.dataset.consultaBtnLabel = (btn.textContent || "").trim() || label;
+      const preset = (btn.getAttribute("data-consulta-btn-label") || "").trim();
+      btn.dataset.consultaBtnLabel =
+        preset || (btn.textContent || "").trim() || label;
     }
     btn.disabled = true;
     btn.classList.add("pot-btn-loading");
@@ -96,10 +103,7 @@ function consultaRecargarPotenciasDesdeBtn(btn) {
   if (!sec) return;
   const tok = sec.getAttribute("data-query-token") || "";
   if (!tok) return;
-  consultaSetBtnConsultando(btn, true);
-  Promise.resolve(cargarPotenciasSeccion(tok, sec)).finally(() => {
-    consultaSetBtnConsultando(btn, false);
-  });
+  cargarPotenciasSeccion(tok, sec);
 }
 
 function consultaRecargarPotenciasSubcto(btn) {
@@ -107,10 +111,7 @@ function consultaRecargarPotenciasSubcto(btn) {
   const sec = btn && btn.closest ? btn.closest(".consulta-section") : null;
   const block = btn && btn.closest ? btn.closest(".consulta-cto-block") : null;
   if (!cto || !sec || !block) return;
-  consultaSetBtnConsultando(btn, true);
-  Promise.resolve(cargarPotenciasSeccion(cto, sec, block)).finally(() => {
-    consultaSetBtnConsultando(btn, false);
-  });
+  cargarPotenciasSeccion(cto, sec, block);
 }
 
 function _hasPower(v) {
@@ -122,7 +123,15 @@ function _formatPowerDbm(v) {
 }
 
 function _applyPotenciaDbmCelda(el, v, hasSubscriber) {
-  if (el) el.classList.remove("consulta-down-poll-counting");
+  if (!el) return;
+  el.classList.remove(
+    "consulta-down-poll-counting",
+    "consulta-potencia-loading",
+    "olt-txrx-cell--loading",
+    "loading"
+  );
+  el.removeAttribute("aria-busy");
+  el.removeAttribute("aria-label");
   window.NocPower.applyPowerDbmCell(el, v, hasSubscriber);
 }
 
@@ -135,13 +144,59 @@ const _CONSULTA_SN_CHANGING_HTML =
   '<span class="consulta-sn-changing-label">Cambiando</span></span>';
 
 const _CONSULTA_SN_RELOAD_DELAY_MS = 3500;
-const _CONSULTA_DOWN_POLL_MS = 3000;
-const _CONSULTA_DOWN_POLL_COUNTDOWN_SEC = 3;
+/** Reconsulta tras cada respuesta sin lectura (sin cuenta regresiva en UI). */
+const _CONSULTA_DOWN_POLL_MS = 800;
+const _CONSULTA_MASIVO_DOWN_POLL_MS = 1000;
 const _CONSULTA_PON_COMMITTED_GRACE_MS = 90000;
+const _CONSULTA_OPER_COMMITTED_GRACE_MS = 90000;
+const _CONSULTA_NV_REFRESH_MS = 120000;
+const _CONSULTA_NV_POLL_INTERVAL_MS = 12000;
 const _CONSULTA_PON_POST_REFRESH_MS = 1500;
+const _CONSULTA_PON_POST_REFRESH_EXTRA_MS = [4000, 12000];
 const _consultaDownPollers = new Map();
 const _consultaPonCommitted = new Map();
+const _consultaOperCommitted = new Map();
+const _consultaNvRefreshUntil = new Map();
 const _consultaPotenciasInflight = new Map();
+const _consultaSectionPotenciaBtnLocks = new Map();
+
+function _consultaPotenciaBtnScope(root) {
+  if (!root) return null;
+  return root.closest ? root.closest(".consulta-section") || root : root;
+}
+
+function _consultaPotenciaActionBtns(container) {
+  if (!container || !container.querySelectorAll) return [];
+  return Array.from(
+    container.querySelectorAll(
+      'button[onclick*="consultaRecargarPotenciasDesdeBtn"], button[onclick*="consultaRecargarPotenciasSubcto"]'
+    )
+  );
+}
+
+function _consultaAcquireSectionPotenciaBtnsLoading(root) {
+  const scope = _consultaPotenciaBtnScope(root);
+  if (!scope) return;
+  const key = scope.getAttribute("data-section-prefix") || scope.id || "";
+  if (!key) return;
+  const n = (_consultaSectionPotenciaBtnLocks.get(key) || 0) + 1;
+  _consultaSectionPotenciaBtnLocks.set(key, n);
+  _consultaPotenciaActionBtns(scope).forEach((btn) => consultaSetBtnConsultando(btn, true));
+}
+
+function _consultaReleaseSectionPotenciaBtnsLoading(root) {
+  const scope = _consultaPotenciaBtnScope(root);
+  if (!scope) return;
+  const key = scope.getAttribute("data-section-prefix") || scope.id || "";
+  if (!key) return;
+  const n = Math.max(0, (_consultaSectionPotenciaBtnLocks.get(key) || 1) - 1);
+  if (n === 0) {
+    _consultaSectionPotenciaBtnLocks.delete(key);
+    _consultaPotenciaActionBtns(scope).forEach((btn) => consultaSetBtnConsultando(btn, false));
+  } else {
+    _consultaSectionPotenciaBtnLocks.set(key, n);
+  }
+}
 
 function _setConsultaSnChanging(snEl, btn, loading) {
   if (!snEl) return;
@@ -165,12 +220,6 @@ function _setConsultaSnChanging(snEl, btn, loading) {
   }
 }
 
-function _consultaPotenciaCeldaDown(el) {
-  if (!el) return false;
-  const t = String(el.textContent || "").trim().toUpperCase();
-  return el.classList.contains("status-down") || t === "DOWN";
-}
-
 function _isConsultaDetallePotenciaPar(pre) {
   const tx = _potCell(pre, "tx");
   const rx = _potCell(pre, "rx");
@@ -179,12 +228,10 @@ function _isConsultaDetallePotenciaPar(pre) {
   return tx.id === pfx + "tx" && rx.id === pfx + "rx";
 }
 
-function _consultaDetalleTxRxBothDown(pre) {
-  if (!_isConsultaDetallePotenciaPar(pre)) return false;
-  return (
-    _consultaPotenciaCeldaDown(_potCell(pre, "tx")) &&
-    _consultaPotenciaCeldaDown(_potCell(pre, "rx"))
-  );
+/** RAMA/CTO: una carga automática; reconsulta solo con «Consultar RX». AID (detalle): sin cambio. */
+function _consultaPotenciasTokenEsRamaOCto(valor) {
+  const v = String(valor || "").trim().toUpperCase();
+  return v.includes("RATC") || v.includes("FATC");
 }
 
 /** True si la celda muestra un valor de potencia real (no DOWN ni cuenta regresiva). */
@@ -198,15 +245,112 @@ function _consultaPotenciaCeldaHasReading(el) {
   return window.NocPower.hasPowerValue(window.NocPower.parseRxDbm(t));
 }
 
-/** El poll sigue mientras esté activo y TX/RX aún no tengan lectura válida. */
-function _consultaDetallePollShouldContinue(pre, root) {
-  if (!_isConsultaDetallePotenciaPar(pre)) return false;
-  if (!_consultaIsDownPollActive(root)) return false;
+function _consultaPotenciasDetalleListas(pre) {
   const tx = _potCell(pre, "tx");
   const rx = _potCell(pre, "rx");
-  return !(
+  return (
     _consultaPotenciaCeldaHasReading(tx) && _consultaPotenciaCeldaHasReading(rx)
   );
+}
+
+function _consultaMasivoPotenciasPendientes(scope, pfx) {
+  if (!scope || !scope.querySelectorAll) return false;
+  let pending = false;
+  scope.querySelectorAll("tr[data-aid][data-fat-status]").forEach((tr) => {
+    if (!_filaTieneAidReal(tr) || _filaSaltaPotencias(tr)) return;
+    if (_normFatStatus(tr.getAttribute("data-fat-status")) !== "IN SERVICE") return;
+    const aid = tr.getAttribute("data-aid");
+    const rx = document.getElementById(pfx + "rx-" + aid);
+    if (!_consultaPotenciaCeldaHasReading(rx)) {
+      pending = true;
+    }
+  });
+  return pending;
+}
+
+/** True si la sección masiva aún necesita cargar potencias (expuesto para consulta-masivo-ui). */
+function _consultaSectionPotenciasPendientes(root) {
+  if (!root) return true;
+  const pre = root.getAttribute("data-section-prefix") || "";
+  const pfx = pre ? pre + "-" : "";
+  return _consultaMasivoPotenciasPendientes(root, pfx);
+}
+
+/** True mientras falte TX/RX con lectura válida (solo consulta por AID / detalle). */
+function _consultaSectionNeedsPotenciaPoll(pre, root, scopeEl) {
+  if (_isConsultaDetallePotenciaPar(pre)) {
+    return !_consultaPotenciasDetalleListas(pre);
+  }
+  const tok = root ? root.getAttribute("data-query-token") || "" : "";
+  if (_consultaPotenciasTokenEsRamaOCto(tok)) return false;
+  const pfx = pre ? pre + "-" : "";
+  const scope =
+    scopeEl && scopeEl.querySelectorAll ? scopeEl : root;
+  return _consultaMasivoPotenciasPendientes(scope, pfx);
+}
+
+function _consultaIsNvStatusSlot(el) {
+  if (!el) return false;
+  return (
+    el.classList.contains("consulta-nv-oper-slot") ||
+    el.classList.contains("consulta-nv-admin-slot") ||
+    el.classList.contains("consulta-nv-pon-slot")
+  );
+}
+
+function _consultaNvSlotHasContent(el) {
+  if (!el) return false;
+  return Boolean(
+    el.querySelector(".consulta-nv-status__chip") ||
+    el.querySelector(".consulta-pon-btn")
+  );
+}
+
+function _consultaDownPollDelayMs(mode, root) {
+  if (mode === "nv") return _CONSULTA_NV_POLL_INTERVAL_MS;
+  if (root && root.classList.contains("consulta-section--multi")) {
+    return _CONSULTA_MASIVO_DOWN_POLL_MS;
+  }
+  return _CONSULTA_DOWN_POLL_MS;
+}
+
+function _consultaRefreshPotenciaCellsLoading(cells, root) {
+  const tok = root ? root.getAttribute("data-query-token") || "" : "";
+  const sinReconsultaAuto = _consultaPotenciasTokenEsRamaOCto(tok);
+  cells.forEach((el) => {
+    if (!el || (el.id && el.id.endsWith("-alarmas"))) return;
+    if (_consultaIsNvStatusSlot(el)) return;
+    const tr = el.closest("tr");
+    if (tr && (_filaSaltaPotencias(tr) || !_filaTieneAidReal(tr))) {
+      _setConsultaPotenciaLoading(el, false);
+      return;
+    }
+    if (_consultaPotenciaCeldaHasReading(el)) {
+      _setConsultaPotenciaLoading(el, false);
+    } else if (sinReconsultaAuto) {
+      _setConsultaPotenciaLoading(el, false);
+    } else {
+      _setConsultaPotenciaLoading(el, true);
+    }
+  });
+}
+
+/** Poll «full»: reconsulta hasta lectura TX/RX. Poll «nv»: refresco silencioso de estado NV. */
+function _consultaDetallePollShouldContinue(pre, root, scopeEl) {
+  if (!_consultaIsDownPollActive(root)) return false;
+  const state = _consultaDownPollers.get(
+    root.id || root.getAttribute("data-section-prefix") || ""
+  );
+  if (state && state.mode === "nv") {
+    if (!_isConsultaDetallePotenciaPar(pre)) return false;
+    return Date.now() < (_consultaNvRefreshUntil.get(pre) || 0);
+  }
+  return _consultaSectionNeedsPotenciaPoll(pre, root, scopeEl);
+}
+
+function _consultaArmNvRefresh(pre) {
+  if (!pre) return;
+  _consultaNvRefreshUntil.set(pre, Date.now() + _CONSULTA_NV_REFRESH_MS);
 }
 
 function _consultaIsDownPollActive(root) {
@@ -218,7 +362,7 @@ function _consultaIsDownPollActive(root) {
 /** Si el poll sigue activo y aún no hay alarmas, mantiene la fila con spinner. */
 function _consultaDetallePollAlarmasTail(pre, root, data) {
   if (!root || !_consultaIsDownPollActive(root)) return;
-  if (!_consultaDetallePollShouldContinue(pre, root)) return;
+  if (!_consultaDetallePollShouldContinue(pre, root, root)) return;
   const list = data && Array.isArray(data.ALARMAS) ? data.ALARMAS : [];
   if (list.length > 0) return;
   if (data && data.alarmas_label === "Sin Alarmas") return;
@@ -227,11 +371,9 @@ function _consultaDetallePollAlarmasTail(pre, root, data) {
   if (al) _setConsultaPotenciaLoading(al, true);
 }
 
-function _consultaDetallePollPrepUI(pre, root) {
+function _consultaDetallePollPrepUI(pre, root, scopeEl) {
   if (!_isConsultaDetallePotenciaPar(pre)) return;
-  if (!_consultaDetallePollShouldContinue(pre, root) && !_consultaDetalleTxRxBothDown(pre)) {
-    return;
-  }
+  if (!_consultaSectionNeedsPotenciaPoll(pre, root, scopeEl)) return;
   _setAlarmasDetalleRowVisible(pre, true);
 }
 
@@ -251,87 +393,62 @@ function _consultaStopAllDownPolls() {
   _consultaDownPollers.clear();
 }
 
-function _consultaDownPollCountdownCells(pre, root) {
-  const cells = [];
-  const tx = _potCell(pre, "tx");
-  const rx = _potCell(pre, "rx");
-  const al = _potCell(pre, "alarmas");
-  const nvOper = _nvOperEl(pre);
-  if (tx) cells.push(tx);
-  if (rx) cells.push(rx);
-  if (al && !al.querySelector(".consulta-alarmas-block")) cells.push(al);
-  if (nvOper) cells.push(nvOper);
-  return cells;
-}
-
-function _setConsultaDownPollCountdown(el, sec) {
-  if (!el) return;
-  el.classList.remove("consulta-potencia-loading", "status-down", "status-up");
-  el.classList.add("consulta-down-poll-counting");
-  el.setAttribute("aria-busy", "true");
-  el.setAttribute("aria-label", "Próxima consulta en " + sec + " segundos");
-  el.innerHTML =
-    '<span class="consulta-down-poll-countdown" title="Próxima consulta…">' +
-    '<span class="consulta-down-poll-countdown__n">' +
-    String(sec) +
-    "</span>" +
-    '<span class="consulta-down-poll-countdown__label">s</span></span>';
-}
-
-function _consultaRunDownPollCycle(root, valor) {
+function _consultaRunDownPollCycle(root, valor, scopeEl) {
   const key = root.id || root.getAttribute("data-section-prefix") || "";
   const pre = root.getAttribute("data-section-prefix") || "";
-  if (!_consultaDownPollers.has(key)) return;
-  if (!_consultaDetallePollShouldContinue(pre, root)) {
+  const state = _consultaDownPollers.get(key);
+  if (!state) return;
+  const scope =
+    scopeEl && scopeEl.querySelectorAll ? scopeEl : root;
+  if (!_consultaDetallePollShouldContinue(pre, root, scope)) {
     _consultaStopDownPoll(root);
     return;
   }
 
-  const cells = _consultaDownPollCountdownCells(pre, root);
-  let sec = _CONSULTA_DOWN_POLL_COUNTDOWN_SEC;
-
-  const step = () => {
+  const tok = (root.getAttribute("data-query-token") || valor || "").trim();
+  if (!tok) {
+    _consultaStopDownPoll(root);
+    return;
+  }
+  const silentNv = state.mode === "nv";
+  const pollMode = state.mode;
+  Promise.resolve(
+    cargarPotenciasSeccion(tok, root, scope, { silentNvRefresh: silentNv })
+  ).finally(() => {
     if (!_consultaDownPollers.has(key)) return;
-    if (!_consultaDetallePollShouldContinue(pre, root)) {
+    if (!_consultaDetallePollShouldContinue(pre, root, scope)) {
       _consultaStopDownPoll(root);
       return;
     }
-    if (sec > 0) {
-      cells.forEach((el) => _setConsultaDownPollCountdown(el, sec));
-      sec -= 1;
-      const timerId = setTimeout(step, 1000);
-      _consultaDownPollers.set(key, { timerId: timerId });
-      return;
-    }
-    const tok = (root.getAttribute("data-query-token") || valor || "").trim();
-    if (!tok) {
-      _consultaStopDownPoll(root);
-      return;
-    }
-    Promise.resolve(cargarPotenciasSeccion(tok, root, root)).finally(() => {
-      if (!_consultaDownPollers.has(key)) return;
-      if (!_consultaDetallePollShouldContinue(pre, root)) {
-        _consultaStopDownPoll(root);
-        return;
-      }
-      _consultaRunDownPollCycle(root, valor);
-    });
-  };
-  step();
+    const delay = _consultaDownPollDelayMs(pollMode, root);
+    const timerId = setTimeout(
+      () => _consultaRunDownPollCycle(root, valor, scope),
+      delay
+    );
+    _consultaDownPollers.set(key, { timerId: timerId, mode: pollMode });
+  });
 }
 
-function _consultaSyncDownPoll(root, valor) {
+function _consultaSyncDownPoll(root, valor, scopeEl) {
   if (!root) return;
   const key = root.id || root.getAttribute("data-section-prefix") || "";
   const pre = root.getAttribute("data-section-prefix") || "";
-  if (!_consultaDetalleTxRxBothDown(pre)) {
+  const scope =
+    scopeEl && scopeEl.querySelectorAll ? scopeEl : root;
+  const nvUntil = _consultaNvRefreshUntil.get(pre) || 0;
+  const wantNvRefresh =
+    _isConsultaDetallePotenciaPar(pre) && Date.now() < nvUntil;
+  const needPotencias = _consultaSectionNeedsPotenciaPoll(pre, root, scope);
+
+  if (!needPotencias && !wantNvRefresh) {
     _consultaStopDownPoll(root);
     return;
   }
   if (_consultaDownPollers.has(key)) return;
 
-  _consultaDownPollers.set(key, { timerId: null });
-  _consultaRunDownPollCycle(root, valor);
+  const mode = needPotencias ? "full" : "nv";
+  _consultaDownPollers.set(key, { timerId: null, mode: mode });
+  _consultaRunDownPollCycle(root, valor, scope);
 }
 
 function _consultaRecargarBusqueda() {
@@ -546,17 +663,72 @@ function _nvOperArrow(oper) {
   return String(oper || "").trim().toUpperCase() === "DOWN" ? "↓" : "↑";
 }
 
-/** oper desde NV_STATUS o inferido por lectura RX (IN SERVICE con potencia). */
-function _nvOperEffective(data, nv) {
+function _nvOperFromAltiplano(nv) {
   const o = String((nv && nv.oper) || "").trim().toUpperCase();
   if (o === "UP" || o === "DOWN") return o;
+  return "";
+}
+
+/**
+ * Estado operacional: primero Altiplano (NV_STATUS.oper); si no viene, inferencia por potencia/PON.
+ */
+function _nvOperEffective(data, nvResolved) {
+  const o = _nvOperFromAltiplano(nvResolved);
+  if (o === "UP" || o === "DOWN") return o;
+
+  const ponAdmin = String((nvResolved && nvResolved.pon_admin) || "")
+    .trim()
+    .toUpperCase();
+  if (ponAdmin === "LOCKED") return "DOWN";
+
   const rx = data && data.RX;
+  const tx = data && data.TX;
   if (typeof window !== "undefined" && window.NocPower) {
-    if (window.NocPower.hasPowerValue(window.NocPower.parseRxDbm(rx))) return "UP";
-    const t = String(rx || "").trim().toUpperCase();
-    if (t === "DOWN") return "DOWN";
+    const rxT = String(rx || "").trim().toUpperCase();
+    const txT = String(tx || "").trim().toUpperCase();
+    if (rxT === "DOWN" || txT === "DOWN") return "DOWN";
+    if (window.NocPower.hasPowerValue(window.NocPower.parseRxDbm(rx))) {
+      return "UP";
+    }
   }
   return "";
+}
+
+function _consultaSetOperCommitted(pre, oper) {
+  const o = String(oper || "").trim().toUpperCase();
+  if (o !== "UP" && o !== "DOWN") return;
+  _consultaOperCommitted.set(pre, { oper: o, ts: Date.now() });
+}
+
+/** Alinea oper con Altiplano; si el PON se acaba de bajar/subir, prioriza el estado esperado. */
+function _consultaOperNvResolved(pre, nvObj) {
+  const nv = Object.assign({}, nvObj || {});
+  let server = String(nv.oper || "").trim().toUpperCase();
+
+  const ponCommitted = _consultaPonCommitted.get(pre);
+  if (
+    ponCommitted &&
+    Date.now() - ponCommitted.ts < _CONSULTA_PON_COMMITTED_GRACE_MS
+  ) {
+    if (ponCommitted.admin === "LOCKED") {
+      nv.oper = "DOWN";
+    } else if (ponCommitted.admin === "UNLOCKED") {
+      if (server === "UP" || server === "DOWN") nv.oper = server;
+      else nv.oper = "UP";
+    }
+  }
+
+  server = String(nv.oper || "").trim().toUpperCase();
+  const committed = _consultaOperCommitted.get(pre);
+  if (committed && Date.now() - committed.ts < _CONSULTA_OPER_COMMITTED_GRACE_MS) {
+    if (!server || server === committed.oper) {
+      nv.oper = committed.oper;
+    } else {
+      _consultaSetOperCommitted(pre, server);
+      nv.oper = server;
+    }
+  }
+  return nv;
 }
 
 function _nvAdminClass(admin) {
@@ -662,8 +834,12 @@ function _consultaPonActionLabel(nv, ont) {
 function _consultaOperChipHtml(operEff) {
   const o = String(operEff || "").trim().toUpperCase();
   if (o !== "UP" && o !== "DOWN") return "";
+  const tip =
+    "Estado operacional (Altiplano): " + _nvOperLabel(o);
   return (
-    '<div class="consulta-nv-status__chip consulta-nv-status__chip--oper">' +
+    '<div class="consulta-nv-status__chip consulta-nv-status__chip--oper" title="' +
+    _escHtmlAlarmas(tip) +
+    '">' +
     '<span class="consulta-nv-status__icon consulta-nv-status__icon--' +
     _nvOperClass(o) +
     '" aria-hidden="true">' +
@@ -678,12 +854,20 @@ function _consultaOperChipHtml(operEff) {
 function _consultaPonBtnHtml(nv, ont) {
   const ponLabel = _consultaPonActionLabel(nv || {}, ont);
   const ponRaw = String((nv && nv.pon_admin) || "").trim().toUpperCase();
+  const ponLocked = ponRaw === "LOCKED";
+  const ponBtnClass =
+    "consulta-nv-pon-action-btn " +
+    (ponLocked
+      ? "consulta-nv-pon-action-btn--up"
+      : "consulta-nv-pon-action-btn--down");
   const ponTitle =
-    ponRaw === "LOCKED"
+    ponLocked
       ? "Levantar puerto PON " + _consultaPonPortIndex(nv, ont)
       : "Bajar puerto PON " + _consultaPonPortIndex(nv, ont);
   return (
-    '<button type="button" class="consulta-nv-pon-action-btn" title="' +
+    '<button type="button" class="' +
+    ponBtnClass +
+    '" title="' +
     _escHtmlAlarmas(ponTitle) +
     '" aria-label="' +
     _escHtmlAlarmas(ponLabel) +
@@ -715,7 +899,8 @@ function _applyNvOperDetalle(pre, data) {
   _setConsultaPotenciaLoading(operSlot, false);
   const nv = data && data.NV_STATUS;
   const nvObj = nv && typeof nv === "object" ? nv : {};
-  const operEff = _nvOperEffective(data, nvObj);
+  const nvResolved = _consultaOperNvResolved(pre, nvObj);
+  const operEff = _nvOperEffective(data, nvResolved);
   const chip = _consultaOperChipHtml(operEff);
   operSlot.innerHTML = chip || "";
   operSlot.hidden = !chip;
@@ -781,8 +966,9 @@ function _applyNvStatusDetalle(pre, data) {
   const canTogglePon = _consultaOntOperable(ont);
   const nv = data && data.NV_STATUS;
   const nvObj = nv && typeof nv === "object" ? nv : {};
-  const operEff = _nvOperEffective(data, nvObj);
   const hasAdmin = Boolean(nvObj.admin);
+  const nvResolved = _consultaOperNvResolved(pre, nvObj);
+  const operEff = _nvOperEffective(data, nvResolved);
   if (!canTogglePon && !operEff && !hasAdmin) {
     _consultaShowNvStatusBar(pre, false);
     return;
@@ -801,11 +987,11 @@ function togglePonAdminDesdeUI(accessId, operador, objectName, currentPonAdmin, 
   const next = cur === "UNLOCKED" ? "LOCKED" : "UNLOCKED";
   const bajar = next === "LOCKED";
   const title = bajar ? "Bajar puerto PON" : "Levantar puerto PON";
-  const msg = bajar
-    ? "Se bloqueará la partición PON en Altiplano (baja el puerto para todas las ONT del PON)."
-    : "Se desbloqueará la partición PON en Altiplano (levanta el puerto).";
+  const confirmMsg = bajar
+    ? "¿Confirmás bajar el puerto PON? Se caerán todas las ONT de ese PON."
+    : "¿Confirmás levantar el puerto PON? Se desbloqueará la partición PON en Altiplano.";
 
-  if (!window.runConsultaAltiplanoAuth) {
+  if (!window.runConsultaAltiplanoAction) {
     toast("Diálogo de autenticación no disponible");
     return;
   }
@@ -819,11 +1005,16 @@ function togglePonAdminDesdeUI(accessId, operador, objectName, currentPonAdmin, 
     btn.setAttribute("aria-busy", "true");
   }
 
-  runConsultaAltiplanoAuth({
+  runConsultaAltiplanoAction({
+    operador: "INP",
+    loginDialog: {
+      title: "Ingresar a Altiplano",
+      message: "Credenciales de Altiplano (INP) para operar el puerto PON.",
+      okLabel: "Ingresar",
+    },
     dialog: {
       title: title,
-      message: msg + " Credenciales de Altiplano (INP).",
-      showSnField: false,
+      message: confirmMsg,
       danger: bajar,
       okLabel: bajar ? "Bajar PON" : "Levantar PON",
     },
@@ -851,15 +1042,27 @@ function togglePonAdminDesdeUI(accessId, operador, objectName, currentPonAdmin, 
         .toUpperCase();
       if (pre) {
         _consultaSetPonCommitted(pre, newAdmin);
+        _consultaSetOperCommitted(pre, bajar ? "DOWN" : "UP");
+        _consultaArmNvRefresh(pre);
+        _applyNvOperDetalle(pre, {
+          NV_STATUS: {
+            oper: bajar ? "DOWN" : "UP",
+            pon_admin: newAdmin,
+          },
+          TX: null,
+          RX: null,
+        });
         _renderConsultaPonBtn(pre, {
           pon_admin: newAdmin,
           pon_index: json.pon_index || null,
         });
       }
       if (section && token) {
-        window.setTimeout(() => {
-          cargarPotenciasSeccion(token, section, section);
-        }, _CONSULTA_PON_POST_REFRESH_MS);
+        const reload = () => cargarPotenciasSeccion(token, section, section);
+        window.setTimeout(reload, _CONSULTA_PON_POST_REFRESH_MS);
+        _CONSULTA_PON_POST_REFRESH_EXTRA_MS.forEach((ms) => {
+          window.setTimeout(reload, ms);
+        });
       }
     },
     onFinally: () => {
@@ -905,11 +1108,11 @@ function toggleOntAdminDesdeUI(accessId, operador, objectName, currentAdmin, btn
   const next = cur === "UNLOCKED" ? "LOCKED" : "UNLOCKED";
   const apagar = next === "LOCKED";
   const title = apagar ? "Apagar ONT (bloquear)" : "Encender ONT (desbloquear)";
-  const msg = apagar
-    ? "Se bloqueará el admin de la ONT en Altiplano (equivalente a apagar)."
-    : "Se desbloqueará el admin de la ONT en Altiplano (equivalente a encender).";
+  const confirmMsg = apagar
+    ? "¿Confirmás apagar la ONT? Se bloqueará el admin en Altiplano."
+    : "¿Confirmás encender la ONT? Se desbloqueará el admin en Altiplano.";
 
-  if (!window.runConsultaAltiplanoAuth) {
+  if (!window.runConsultaAltiplanoAction) {
     toast("Diálogo de autenticación no disponible");
     return;
   }
@@ -923,11 +1126,16 @@ function toggleOntAdminDesdeUI(accessId, operador, objectName, currentAdmin, btn
     btn.setAttribute("aria-busy", "true");
   }
 
-  runConsultaAltiplanoAuth({
+  runConsultaAltiplanoAction({
+    operador: "INP",
+    loginDialog: {
+      title: "Ingresar a Altiplano",
+      message: "Credenciales de Altiplano (INP) para operar la ONT.",
+      okLabel: "Ingresar",
+    },
     dialog: {
       title: title,
-      message: msg + " Credenciales de Altiplano (INP).",
-      showSnField: false,
+      message: confirmMsg,
       danger: apagar,
       okLabel: apagar ? "Apagar ONT" : "Encender ONT",
     },
@@ -988,7 +1196,8 @@ function toggleOntAdminDesdeUIBtn(btn) {
 function _applyAlarmasDetalle(pre, data, root) {
   const el = _potCell(pre, "alarmas");
   if (!el) return;
-  const pollPending = root && _consultaDetallePollShouldContinue(pre, root);
+  const pollPending =
+    root && _consultaDetallePollShouldContinue(pre, root, root);
   _setConsultaPotenciaLoading(el, false);
   if (!data || typeof data !== "object") {
     if (!pollPending) _setAlarmasDetalleRowVisible(pre, false);
@@ -1098,8 +1307,10 @@ function _consultaSemaforoDesdePotenciasPayload(root, valor, data, pfx) {
       const aidKey = String(r.AID);
       if (seen.has(aidKey)) return;
       seen.add(aidKey);
-      const stEl = document.getElementById(pfx + "st-" + r.AID);
-      const tr = stEl ? stEl.closest("tr") : null;
+      const rxEl = document.getElementById(pfx + "rx-" + aidKey);
+      const tr = rxEl
+        ? rxEl.closest("tr")
+        : root.querySelector('tr[data-aid="' + aidKey.replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"]');
       if (tr && _filaSaltaPotencias(tr)) return;
       const cat = _clasificarRxDbm(r.RX);
       if (cat === "rojo") rojas += 1;
@@ -1110,16 +1321,26 @@ function _consultaSemaforoDesdePotenciasPayload(root, valor, data, pfx) {
   _consultaSemaforoSetCounts(root, rojas, amarillas, verdes);
 }
 
-function cargarPotenciasSeccion(valor, root, scopeEl) {
+function cargarPotenciasSeccion(valor, root, scopeEl, opts) {
+  opts = opts && typeof opts === "object" ? opts : {};
+  const silentNvRefresh = Boolean(opts.silentNvRefresh);
+  const skipBtnLoading = Boolean(opts.skipBtnLoading) || silentNvRefresh;
   const pre = root.getAttribute("data-section-prefix") || "";
   const pfx = pre ? pre + "-" : "";
   const scope = scopeEl && scopeEl.querySelectorAll ? scopeEl : root;
   const inflightKey = pre || root.id || "";
   if (inflightKey && _consultaPotenciasInflight.has(inflightKey)) {
-    return _consultaPotenciasInflight.get(inflightKey);
+    if (!skipBtnLoading) _consultaAcquireSectionPotenciaBtnsLoading(root);
+    const existing = _consultaPotenciasInflight.get(inflightKey);
+    if (!skipBtnLoading) {
+      existing.finally(() => _consultaReleaseSectionPotenciaBtnsLoading(root));
+    }
+    return existing;
   }
 
-  _consultaDetallePollPrepUI(pre, root);
+  if (!silentNvRefresh) {
+    _consultaDetallePollPrepUI(pre, root, scope);
+  }
 
   const detSt = (root.getAttribute("data-detalle-fat-status") || "").trim().toUpperCase();
   if (detSt === "FREE" || detSt === "RESERVED") {
@@ -1164,29 +1385,45 @@ function cargarPotenciasSeccion(valor, root, scopeEl) {
     const tr = el.closest("tr");
     return !tr || !_filaSaltaPotencias(tr);
   });
-  cellsCarga.forEach((el) => {
-    const keepAlarmasRendered =
-      el.id === pfx + "alarmas" && el.querySelector(".consulta-alarmas-block");
-    if (!keepAlarmasRendered) _setConsultaPotenciaLoading(el, true);
-  });
+  if (!silentNvRefresh) {
+    cellsCarga.forEach((el) => {
+      const keepAlarmasRendered =
+        el.id === pfx + "alarmas" && el.querySelector(".consulta-alarmas-block");
+      if (keepAlarmasRendered) return;
+      if (_consultaIsNvStatusSlot(el) && _consultaNvSlotHasContent(el)) return;
+      if (_consultaPotenciaCeldaHasReading(el)) return;
+      _setConsultaPotenciaLoading(el, true);
+    });
+  }
 
-  const fetchPromise = fetch("/potencias", {
-    method: "POST",
-    headers: {"Content-Type": "application/x-www-form-urlencoded"},
-    body: "value=" + encodeURIComponent(valor),
-  })
-    .then((r) => {
+  const fetchJson = () => {
+    if (Object.prototype.hasOwnProperty.call(opts, "prefetchedData")) {
+      return Promise.resolve(opts.prefetchedData);
+    }
+    return fetch("/potencias", {
+      method: "POST",
+      headers: {"Content-Type": "application/x-www-form-urlencoded"},
+      body: "value=" + encodeURIComponent(valor),
+    }).then((r) => {
       if (!r.ok) throw new Error("HTTP " + r.status);
       return r.json();
-    })
-    .then((data) => {
+    });
+  };
+
+  if (!skipBtnLoading) {
+    _consultaAcquireSectionPotenciaBtnsLoading(root);
+  }
+
+  const fetchPromise = fetchJson().then((data) => {
       if (data && data.AID) {
         const tx = _potCell(pre, "tx");
         const rx = _potCell(pre, "rx");
         if (tx) _applyPotenciaDbmCelda(tx, data.TX, true);
         if (rx) _applyPotenciaDbmCelda(rx, data.RX, true);
         _applyAlarmasDetalle(pre, data, root);
+        _consultaArmNvRefresh(pre);
         _applyNvStatusDetalle(pre, data);
+        _consultaSyncDownPoll(root, valor, scope);
         const snEl = document.getElementById(pfx + "sn-value");
         if (snEl && data.SN) {
           const snLive = String(data.SN).trim();
@@ -1202,13 +1439,12 @@ function cargarPotenciasSeccion(valor, root, scopeEl) {
         }
         const aidDet = document.getElementById(pfx + "aid-value");
         if (aidDet) _consultaFilaApplySemaforoHighlight(aidDet.closest("tr"), data.RX);
-        cellsCarga.forEach((el) => {
-          if (el.id === pfx + "alarmas") return;
-          _setConsultaPotenciaLoading(el, false);
-        });
+        _consultaRefreshPotenciaCellsLoading(
+          cellsCarga.filter((el) => el.id !== pfx + "alarmas"),
+          root
+        );
         _consultaSemaforoDesdePotenciasPayload(root, valor, data, pfx);
         if (window.ConsultaMasivoUi) window.ConsultaMasivoUi.evalRamaAllDown(root);
-        _consultaSyncDownPoll(root, valor);
         _consultaDetallePollAlarmasTail(pre, root, data);
         return;
       }
@@ -1238,13 +1474,20 @@ function cargarPotenciasSeccion(valor, root, scopeEl) {
           _applyPotenciaDbmCelda(rx, null, true);
           _consultaFilaClearSemaforoHighlight(tr);
         });
-        cellsCarga.forEach((el) => _setConsultaPotenciaLoading(el, false));
+        _consultaRefreshPotenciaCellsLoading(
+          cellsCarga.filter((el) => el.id !== pfx + "alarmas"),
+          root
+        );
+        _consultaSyncDownPoll(root, valor, scope);
         aplicarFiltrosConsulta();
         _consultaSemaforoDesdePotenciasPayload(root, valor, data, pfx);
         if (window.ConsultaMasivoUi) window.ConsultaMasivoUi.evalRamaAllDown(root);
         return;
       }
-      cellsCarga.forEach((el) => _setConsultaPotenciaLoading(el, false));
+      _consultaRefreshPotenciaCellsLoading(
+        cellsCarga.filter((el) => el.id !== pfx + "alarmas"),
+        root
+      );
       _consultaFilaClearSemaforoEnRaiz(scope);
       if (_consultaEsPotenciasTokenPrincipal(root, valor) && root.querySelector(".consulta-semaforo-pending")) {
         _consultaSemaforoSetCounts(root, 0, 0, 0);
@@ -1273,7 +1516,10 @@ function cargarPotenciasSeccion(valor, root, scopeEl) {
       if (_consultaPotenciasInflight.get(inflightKey) === fetchPromise) {
         _consultaPotenciasInflight.delete(inflightKey);
       }
+      if (!skipBtnLoading) _consultaReleaseSectionPotenciaBtnsLoading(root);
     });
+  } else if (!skipBtnLoading) {
+    fetchPromise.finally(() => _consultaReleaseSectionPotenciaBtnsLoading(root));
   }
   return fetchPromise;
 }
@@ -1285,7 +1531,7 @@ function cambiarSNDesdeUI(accessId, operador, ontTarget, btn) {
   const currentSnEl = document.getElementById(snId);
   const current = currentSnEl ? currentSnEl.innerText.trim() : "";
 
-  if (!window.runConsultaAltiplanoAuth) {
+  if (!window.ensureConsultaAltiplanoSession || !window.runConsultaSnChange) {
     toast("Diálogo de autenticación no disponible");
     return;
   }
@@ -1293,12 +1539,12 @@ function cambiarSNDesdeUI(accessId, operador, ontTarget, btn) {
   const opLabel = String(operador || "").trim() || "Altiplano";
   let reloadScheduled = false;
 
-  runConsultaAltiplanoAuth({
+  const snChangeOpts = {
+    creds: null,
     dialog: {
       title: "Cambiar SN de la ONT",
-      message:
-        "Nuevo serial y credenciales de Altiplano (" + opLabel + ").",
-      showSnField: true,
+      message: "Ingresá el nuevo serial.",
+      currentSn: current,
       snValue: current,
       snPlaceholder: "12 caracteres (ej. SDMC5C73B3AF) o 16 hex del rótulo",
       okLabel: "Cambiar SN",
@@ -1332,17 +1578,29 @@ function cambiarSNDesdeUI(accessId, operador, ontTarget, btn) {
         if (currentSnEl && current) currentSnEl.textContent = current;
       }
     },
-  }).catch((err) => {
-    if (err && err.message === "cancelled") return;
-    if (err && err.authError) {
+  };
+
+  ensureConsultaAltiplanoSession({
+    operador: operador,
+    dialog: {
+      title: "Ingresar a Altiplano",
+      message:
+        "Credenciales de Altiplano (" +
+        opLabel +
+        ") para autorizar el cambio de SN.",
+      okLabel: "Ingresar",
+    },
+  })
+    .then((creds) => {
+      snChangeOpts.creds = creds;
+      return runConsultaSnChange(snChangeOpts);
+    })
+    .catch((err) => {
+      if (err && err.message === "cancelled") return;
       _setConsultaSnChanging(currentSnEl, btn, false);
       if (currentSnEl && current) currentSnEl.textContent = current;
-      return;
-    }
-    _setConsultaSnChanging(currentSnEl, btn, false);
-    if (currentSnEl && current) currentSnEl.textContent = current;
-    toast(err.message || "Error al cambiar SN");
-  });
+      toast(err.message || "Error al cambiar SN");
+    });
 }
 
 function cambiarSNDesdeUIBtn(btn) {
@@ -1543,7 +1801,83 @@ function copiarTodo() {
   toast("Datos copiados");
 }
 
-/** Cola de potencias (consulta masiva): una RAMA/CTO a la vez para no saturar Altiplano. */
+function _consultaPotenciaEntriesVisible() {
+  const entries = [];
+  document.querySelectorAll(".consulta-section--multi").forEach((root) => {
+    if (root.hidden || root.classList.contains("consulta-section--page-hidden")) {
+      return;
+    }
+    const token = (root.getAttribute("data-query-token") || "").trim();
+    if (!token) return;
+    if (
+      typeof window._consultaSectionPotenciasPendientes === "function" &&
+      !window._consultaSectionPotenciasPendientes(root)
+    ) {
+      return;
+    }
+    entries.push({ token: token, root: root });
+  });
+  return entries;
+}
+
+/** Carga potencias de varias secciones; 2+ tokens usan ``POST /potencias/batch``. */
+function _consultaCargarPotenciasEntries(entries) {
+  if (!entries || !entries.length) return Promise.resolve();
+
+  const afterOne = (e) => {
+    if (window.ConsultaMasivoUi && window.ConsultaMasivoUi.evalRamaAllDown) {
+      window.ConsultaMasivoUi.evalRamaAllDown(e.root);
+    }
+  };
+
+  const potOpts = { skipBtnLoading: true };
+  const releaseEntriesBtns = () => {
+    entries.forEach((e) => _consultaReleaseSectionPotenciaBtnsLoading(e.root));
+  };
+  entries.forEach((e) => {
+    _consultaAcquireSectionPotenciaBtnsLoading(e.root);
+    if (window.ConsultaMasivoUi && window.ConsultaMasivoUi.markPotenciasScheduled) {
+      window.ConsultaMasivoUi.markPotenciasScheduled(e.root);
+    }
+  });
+
+  const applyEntries = (mapFn) =>
+    Promise.all(
+      entries.map((e) => mapFn(e).then(() => afterOne(e)))
+    ).finally(releaseEntriesBtns);
+
+  if (entries.length >= 2) {
+    const tokens = entries.map((e) => e.token);
+    return fetch("/potencias/batch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ values: tokens }),
+    })
+      .then((r) => {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      })
+      .then((batch) => {
+        const items = (batch && batch.items) || {};
+        return applyEntries((e) =>
+          cargarPotenciasSeccion(e.token, e.root, e.root, {
+            ...potOpts,
+            prefetchedData: Object.prototype.hasOwnProperty.call(items, e.token)
+              ? items[e.token]
+              : [],
+          })
+        );
+      })
+      .catch((err) => {
+        releaseEntriesBtns();
+        throw err;
+      });
+  }
+
+  return applyEntries((e) => cargarPotenciasSeccion(e.token, e.root, e.root, potOpts));
+}
+
+/** Cola de potencias (consulta masiva): varias RAMAs/CTOs en paralelo (Altiplano aguanta la carga). */
 function consultaPotenciasCola(jobFns, maxConcurrent) {
   const queue = jobFns.slice();
   const workers = Math.max(1, Math.min(maxConcurrent, queue.length || 1));
@@ -1568,31 +1902,28 @@ window.addEventListener("load", () => {
   const sections = document.querySelectorAll(".consulta-section");
   const consultaMasivo = document.querySelector(".consulta-section--multi") !== null;
   const potenciaJobs = [];
-  const potenciaJobFns = [];
   sections.forEach((root) => {
     const pre = root.getAttribute("data-section-prefix") || "";
     _consultaInitNvStatusBar(pre);
     const token = root.getAttribute("data-query-token") || "";
-    if (!token) return;
-    if (consultaMasivo) {
-      potenciaJobFns.push(() => cargarPotenciasSeccion(token, root));
-    } else {
-      potenciaJobs.push(cargarPotenciasSeccion(token, root));
-    }
+    if (!token || consultaMasivo) return;
+    potenciaJobs.push(cargarPotenciasSeccion(token, root));
   });
   const afterPotencias = () => {
     if (document.querySelector("tr[data-operador][data-fat-status]")) {
       aplicarFiltrosConsulta();
     }
   };
-  if (potenciaJobs.length === 0 && potenciaJobFns.length === 0) {
+  if (potenciaJobs.length === 0 && !consultaMasivo) {
     /* Sin búsqueda o sin filas útiles: dejar Copiar deshabilitado como en la página inicial. */
   } else if (consultaMasivo && window.ConsultaMasivoUi) {
     if (btnCopiar) btnCopiar.disabled = false;
-    window.ConsultaMasivoUi.initPager();
-    const visibleFns = window.ConsultaMasivoUi.potenciaJobFnsForVisible();
-    if (visibleFns.length) {
-      consultaPotenciasCola(visibleFns, 1).then(afterPotencias).catch(afterPotencias);
+    window.ConsultaMasivoUi.initPager({ skipPotencias: true });
+    const visibleEntries = _consultaPotenciaEntriesVisible();
+    if (visibleEntries.length) {
+      _consultaCargarPotenciasEntries(visibleEntries)
+        .then(afterPotencias)
+        .catch(afterPotencias);
     } else {
       afterPotencias();
     }
@@ -1664,4 +1995,18 @@ window.addEventListener("load", () => {
     consultaInitAllCtoMaps();
   }
 });
+
+  /** Handlers usados por ``onclick`` en ``index.html`` y HTML generado en runtime. */
+  window.filtrarOperador = filtrarOperador;
+  window.consultaRecargarPotenciasDesdeBtn = consultaRecargarPotenciasDesdeBtn;
+  window.consultaRecargarPotenciasSubcto = consultaRecargarPotenciasSubcto;
+  window.copiarTodo = copiarTodo;
+  window.exportarConsultaCsv = exportarConsultaCsv;
+  window.togglePonAdminDesdeUIBtn = togglePonAdminDesdeUIBtn;
+  window.toggleOntAdminDesdeUIBtn = toggleOntAdminDesdeUIBtn;
+  window.cambiarSNDesdeUIBtn = cambiarSNDesdeUIBtn;
+  window.cargarPotenciasSeccion = cargarPotenciasSeccion;
+  window.consultaPotenciasCola = consultaPotenciasCola;
+  window._consultaCargarPotenciasEntries = _consultaCargarPotenciasEntries;
+  window._consultaSectionPotenciasPendientes = _consultaSectionPotenciasPendientes;
 })();

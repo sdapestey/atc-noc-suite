@@ -10,7 +10,7 @@ from psycopg2.errors import UndefinedColumn, UndefinedTable
 from config import get_dashboard_olt_cache_seconds
 from db import db_cursor
 
-from .dashboard_cache import get_cached_olt
+from .dashboard_cache import get_cached_olt, get_cached_olt_lt
 from .domain import (
     OLT_PRESENCIA_FORZADA,
     SITIO_PRINCIPAL_DEFAULT,
@@ -175,7 +175,15 @@ def estructura_dashboard_lt(lt):
             "RESUMEN_LT": {"PON_COUNT": 0, "RAMAS": 0, "CTO_COUNT": 0, "ONT_COUNT": 0},
             "PONES": {},
         }
+    lt_norm = str(lt).strip()
+    return get_cached_olt_lt(
+        get_dashboard_olt_cache_seconds(),
+        lt_norm,
+        lambda: _estructura_dashboard_lt_uncached(lt_norm),
+    )
 
+
+def _estructura_dashboard_lt_uncached(lt):
     lt = str(lt).strip()
 
     with db_cursor() as cur:

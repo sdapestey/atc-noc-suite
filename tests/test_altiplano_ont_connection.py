@@ -284,7 +284,7 @@ def test_match_entry_includes_network_and_alignment_labels():
     out = ap._match_entry_to_result_dict(entry)
     assert out["network_state"] == "Active"
     assert out["alignment_state"] == "Aligned"
-    assert out["rn_edit_allowed"] is False
+    assert out["rn_edit_allowed"] is True
     assert out["access_id"] == "1052337586"
     assert out["target"] == "BA_OLTA_X-1-1-1#1001#gpon"
     assert out["location_slice_pon"] == "BA_OLTA_X-1-1-1#1001#gpon"

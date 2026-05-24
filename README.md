@@ -61,6 +61,7 @@ Altiplano (solo si usás acciones/potencias relacionadas):
 
 - `ALTIPLANO_USER`, `ALTIPLANO_PASSWORD`
 - credenciales por operador (`ALTIPLANO_TASA_USER`, `ALTIPLANO_TASA_PASSWORD`, etc.)
+- `CONSULTA_ALTIPLANO_UI_CACHE_SECONDS` — cuánto tiempo el navegador recuerda el login Altiplano tras validar en consulta (bajar PON, cambiar SN; default 1800)
 
 ## 3) Correr tests
 
@@ -83,7 +84,10 @@ Pantallas:
 APIs / acciones:
 
 - `POST /potencias`
-- `POST /sn/cambiar`
+- `POST /consulta/altiplano/validate` (solo valida credenciales NBI)
+- `POST /sn/cambiar` (requiere `altiplano_user` / `altiplano_password`; validación contra NBI)
+- `POST /pon/admin-status` (idem; bajar/levantar partición PON)
+- `POST /ont/admin-status` (idem; bloquear/desbloquear ONT)
 - `GET /export/csv`
 - `POST /dashboard/rama/consultar`
 - `POST /dashboard/olt/consultar`

@@ -4,6 +4,9 @@ def test_dashboard_altiplano_get_login_page_sin_sesion(client):
     html = r.get_data(as_text=True)
     assert 'id="orquestador-login-form"' in html
     assert "Acceso Orquestador" in html
+    assert "orquestador-panel-head--solo-credit" in html
+    assert "orquestador-credit" in html
+    assert "Desarrollo e implementación por Lucas Gimenez" in html
 
 
 def test_dashboard_altiplano_get_panel_cuando_hay_sesion(client):
@@ -23,13 +26,17 @@ def test_dashboard_altiplano_get_panel_cuando_hay_sesion(client):
     assert 'id="alt-inp-tab-borrado"' in html
     assert 'id="alt-inp-tab-consulta"' in html
     assert 'id="btn-consulta-run"' in html
-    assert 'id="consulta_device_name"' in html
+    assert 'id="consulta_query"' in html
+    assert "consultaClassifyQuery" in html
     assert "Location Name#Slice Owner Name#PON Type" in html
     assert "Required Network State" in html
     assert "Alignment State" in html
     assert "data-consulta-act=" in html
     assert '"sync"' in html and "consultaRowActionsCell" in html
-    assert 'consultaActButton("rn"' not in html
+    assert 'id="consulta-rn-dialog"' in html
+    assert "consultaRowRnEditAllowed" in html
+    assert "consultaRnTargetOptions" in html
+    assert 'act === "rn"' in html
     assert "consultaRunActivateAndSync" in html
     assert "consultaRunFixItChain" in html
     assert "consultaShouldShowMultiSelect" in html
@@ -821,6 +828,30 @@ def test_dashboard_altiplano_consultar_intent_target_head_sin_ba_olta_400(client
     )
     assert r.status_code == 400
     assert r.get_json()["ok"] is False
+
+
+def test_dashboard_altiplano_consultar_intent_campo_query_unico_200(client, monkeypatch):
+    import web.routes as routes
+
+    captured = {}
+
+    def fake_buscar(token, **kwargs):
+        captured.update(kwargs)
+        return {"ok": True, "message": "ok", "matches": []}
+
+    monkeypatch.setattr(routes, "buscar_intents_ont_connection_inp", fake_buscar)
+
+    with client.session_transaction() as sess:
+        sess["orquestador_ok"] = True
+        sess["orquestador_inp_token"] = "tok-query"
+
+    r = client.post(
+        "/dashboard/altiplano/consultar-intent",
+        json={"query": "1051999888"},
+    )
+    assert r.status_code == 200
+    assert captured.get("access_id") == "1051999888"
+    assert captured.get("device_prefix") is None
 
 
 def test_dashboard_altiplano_consultar_intent_by_id_prefijo_ba_olta_remapea_a_device(

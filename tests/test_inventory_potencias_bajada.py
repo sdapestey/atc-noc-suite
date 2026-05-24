@@ -89,6 +89,9 @@ def test_access_id_potencias_fallback_bajada_si_object_name_null_en_inventario(m
             "health_ts": None,
             "oper": "UP",
             "admin": "UNLOCKED",
+            "pon_admin": None,
+            "pon_index": "1",
+            "channel_partition": "BA_OLTA_SF01_04-7-1_CPART_GPON",
             "alarms_active": 0,
         },
     }
@@ -158,6 +161,9 @@ def test_access_id_potencias_fallback_bajada_inventario(monkeypatch):
             "health_ts": None,
             "oper": "UP",
             "admin": "UNLOCKED",
+            "pon_admin": None,
+            "pon_index": "1",
+            "channel_partition": "BA_OLTA_SF01_04-7-1_CPART_GPON",
             "alarms_active": 0,
         },
     }

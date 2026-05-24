@@ -187,20 +187,30 @@ def test_index_masivo_multi_rama_shows_cto_ont_totals(client, monkeypatch):
     )
     assert r.status_code == 200
     html = r.get_data(as_text=True)
-    assert 'class="consulta-masivo-totals"' in html
+    assert 'id="consulta-masivo-rama-summary"' in html
+    assert "Ramas consultadas:" in html
+    assert 'id="consulta-masivo-ramas-total">2</span>' in html
+    assert 'id="consulta-masivo-ramas-up">0</span>' in html
+    assert 'id="consulta-masivo-ramas-down">0</span>' in html
+    assert 'class="consulta-masivo-totals dashboard-tree-selection"' in html
     assert 'olt-metric-pill--cto' in html
     assert 'olt-metric-pill--ont' in html
     assert ">3</span> <span class=\"dashboard-metric-pill__l olt-metric-pill__l\">CTO</span>" in html
     assert ">3</span> <span class=\"dashboard-metric-pill__l olt-metric-pill__l\">ONT</span>" in html
-    assert 'consulta-masivo-totals__op' in html
-    assert 'consulta-masivo-totals__op-l">TASA</span>' in html
-    assert 'consulta-masivo-totals__op-n">2</span>' in html
-    assert 'consulta-masivo-totals__op-l">ATC</span>' in html
-    assert 'consulta-masivo-totals__op-n">1</span>' in html
-    assert 'consulta-masivo-totals__op-l">None</span>' not in html
-    assert 'consulta-masivo-totals__op-l">0</span>' not in html
-    assert 'consulta-masivo-totals__op-l">-</span>' not in html
-    assert "consulta-masivo-pager" in html
+    assert 'olt-metric-pill--op-tasa' in html
+    assert 'olt-metric-pill--op-atc' in html
+    assert 'olt-metric-pill__l">TASA</span>' in html
+    assert 'olt-metric-pill__n">2</span>' in html
+    assert 'olt-metric-pill__l">ATC</span>' in html
+    assert 'olt-metric-pill__n">1</span>' in html
+    assert 'olt-selection-operadores-label">Operador:</span>' not in html
+    assert 'consulta-masivo-totals__op-n' not in html
+    assert 'id="consulta-masivo-pager"' in html
+    assert (
+        'id="consulta-masivo-pager" aria-label="Paginación de resultados" hidden'
+        in html
+    )
+    assert 'value="10" selected' in html
     assert "consulta-masivo-pager__size-row" in html
     assert '<details class="consulta-panel">' in html
     assert '<details class="consulta-panel" open>' not in html
@@ -272,7 +282,9 @@ def test_index_get_modo_masivo_empty_shows_masivo_tab(client):
 
 def test_index_mode_tab_switch_clears_via_navigate(client):
     """Al cambiar Individual ↔ Masivo se recarga la consulta vacía (misma lógica que Limpiar)."""
-    r = client.get("/")
-    html = r.get_data(as_text=True)
-    assert "consultaNavigateClear" in html
-    assert "modoEl.value === m" in html
+    from pathlib import Path
+
+    js = Path("static/js/consulta-index.js").read_text(encoding="utf-8")
+    assert "function consultaNavigateClear(m)" in js
+    assert "consultaNavigateClear(m)" in js
+    assert "modoEl.value === m" in js

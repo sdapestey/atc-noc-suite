@@ -5,6 +5,15 @@
 <span class="olt-txrx-loading-wrap" title="Cargando potencias…"><span class="olt-txrx-cell-spin" aria-hidden="true"></span></span>
 {%- endset %}
 
+{% set consulta_rx_btn_consultando -%}
+<span class="pot-btn-loading-inner"><span class="pot-txrx-spin" aria-hidden="true"></span><span class="pot-txrx-label">Consultando</span></span>
+{%- endset %}
+
+{# Botón Consultar RX: en masivo con potencias pendientes, ya en «Consultando». #}
+{% macro consulta_rx_btn(consultando, onclick_attr, extra='') -%}
+<button type="button" class="btn{% if consultando %} pot-btn-loading{% endif %}" data-consulta-btn-label="Consultar RX"{% if extra %} {{ extra|safe }}{% else %} title="Recargar TX/RX vía Altiplano"{% endif %}{% if consultando %} disabled aria-busy="true"{% endif %} {{ onclick_attr|safe }}>{% if consultando %}{{ consulta_rx_btn_consultando }}{% else %}Consultar RX{% endif %}</button>
+{%- endmacro %}
+
 {# Celda TX/RX Altiplano (CTO / RAMA); sin potencia → DOWN vía JS #}
 {% macro index_potencias_cells(sec, aid, st) -%}
             {% if st == 'FREE' or st == 'RESERVED' %}
@@ -96,7 +105,7 @@
     {% if rama_ctx %}
     <a
       class="btn btn-ghost"
-      href="/dashboard/potencias-historico?ratc={{ rama_ctx|urlencode }}&days=30"
+      href="/dashboard/potencias-historico?ratc={{ rama_ctx|urlencode }}&days=1"
       title="Histórico de potencia para esta rama"
     >Ver historico</a>
     {% endif %}
@@ -111,14 +120,16 @@
 {% include 'partials/head_leaflet.html' %}
 <script src="{{ url_for('static', filename='js/consulta-index-map.js') }}"></script>
 <script src="{{ url_for('static', filename='js/noc-tools.js') }}"></script>
-<script src="{{ url_for('static', filename='js/consulta-altiplano-auth.js') }}?v=pon2"></script>
+<script src="{{ url_for('static', filename='js/consulta-altiplano-auth.js') }}?v=pon8"></script>
 <script>
 window.__CONSULTA_INDEX_CFG__ = {
   clearUrlInd: {{ url_for("index") | tojson }},
   clearUrlMas: {{ url_for("index", modo="masivo") | tojson }},
+  altiplanoAuthCacheSeconds: {{ consulta_altiplano_ui_cache_seconds | tojson }},
+  potenciasParallelMax: {{ consulta_potencias_parallel_max | tojson }},
 };
 </script>
-<script defer src="{{ url_for('static', filename='js/consulta-index.js') }}?v=1"></script>
+<script defer src="{{ url_for('static', filename='js/consulta-index.js') }}?v=pon19"></script>
 </head>
 
 <body class="theme-devops page-consulta-index">
@@ -174,7 +185,7 @@ window.__CONSULTA_INDEX_CFG__ = {
             </div>
           </div>
 
-          <div class="consulta-search-actions{% if consulta_masivo_totals %} consulta-search-actions--with-totals{% endif %}">
+          <div class="consulta-search-actions{% if consulta_masivo_totals or consulta_row_counts %} consulta-search-actions--with-totals{% endif %}">
             <div class="consulta-search-actions__buttons">
               <div class="consulta-search-actions__primary">
                 <button class="btn btn-primary consulta-btn-buscar" type="submit">Buscar</button>
@@ -187,17 +198,40 @@ window.__CONSULTA_INDEX_CFG__ = {
                 {% endif %}
               </div>
             </div>
+            {% if consulta_row_counts %}
+            {% set ns_rama_summary = namespace(total=0) %}
+            {% for c in consultas %}
+              {% if c.es_rama %}{% set ns_rama_summary.total = ns_rama_summary.total + 1 %}{% endif %}
+            {% endfor %}
+            {% if ns_rama_summary.total > 0 %}
+            <div class="consulta-masivo-rama-summary" id="consulta-masivo-rama-summary" aria-live="polite" aria-label="Resumen de ramas consultadas">
+              <p class="consulta-masivo-rama-summary__line">
+                <span class="consulta-masivo-rama-summary__label">Ramas consultadas:</span>
+                <span class="consulta-masivo-rama-summary__val" id="consulta-masivo-ramas-total">{{ ns_rama_summary.total }}</span>
+              </p>
+              <p class="consulta-masivo-rama-summary__line consulta-masivo-rama-summary__line--up">
+                <span class="consulta-masivo-rama-summary__label">Ramas UP:</span>
+                <span class="consulta-masivo-rama-summary__val" id="consulta-masivo-ramas-up">0</span>
+              </p>
+              <p class="consulta-masivo-rama-summary__line consulta-masivo-rama-summary__line--down">
+                <span class="consulta-masivo-rama-summary__label">Ramas DOWN:</span>
+                <span class="consulta-masivo-rama-summary__val" id="consulta-masivo-ramas-down">0</span>
+              </p>
+            </div>
+            {% endif %}
+            {% endif %}
             {% if consulta_masivo_totals %}
-            <div class="consulta-masivo-totals" aria-label="Totales de la búsqueda masiva">
-              <div class="consulta-masivo-totals__main">
+            <div class="consulta-masivo-totals dashboard-tree-selection" aria-label="Totales de la búsqueda masiva">
+              <div class="consulta-masivo-totals__main olt-selection-summary-main">
                 <span class="dashboard-metric-pill olt-metric-pill olt-metric-pill--cto{% if not consulta_masivo_totals.cto %} olt-metric-pill--empty{% endif %}" title="CTO en todas las secciones de esta búsqueda"><span class="dashboard-metric-pill__n olt-metric-pill__n">{{ consulta_masivo_totals.cto }}</span> <span class="dashboard-metric-pill__l olt-metric-pill__l">CTO</span></span>
                 <span class="olt-summary-sep" aria-hidden="true">·</span>
                 <span class="dashboard-metric-pill olt-metric-pill olt-metric-pill--ont{% if not consulta_masivo_totals.ont %} olt-metric-pill--empty{% endif %}" title="ONT IN SERVICE en todas las secciones de esta búsqueda"><span class="dashboard-metric-pill__n olt-metric-pill__n">{{ consulta_masivo_totals.ont }}</span> <span class="dashboard-metric-pill__l olt-metric-pill__l">ONT</span></span>
               </div>
               {% if consulta_masivo_totals.ont_por_operador %}
-              <div class="consulta-masivo-totals__ops">
+              <div class="consulta-masivo-totals__ops olt-selection-summary-operadores" aria-label="ONT IN SERVICE por operador">
                 {% for op, n in consulta_masivo_totals.ont_por_operador %}
-                <span class="consulta-masivo-totals__op" title="ONT IN SERVICE — operador {{ op }}"><span class="consulta-masivo-totals__op-n">{{ n }}</span> <span class="consulta-masivo-totals__op-l">{{ op }}</span></span>
+                {% if not loop.first %}<span class="olt-summary-sep" aria-hidden="true">·</span>{% endif %}
+                <span class="dashboard-metric-pill olt-metric-pill olt-metric-pill--operador olt-metric-pill--op-{{ operador_metric_pill_slug(op) }}" title="ONT IN SERVICE · operador {{ op }}"><span class="dashboard-metric-pill__n olt-metric-pill__n">{{ n }}</span> <span class="dashboard-metric-pill__l olt-metric-pill__l">{{ op }}</span></span>
                 {% endfor %}
               </div>
               {% endif %}
@@ -246,16 +280,21 @@ window.__CONSULTA_INDEX_CFG__ = {
     {% if consultas and consulta_row_counts %}
     <div class="consulta-results-head">
     <nav class="consulta-quicknav" aria-label="Saltar a un resultado">
-      <span class="consulta-quicknav__label">Resultados</span>
+      <div class="consulta-quicknav__head">
+        <span class="consulta-quicknav__label">Resultados</span>
+        <span class="consulta-quicknav__meta">{{ consultas|length }} {% if consultas|length == 1 %}rama{% else %}ramas{% endif %}</span>
+      </div>
+      <div class="consulta-quicknav__grid">
       {% for c in consultas %}
       {% set secn = 's' ~ loop.index0 %}
-      <a class="consulta-quicknav__a" href="#consulta-{{ secn }}" title="{{ c.token }}">
-        <span class="consulta-quicknav__ix">#{{ loop.index }}</span>
+      <a class="consulta-quicknav__a" href="#consulta-{{ secn }}" title="Ir a {{ c.token }}">
+        <span class="consulta-quicknav__ix" aria-hidden="true">#{{ loop.index }}</span>
         <span class="consulta-quicknav__token mono">{{ c.token }}</span>
       </a>
       {% endfor %}
+      </div>
     </nav>
-    <div class="consulta-masivo-pager" id="consulta-masivo-pager" aria-label="Paginación de resultados">
+    <div class="consulta-masivo-pager" id="consulta-masivo-pager" aria-label="Paginación de resultados"{% if consultas|length <= 10 %} hidden{% endif %}>
       <div class="consulta-masivo-pager__nav">
         <button type="button" class="btn btn-ghost btn-sm" id="consulta-masivo-page-prev" disabled>Anterior</button>
         <span class="consulta-masivo-pager__info mono" id="consulta-masivo-page-info">Página 1</span>
@@ -264,8 +303,8 @@ window.__CONSULTA_INDEX_CFG__ = {
       <div class="consulta-masivo-pager__size-row">
         <span class="consulta-masivo-pager__label muted">Mostrar</span>
         <select id="consulta-masivo-page-size" class="consulta-masivo-pager__size" aria-label="RAMAs por página">
-          <option value="10">10</option>
-          <option value="20" selected>20</option>
+          <option value="10" selected>10</option>
+          <option value="20">20</option>
         </select>
         <span class="consulta-masivo-pager__label muted">por página</span>
       </div>
@@ -287,7 +326,7 @@ window.__CONSULTA_INDEX_CFG__ = {
     {% if consultas %}
     {% for c in consultas %}
     {% set sec = 's' ~ loop.index0 %}
-    <section id="consulta-{{ sec }}" class="consulta-section{% if consulta_row_counts %} consulta-section--multi{% endif %}" data-section-prefix="{{ sec }}" data-query-token="{{ c.token }}"{% if consulta_row_counts %} data-masivo-index="{{ loop.index0 }}"{% endif %}{% if c.resultado %} data-detalle-fat-status="{{ c.resultado.Status }}" data-nv-access-id="{{ c.resultado.AID }}" data-nv-operador="{{ c.resultado.OPERADOR }}" data-nv-ont="{{ c.resultado.ONT }}"{% endif %}>
+    <section id="consulta-{{ sec }}" class="consulta-section{% if consulta_row_counts %} consulta-section--multi{% endif %}" data-section-prefix="{{ sec }}" data-query-token="{{ c.token }}"{% if consulta_row_counts %} data-masivo-index="{{ loop.index0 }}"{% endif %}{% if c.es_rama %} data-es-rama="1"{% endif %}{% if c.resultado %} data-detalle-fat-status="{{ c.resultado.Status }}" data-nv-access-id="{{ c.resultado.AID }}" data-nv-operador="{{ c.resultado.OPERADOR }}" data-nv-ont="{{ c.resultado.ONT }}"{% endif %}>
       {% if consulta_row_counts %}
       {% set tu = (c.token or '')|upper %}
       {% set ns_cnt = namespace(cto=0, ont=0) %}
@@ -341,7 +380,7 @@ window.__CONSULTA_INDEX_CFG__ = {
         <span class="consulta-panel__summary-tail">
           <span class="consulta-panel__hint" aria-hidden="true">Clic para expandir o plegar</span>
           <span class="rama-row-actions consulta-panel__summary-actions" onclick="event.stopPropagation();">
-            <button type="button" class="btn" title="Recargar TX/RX vía Altiplano" onclick="event.stopPropagation(); consultaRecargarPotenciasDesdeBtn(this);">Consultar RX</button>
+            {{ consulta_rx_btn(c.semaforo_deferred and consulta_row_counts, 'onclick="event.stopPropagation(); consultaRecargarPotenciasDesdeBtn(this);"') }}
             {% if not consulta_masivo_es_aid %}
             {% if c.ruta.rama %}
             {% if consulta_row_counts %}
@@ -349,7 +388,7 @@ window.__CONSULTA_INDEX_CFG__ = {
             {% endif %}
             <a
               class="btn btn-ghost"
-              href="/dashboard/potencias-historico?ratc={{ c.ruta.rama|urlencode }}&days=30"
+              href="/dashboard/potencias-historico?ratc={{ c.ruta.rama|urlencode }}&days=1"
               title="Histórico de potencia para esta rama"
               onclick="event.stopPropagation();"
             >Ver historico</a>
@@ -634,7 +673,7 @@ window.__CONSULTA_INDEX_CFG__ = {
             {% if n_ont_subcto > 0 %}<span class="badge hide-sm" title="ONT IN SERVICE">ONT {{ n_ont_subcto }}</span>{% endif %}
             <span class="consulta-cto-panel__hint muted hide-sm">Expandir CTO</span>
             <span class="rama-row-actions consulta-cto-head-row__actions" onclick="event.stopPropagation();">
-              <button type="button" class="btn" data-cto="{{ cto }}" title="Recargar TX/RX de esta CTO" onclick="consultaRecargarPotenciasSubcto(this);">Consultar RX</button>
+              {{ consulta_rx_btn(c.semaforo_deferred and consulta_row_counts, 'onclick="consultaRecargarPotenciasSubcto(this);"', 'data-cto="' ~ cto ~ '" title="Recargar TX/RX de esta CTO"') }}
               <button type="button" class="btn btn-ghost" data-consulta-cto-mapa-details-id="consulta-{{ sec }}-rama-cto-map-{{ loop.index0 }}" title="Mostrar mapa de la CTO" onclick="consultaAbrirMapaCto(this);">Ver mapa</button>
             </span>
           </summary>
@@ -777,7 +816,7 @@ window.__CONSULTA_INDEX_CFG__ = {
           >
         </div>
       </div>
-      <div id="consulta-altiplano-auth-sn-wrap" class="consulta-altiplano-auth-field consulta-altiplano-auth-field--sn" hidden>
+      <div id="consulta-altiplano-auth-sn-wrap" class="consulta-altiplano-auth-sn-wrap consulta-altiplano-auth-field consulta-altiplano-auth-field--sn" hidden>
         <label class="consulta-altiplano-auth-label" for="consulta-altiplano-auth-sn">Nuevo SN</label>
         <input
           id="consulta-altiplano-auth-sn"
@@ -796,6 +835,40 @@ window.__CONSULTA_INDEX_CFG__ = {
     <div class="altiplano-confirm-dialog-actions consulta-altiplano-auth-dialog__actions">
       <button type="button" id="consulta-altiplano-auth-cancel" class="btn btn-ghost altiplano-confirm-dialog-btn-cancel">Cancelar</button>
       <button type="button" id="consulta-altiplano-auth-ok" class="btn btn-primary altiplano-confirm-dialog-btn-ok">Confirmar</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog
+  id="consulta-sn-change-dialog"
+  class="altiplano-confirm-dialog consulta-sn-change-dialog"
+  aria-labelledby="consulta-sn-change-title"
+>
+  <div class="altiplano-confirm-dialog-inner consulta-sn-change-dialog__inner">
+    <header class="consulta-sn-change-dialog__head">
+      <h2 id="consulta-sn-change-title" class="altiplano-confirm-dialog-title">Cambiar SN</h2>
+      <p id="consulta-sn-change-message" class="altiplano-confirm-dialog-message consulta-sn-change-dialog__lead" hidden></p>
+    </header>
+    <p class="consulta-sn-change-current-row muted">
+      SN actual: <strong id="consulta-sn-change-current" class="mono"></strong>
+    </p>
+    <div class="consulta-altiplano-auth-field consulta-sn-change-dialog__field">
+      <label class="consulta-altiplano-auth-label" for="consulta-sn-change-input">Nuevo SN</label>
+      <input
+        id="consulta-sn-change-input"
+        class="consulta-altiplano-auth-input mono"
+        name="new_sn"
+        type="text"
+        autocapitalize="characters"
+        spellcheck="false"
+        placeholder="12 caracteres (ej. SDMC5C73B3AF) o 16 hex del rótulo"
+        required
+      >
+    </div>
+    <p id="consulta-sn-change-error" class="consulta-altiplano-auth-error" role="alert" hidden></p>
+    <div class="altiplano-confirm-dialog-actions consulta-sn-change-dialog__actions">
+      <button type="button" id="consulta-sn-change-cancel" class="btn btn-ghost altiplano-confirm-dialog-btn-cancel">Cancelar</button>
+      <button type="button" id="consulta-sn-change-ok" class="btn btn-primary altiplano-confirm-dialog-btn-ok">Cambiar SN</button>
     </div>
   </div>
 </dialog>

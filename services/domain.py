@@ -17,7 +17,55 @@ OPERADORES = {
     2806: "ATC",
 }
 
-# Operadores mostrados en Consulta (chips, totales masivos, export filtrado).
+# Operadores del dashboard Calidad Inventario (tarjetas, conciliación, estadísticas).
+CALIDAD_OPERATORS: tuple[dict[str, str | tuple[str, ...]], ...] = (
+    {"id": "1001", "label": "TASA", "vno": "1001"},
+    {"id": "3001", "label": "DTV", "vno": "3001"},
+    {"id": "3950", "label": "iPlan", "vno": "3950"},
+    {"id": "4000", "label": "Metrotel", "vno": "4000", "member_ids": ("4000", "4010")},
+    {"id": "2800", "label": "ATC", "vno": "2800", "member_ids": ("2800", "2805", "2806")},
+    {"id": "962", "label": "SION", "vno": "962", "member_ids": ("962", "963")},
+)
+
+_CALIDAD_RAW_TO_CANONICAL: dict[str, str] = {}
+for _calidad_op in CALIDAD_OPERATORS:
+    _canon = str(_calidad_op["id"])
+    _members = _calidad_op.get("member_ids") or (_canon,)
+    for _mid in _members:
+        _CALIDAD_RAW_TO_CANONICAL[str(_mid)] = _canon
+
+
+def calidad_operator_member_ids(meta: dict) -> tuple[str, ...]:
+    """IDs en inventario/Altiplano que agrupan bajo un operador lógico del dashboard."""
+    extra = meta.get("member_ids")
+    if extra:
+        return tuple(str(x) for x in extra)
+    return (str(meta["id"]),)
+
+
+def all_calidad_operator_member_ids() -> list[str]:
+    seen: list[str] = []
+    for op in CALIDAD_OPERATORS:
+        for mid in calidad_operator_member_ids(op):
+            if mid not in seen:
+                seen.append(mid)
+    return seen
+
+
+def canonical_calidad_operator_id(raw) -> str:
+    oid = str(raw or "").strip()
+    return _CALIDAD_RAW_TO_CANONICAL.get(oid, "")
+
+
+def calidad_operator_label(op_id: str) -> str:
+    if not op_id:
+        return "Todos"
+    for op in CALIDAD_OPERATORS:
+        if op["id"] == op_id:
+            return op["label"]
+    return op_id
+
+
 OPERADORES_CONSULTA_ORDEN = ("TASA", "DIRECTV", "METROTEL", "IPLAN", "ATC", "SION")
 
 _OPERADOR_CONSULTA_ALIASES: dict[str, str] = {

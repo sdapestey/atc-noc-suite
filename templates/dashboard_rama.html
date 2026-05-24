@@ -6,8 +6,8 @@
 {% include 'partials/noc_head.html' %}
 {% set leaflet_rama_map_css = true %}
 {% include 'partials/head_leaflet.html' %}
-<script src="{{ url_for('static', filename='js/noc-tools.js') }}"></script>
-<script src="{{ url_for('static', filename='js/dashboard-rama.js') }}"></script>
+<script defer src="{{ url_for('static', filename='js/noc-tools.js') }}"></script>
+<script defer src="{{ url_for('static', filename='js/dashboard-rama.js') }}"></script>
 </head>
 
 <body class="theme-devops page-tree-dashboard page-rama">
@@ -37,7 +37,7 @@
       <div class="toolbar-actions" role="toolbar" aria-label="Exportar y vista">
         <button class="btn" type="button" onclick="copiarCtosSeleccionadas()" title="TSV solo CTO marcadas">Copiar CTO seleccionadas</button>
         <button class="btn" type="button" onclick="exportarCtosSeleccionadasCsv()" title="CSV cliente, UTF-8">Exportar CTO seleccionadas CSV</button>
-        <button class="btn btn-ghost" type="button" onclick="colapsarTodoYLimpiarRama()">Colapsar todo</button>
+        <button class="btn btn-ghost" type="button" onclick="colapsarTodoYLimpiarRama()" title="Colapsar sitios, limpiar búsqueda y desmarcar CTO">Colapsar todo</button>
       </div>
     </div>
     <div class="controls-hint dashboard-tree-hint dashboard-tree-hint--metrics">
@@ -89,7 +89,7 @@
       >Ver mapa</button>
       <a
         class="btn btn-ghost"
-        href="/dashboard/potencias-historico?ratc={{ r.RAMA|urlencode }}&days=30"
+        href="/dashboard/potencias-historico?ratc={{ r.RAMA|urlencode }}&days=1"
         title="Abrir histórico de potencia para esta rama"
       >Ver historico</a>
     </span>

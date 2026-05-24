@@ -108,6 +108,37 @@ def test_cambiar_sn_endpoint_validates_sn(client):
     assert "SN inválido" in payload["message"]
 
 
+def test_consulta_altiplano_validate_ok(client, monkeypatch):
+    import web.routes as routes
+
+    _mock_altiplano_login_ok(monkeypatch)
+    r = client.post(
+        "/consulta/altiplano/validate",
+        json={
+            "operador": "TASA",
+            "altiplano_user": "noc_user",
+            "altiplano_password": "secret",
+        },
+    )
+    assert r.status_code == 200
+    assert (r.get_json() or {}).get("ok") is True
+
+
+def test_consulta_altiplano_validate_rechaza_credenciales(client, monkeypatch):
+    import web.routes as routes
+
+    monkeypatch.setattr(routes, "obtener_token_entorno_nbi", lambda *_a, **_k: None)
+    r = client.post(
+        "/consulta/altiplano/validate",
+        json={
+            "operador": "TASA",
+            "altiplano_user": "bad",
+            "altiplano_password": "bad",
+        },
+    )
+    assert r.status_code == 401
+
+
 def test_cambiar_sn_endpoint_rechaza_credenciales_invalidas(client, monkeypatch):
     import web.routes as routes
 
@@ -141,5 +172,6 @@ def test_index_template_incluye_dialogo_altiplano_auth(client, monkeypatch):
     r = client.post("/", data={"value": "105"})
     html = r.get_data(as_text=True)
     assert "consulta-altiplano-auth-dialog" in html
+    assert "consulta-sn-change-dialog" in html
     assert "consulta-altiplano-auth.js" in html
-    assert "runConsultaAltiplanoAuth" in html
+    assert "altiplanoAuthCacheSeconds" in html

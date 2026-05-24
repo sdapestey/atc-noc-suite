@@ -56,27 +56,36 @@
 
         var map = shell._leafletMap;
         if (!map) {
-          var mapOpts =
-            window.NocLeafletMap && window.NocLeafletMap.baseMapOptions
-              ? window.NocLeafletMap.baseMapOptions()
-              : { attributionControl: true, zoomControl: true, scrollWheelZoom: false };
-          map = window.L.map(canvas, mapOpts).setView([lat, lon], 17);
-          if (window.NocMapTiles && window.NocMapTiles.addBasemapLayer) {
-            shell._nocMapBasemap = window.NocMapTiles.addBasemapLayer(map, window.L);
-          } else {
-            window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-              attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+          if (window.NocMapTiles && window.NocMapTiles.createLeafletMap) {
+            var created = window.NocMapTiles.createLeafletMap(canvas, { lat: lat, lon: lon, zoom: 17, marker: true });
+            if (created) {
+              shell._leafletMap = created.map;
+              shell._nocMapBasemap = created.basemap;
+            }
+          }
+          if (!shell._leafletMap) {
+            var mapOpts =
+              window.NocLeafletMap && window.NocLeafletMap.baseMapOptions
+                ? window.NocLeafletMap.baseMapOptions()
+                : { attributionControl: true, zoomControl: true, scrollWheelZoom: false };
+            map = window.L.map(canvas, mapOpts).setView([lat, lon], 17);
+            window.L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
+              attribution: "&copy; OpenStreetMap &copy; CARTO",
               maxZoom: 19,
             }).addTo(map);
+            window.L.marker([lat, lon]).addTo(map);
+            shell._leafletMap = map;
+            if (window.NocLeafletMap && window.NocLeafletMap.attachScrollActivation) {
+              window.NocLeafletMap.attachScrollActivation(map, canvas);
+            }
+            if (window.NocMapTiles && window.NocMapTiles.refreshLeafletMapLayout) {
+              window.NocMapTiles.refreshLeafletMapLayout(map);
+            }
           }
-          window.L.marker([lat, lon]).addTo(map);
-          shell._leafletMap = map;
-          if (window.NocLeafletMap && window.NocLeafletMap.attachScrollActivation) {
-            window.NocLeafletMap.attachScrollActivation(map, canvas);
-          }
-          requestAnimationFrame(function () {
-            map.invalidateSize();
-          });
+        } else if (window.NocMapTiles && window.NocMapTiles.updateMapMarker) {
+          window.NocMapTiles.updateMapMarker(map, lat, lon, 17);
+        } else if (window.NocMapTiles && window.NocMapTiles.refreshLeafletMapLayout) {
+          window.NocMapTiles.refreshLeafletMapLayout(map);
         }
         shell.dataset.consultaCtoMapReady = "done";
       })
@@ -96,9 +105,9 @@
     if (!msg || !canvas) return;
 
     if (panel.dataset.consultaRamaMapFetched === "1" && panel._ramaLeafletMap) {
-      requestAnimationFrame(function () {
-        panel._ramaLeafletMap.invalidateSize();
-      });
+      if (window.NocMapTiles && window.NocMapTiles.refreshLeafletMapLayout) {
+        window.NocMapTiles.refreshLeafletMapLayout(panel._ramaLeafletMap);
+      }
       return;
     }
 
@@ -148,23 +157,27 @@
 
         var map = panel._ramaLeafletMap;
         if (!map) {
-          var mapOptsRama =
-            window.NocLeafletMap && window.NocLeafletMap.baseMapOptions
-              ? window.NocLeafletMap.baseMapOptions()
-              : { attributionControl: true, zoomControl: true, scrollWheelZoom: false };
-          map = window.L.map(canvas, mapOptsRama);
-          if (window.NocMapTiles && window.NocMapTiles.addBasemapLayer) {
-            panel._nocMapBasemap = window.NocMapTiles.addBasemapLayer(map, window.L);
-          } else {
-            window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-              attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-              maxZoom: 19,
-            }).addTo(map);
+          if (window.NocMapTiles && window.NocMapTiles.createLeafletMap) {
+            var createdR = window.NocMapTiles.createLeafletMap(canvas, { marker: false, zoom: 11 });
+            if (createdR) {
+              map = createdR.map;
+              panel._nocMapBasemap = createdR.basemap;
+            }
+          }
+          if (!map) {
+            var mapOptsRama =
+              window.NocLeafletMap && window.NocLeafletMap.baseMapOptions
+                ? window.NocLeafletMap.baseMapOptions()
+                : { attributionControl: true, zoomControl: true, scrollWheelZoom: false };
+            map = window.L.map(canvas, mapOptsRama);
+            if (window.NocMapTiles && window.NocMapTiles.addBasemapLayer) {
+              panel._nocMapBasemap = window.NocMapTiles.addBasemapLayer(map, window.L);
+            }
+            if (window.NocLeafletMap && window.NocLeafletMap.attachScrollActivation) {
+              window.NocLeafletMap.attachScrollActivation(map, canvas);
+            }
           }
           panel._ramaLeafletMap = map;
-          if (window.NocLeafletMap && window.NocLeafletMap.attachScrollActivation) {
-            window.NocLeafletMap.attachScrollActivation(map, canvas);
-          }
         }
 
         if (panel._ramaMarkerLayer) {
@@ -191,13 +204,18 @@
         fg.addTo(map);
         panel._ramaMarkerLayer = fg;
 
+        if (window.NocMapTiles && window.NocMapTiles.refreshLeafletMapLayout) {
+          window.NocMapTiles.refreshLeafletMapLayout(map);
+        }
         requestAnimationFrame(function () {
-          map.invalidateSize();
           var bounds = fg.getBounds();
           if (markers.length === 1) {
             map.setView(bounds.getCenter(), 17);
           } else {
             map.fitBounds(bounds, { padding: [28, 28], maxZoom: 17 });
+          }
+          if (window.NocMapTiles && window.NocMapTiles.refreshLeafletMapLayout) {
+            window.NocMapTiles.refreshLeafletMapLayout(map);
           }
         });
         panel.dataset.consultaRamaMapFetched = "1";

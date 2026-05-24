@@ -6,9 +6,11 @@ from datetime import datetime
 from io import StringIO
 from statistics import median
 
+from config import get_dashboard_historico_cache_seconds
 from db import db_cursor
 from queries import QUERIES
 
+from .dashboard_cache import get_cached_historico_potencias
 from .inventory import consultar_rama_potencias_altiplano_por_ont
 
 
@@ -38,6 +40,17 @@ def _validar_days(days: int | str | None) -> int | None:
     return value if value in ALLOWED_HISTORICO_DAYS else None
 
 
+def _ont_key_from_object_name(obj) -> str:
+    """Clave ONT (último segmento) alineada con histórico Altiplano y consulta índice."""
+    s = str(obj or "").strip()
+    if not s:
+        return ""
+    if ":1-1" in s:
+        s = s.split(":1-1", 1)[-1]
+    parts = s.split("-")
+    return parts[-1].strip() if parts else ""
+
+
 def _ont_inventory_maps(rama: str) -> tuple[dict[str, str], dict[str, str]]:
     """Último segmento de `object_name` (ONT) → CTO y Access ID en la rama."""
     cto_by_ont: dict[str, str] = {}
@@ -49,16 +62,19 @@ def _ont_inventory_maps(rama: str) -> tuple[dict[str, str], dict[str, str]]:
         cur.execute(QUERIES["onts_por_rama"], (rama_s,))
         rows = cur.fetchall()
     for r in rows:
-        obj_raw = r[4]
-        if not obj_raw:
-            continue
-        ont_key = str(obj_raw).split("-")[-1].strip()
-        if not ont_key:
-            continue
-        cto_by_ont[ont_key] = str(r[2] or "").strip()
         aid = r[0]
-        if aid is not None:
-            aid_s = str(aid).strip()
+        aid_s = str(aid).strip() if aid is not None else ""
+        cto = str(r[2] or "").strip()
+        ont_keys: set[str] = set()
+        for col in (r[4], r[5]):
+            ok = _ont_key_from_object_name(col)
+            if ok:
+                ont_keys.add(ok)
+        if not ont_keys:
+            continue
+        for ont_key in ont_keys:
+            if cto and ont_key not in cto_by_ont:
+                cto_by_ont[ont_key] = cto
             if aid_s:
                 access_by_ont[ont_key] = aid_s
     return cto_by_ont, access_by_ont
@@ -86,6 +102,15 @@ def consultar_potencias_historico_rama(ratc: str, days: int = 30) -> dict:
             "error": "Parámetro days inválido. Valores permitidos: 1 (24h), 7, 15, 30",
         }
 
+    cache_key = f"{rama.upper()}|{days_validado}"
+    return get_cached_historico_potencias(
+        get_dashboard_historico_cache_seconds(),
+        cache_key,
+        lambda: _consultar_potencias_historico_rama_uncached(rama, days_validado),
+    )
+
+
+def _consultar_potencias_historico_rama_uncached(rama: str, days_validado: int) -> dict:
     pon = _resolver_pon_desde_rama(rama)
     if not pon:
         return {
@@ -118,7 +143,9 @@ def consultar_potencias_historico_rama(ratc: str, days: int = 30) -> dict:
             continue
         ts_key = ts.strftime("%Y-%m-%d %H:%M")
         objectname_str = str(objectname)
-        ont_short = objectname_str.split("-")[-1]
+        ont_short = _ont_key_from_object_name(objectname_str)
+        if not ont_short:
+            continue
         by_ont[ont_short][ts_key] = None if rx is None else float(rx)
         timestamps.add(ts_key)
         last_by_ont[ont_short] = None if rx is None else float(rx)

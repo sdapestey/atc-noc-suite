@@ -3,10 +3,13 @@
 Este módulo concentra la capa web: parsea requests, valida entradas,
 invoca servicios y devuelve templates o JSON según corresponda.
 """
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 import re
 import unicodedata
 from uuid import uuid4
+
+from config import get_consulta_potencias_batch_workers
 
 from flask import Response, current_app, g, jsonify, redirect, render_template, request, session, url_for
 from urllib.parse import quote_plus
@@ -38,9 +41,11 @@ from services import (
     cambiar_admin_status_access_id,
     consultar_access_id_potencias,
     consultar_cto_coordenadas,
+    consultar_cto_coordenadas_batch,
     consultar_cto_direccion_postal,
     consultar_cto_estructura,
     consultar_cto_potencias,
+    consultar_cto_potencias_cached,
     consultar_dashboard_rama,
     inventario_dashboard_rama,
     consultar_rama_estructura,
@@ -63,6 +68,7 @@ from services import (
     dashboard_calidad_inventario_historico,
     dashboard_calidad_inventario_resumen,
     dashboard_calidad_inventario_resumen_general,
+    dashboard_calidad_inventario_estadisticas,
     dashboard_olts,
     dashboard_rama_bundle,
     buscar_intents_ont_connection_inp,
@@ -161,6 +167,36 @@ def _inp_consulta_remap_ba_olta_from_by_id(device_name: str, by_id: str) -> tupl
     if bid and not dn and _inp_consulta_device_name_valid(bid) and _ALTIPLANO_BY_ID_ACCESS_TOKEN_RE.match(bid):
         return bid, ""
     return dn, bid
+
+
+def classify_inp_consulta_query(raw: str) -> tuple[str, str, str | None]:
+    """
+    Clasifica un único criterio de consulta INP en (device_name, by_id, error).
+
+    Target con ``#`` o prefijo ``BA_OLTA_`` → device; resto alfanumérico → Access ID.
+    """
+    s = unicodedata.normalize("NFKC", (raw or "").strip())
+    if not s:
+        return "", "", None
+    if _ALTIPLANO_INTENT_UUID_RE.match(s):
+        return (
+            "",
+            "",
+            "La consulta solo admite Access ID o device/target; "
+            "no uses el UUID del intent en este campo.",
+        )
+    if "#" in s:
+        return s, "", None
+    if _inp_consulta_device_name_valid(s):
+        return s, "", None
+    if _ALTIPLANO_BY_ID_ACCESS_TOKEN_RE.match(s):
+        return "", s, None
+    return (
+        "",
+        "",
+        "Indicá un device ``BA_OLTA_…`` (o target ``…#VNO#gpon``) o un Access ID "
+        "(dígitos o identificador alfanumérico).",
+    )
 
 
 def _normalize_inp_device_by_id_fields_from_request(data: dict) -> tuple[str, str]:
@@ -613,6 +649,11 @@ def sort_consulta_operadores_chips(operadores) -> list[str]:
     return sort_operadores_consulta(operadores)
 
 
+def operador_metric_pill_slug(operador: str) -> str:
+    """Slug CSS ``olt-metric-pill--op-*`` (misma regla que dashboard-olt.js)."""
+    return re.sub(r"[^a-z0-9]+", "-", (operador or "").strip().lower()).strip("-")
+
+
 def _consulta_operadores_union(consultas: list[dict]) -> list[str]:
     """Unión de operadores con orden estable (para un solo toolbar con varias consultas)."""
     seen: set[str] = set()
@@ -657,6 +698,15 @@ def _csv_download_response(csv_text: str, filename: str) -> Response:
         mimetype="text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+def _deprecated_estadisticas_json(payload, *, successor_path: str) -> Response:
+    """JSON deprecado: mismo cuerpo histórico, con cabeceras RFC para migrar a inventario.json."""
+    resp = jsonify(payload)
+    resp.headers["Deprecation"] = "true"
+    resp.headers["Link"] = f'<{successor_path}>; rel="successor-version"'
+    resp.headers["Warning"] = f'299 - "Deprecated API. Use {successor_path}."'
+    return resp
 
 
 def register(app):
@@ -716,8 +766,8 @@ def register(app):
             return redirect(url_for("dash_altiplano"))
         if tab in ("historico", "potencias-historico"):
             return redirect(url_for("dash_potencias_historico"))
-        if tab in ("calidad", "calidad-inventario"):
-            return redirect(url_for("dash_calidad_inventario"))
+        if tab in ("calidad", "calidad-inventario", "estadisticas"):
+            return redirect(url_for("dash_estadisticas"))
         return redirect(url_for("index"))
 
     @app.route("/", methods=["GET", "POST"])
@@ -778,8 +828,39 @@ def register(app):
             consulta_row_counts=consulta_row_counts,
             consulta_masivo_totals=consulta_masivo_totals,
             sort_consulta_operadores_chips=sort_consulta_operadores_chips,
+            operador_metric_pill_slug=operador_metric_pill_slug,
             count_consulta_in_service_ont_rows=count_consulta_in_service_ont_rows,
         )
+
+    def _potencias_payload_for_valor(valor: str):
+        valor = (valor or "").strip()
+        if not valor:
+            return None
+        valor_upper = valor.upper()
+
+        if valor.isdigit():
+            return consultar_access_id_potencias(valor)
+
+        if "FATC" in valor_upper:
+            return consultar_cto_potencias_cached(valor)
+
+        if "RATC" in valor_upper:
+            return consultar_rama_potencias(valor)
+
+        if _is_alias_identifier(valor_upper):
+            resolved = consultar_access_id_desde_alias(valor)
+            if not resolved:
+                return []
+            return consultar_access_id_potencias(str(resolved.get("AID") or valor))
+
+        if (
+            _access_lookup_token_ok(valor)
+            and "FATC" not in valor_upper
+            and "RATC" not in valor_upper
+        ):
+            return consultar_access_id_potencias(valor)
+
+        return []
 
     @app.route("/potencias", methods=["POST"])
     def potencias_async():
@@ -794,31 +875,46 @@ def register(app):
         valor = (request.form.get("value") or "").strip()
         if not valor:
             return jsonify({"error": "Parámetro value requerido"}), 400
-        valor_upper = valor.upper()
+        payload = _potencias_payload_for_valor(valor)
+        if payload is None:
+            return jsonify({"error": "Parámetro value requerido"}), 400
+        return jsonify(payload)
 
-        if valor.isdigit():
-            return jsonify(consultar_access_id_potencias(valor))
+    @app.route("/potencias/batch", methods=["POST"])
+    def potencias_batch():
+        """Varias RAMAs/CTOs/AIDs en un solo request (consulta masiva más rápida)."""
+        body = request.get_json(silent=True) or {}
+        values = body.get("values")
+        if not isinstance(values, list):
+            values = request.form.getlist("values") or []
+        tokens = [str(v).strip() for v in values if str(v).strip()]
+        if not tokens:
+            return jsonify({"error": "values requerido (lista de tokens)"}), 400
 
-        if "FATC" in valor_upper:
-            return jsonify(consultar_cto_potencias(valor))
+        max_workers = min(len(tokens), get_consulta_potencias_batch_workers())
+        items: dict[str, object] = {}
 
-        if "RATC" in valor_upper:
-            return jsonify(consultar_rama_potencias(valor))
+        def _fetch_one(tok: str):
+            return tok, _potencias_payload_for_valor(tok)
 
-        if _is_alias_identifier(valor_upper):
-            resolved = consultar_access_id_desde_alias(valor)
-            if not resolved:
-                return jsonify([])
-            return jsonify(consultar_access_id_potencias(str(resolved.get("AID") or valor)))
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            for tok, payload in executor.map(_fetch_one, tokens):
+                items[tok] = payload if payload is not None else []
 
-        if (
-            _access_lookup_token_ok(valor)
-            and "FATC" not in valor_upper
-            and "RATC" not in valor_upper
-        ):
-            return jsonify(consultar_access_id_potencias(valor))
+        return jsonify({"items": items})
 
-        return jsonify([])
+    @app.route("/consulta/altiplano/validate", methods=["POST"])
+    def consulta_altiplano_validate():
+        """Valida usuario/contraseña Altiplano sin ejecutar una operación de red."""
+        data = request.get_json(silent=True) or request.form
+        operador = (data.get("operador") or "").strip()
+        alt_user, alt_pwd = _extract_altiplano_ui_credentials(data)
+        auth_err = _validate_altiplano_ui_credentials(
+            _nbi_entorno_for_operador(operador), alt_user, alt_pwd
+        )
+        if auth_err:
+            return jsonify(auth_err[0]), auth_err[1]
+        return jsonify({"ok": True, "message": "Sesión Altiplano válida"})
 
     @app.route("/sn/cambiar", methods=["POST"])
     def cambiar_sn():
@@ -1017,7 +1113,7 @@ def register(app):
 
     @app.route("/dashboard/rama/rama-map")
     def dash_rama_rama_map():
-        """Coordenadas de todas las CTO de una RAMA (consultar_cto_coordenadas por CTO)."""
+        """Coordenadas de todas las CTO de una RAMA (batch inventario + fallback puntual)."""
         rama = (request.args.get("rama") or "").strip()
         if not rama:
             return jsonify({"ok": False, "error": "Parámetro rama requerido"}), 400
@@ -1028,11 +1124,17 @@ def register(app):
         ctos_total = len(inv)
         markers = []
         sin_coord = 0
+        try:
+            coords_map = consultar_cto_coordenadas_batch(list(inv.keys()))
+        except Exception:
+            return _log_and_internal_error("consultar_cto_coordenadas_batch failed")
         for cto in sorted(inv.keys()):
-            try:
-                coords = consultar_cto_coordenadas(cto)
-            except Exception:
-                return _log_and_internal_error("consultar_cto_coordenadas failed")
+            coords = coords_map.get(cto)
+            if not coords:
+                try:
+                    coords = _consultar_cto_coords_con_fallback(cto)
+                except Exception:
+                    return _log_and_internal_error("consultar_cto_coordenadas failed")
             if coords:
                 markers.append({"cto": cto, "lat": coords["lat"], "lon": coords["lon"]})
             else:
@@ -1072,7 +1174,7 @@ def register(app):
         cto = (request.form.get("cto") or "").strip()
         if not cto:
             return jsonify({"error": "Parámetro cto requerido"}), 400
-        return jsonify(consultar_cto_potencias(cto))
+        return jsonify(consultar_cto_potencias_cached(cto))
 
     @app.route("/dashboard/camino-optico")
     def dash_camino_optico():
@@ -1169,20 +1271,93 @@ def register(app):
     def dash_potencias_historico():
         return render_template("dashboard_potencias_historico.html")
 
-    @app.route("/dashboard/calidad-inventario")
-    def dash_calidad_inventario():
-        return render_template("dashboard_calidad_inventario.html")
+    @app.route("/dashboard/estadisticas")
+    def dash_estadisticas():
+        return render_template("dashboard_estadisticas.html")
 
-    @app.route("/dashboard/calidad-inventario/resumen.json")
-    def dash_calidad_inventario_resumen_json():
+    def _estadisticas_redirect_legacy(suffix: str, *, code: int = 308):
+        qs = request.query_string.decode("utf-8") if request.query_string else ""
+        target = f"/dashboard/estadisticas/{suffix}" + (f"?{qs}" if qs else "")
+        return redirect(target, code=code)
+
+    @app.route("/dashboard/calidad-inventario")
+    @app.route("/dashboard/calidad-inventario/")
+    def dash_calidad_inventario_legacy():
+        return redirect(url_for("dash_estadisticas"), code=308)
+
+    @app.route("/dashboard/estadisticas/inventario.json")
+    def dash_estadisticas_inventario_json():
+        days = request.args.get("days", default=90, type=int)
+        try:
+            payload = dashboard_calidad_inventario_resumen_general(days=days)
+        except Exception:
+            return _log_and_internal_error("Error interno consultando inventario (estadísticas)")
+        return jsonify(payload)
+
+    @app.route("/dashboard/calidad-inventario/resumen-general.json")
+    def dash_calidad_inventario_resumen_general_legacy():
+        return _estadisticas_redirect_legacy("inventario.json")
+
+    @app.route("/dashboard/estadisticas/inventario/tabla.json")
+    def dash_estadisticas_inventario_tabla_json():
+        tipo = (request.args.get("tipo") or "").strip()
+        q = (request.args.get("q") or "").strip()
+        limit = request.args.get("limit", default=10, type=int)
+        offset = request.args.get("offset", default=0, type=int)
+        loaders = {
+            "dtv_sin_serial": dashboard_calidad_dtv_sin_serial,
+            "aids_inconsistencia": dashboard_calidad_aids_inconsistencia_datos,
+            "fat_sin_nfc": dashboard_calidad_fat_sin_nfc_tabla,
+            "fat_nfc_duplicados": dashboard_calidad_fat_nfc_duplicados_tabla,
+        }
+        loader = loaders.get(tipo)
+        if not loader:
+            return jsonify({"error": "tipo de tabla no válido"}), 400
+        try:
+            payload = loader(q=q, limit=limit, offset=offset)
+        except Exception:
+            return _log_and_internal_error("Error interno consultando tabla de inventario")
+        return jsonify(payload)
+
+    @app.route("/dashboard/calidad-inventario/tabla.json")
+    def dash_calidad_inventario_tabla_legacy():
+        return _estadisticas_redirect_legacy("inventario/tabla.json")
+
+    @app.route("/dashboard/estadisticas/altas-bajas.json")
+    def dash_estadisticas_altas_bajas_json():
+        days = request.args.get("days", default=90, type=int)
+        granularity = (request.args.get("granularity") or "day").strip().lower()
+        operador = (request.args.get("operador") or "").strip()
+        try:
+            payload = dashboard_calidad_inventario_estadisticas(
+                days=days,
+                granularity=granularity,
+                operador=operador,
+            )
+        except Exception:
+            return _log_and_internal_error(
+                "Error interno consultando altas y bajas de inventario"
+            )
+        return jsonify(payload)
+
+    @app.route("/dashboard/calidad-inventario/estadisticas.json")
+    def dash_calidad_inventario_estadisticas_legacy():
+        return _estadisticas_redirect_legacy("altas-bajas.json")
+
+    @app.route("/dashboard/estadisticas/reglas/resumen.json")
+    def dash_estadisticas_reglas_resumen_json():
         try:
             payload = dashboard_calidad_inventario_resumen()
         except Exception:
-            return _log_and_internal_error("Error interno consultando resumen de calidad")
+            return _log_and_internal_error("Error interno consultando resumen de reglas")
         return jsonify(payload)
 
-    @app.route("/dashboard/calidad-inventario/hallazgos.json")
-    def dash_calidad_inventario_hallazgos_json():
+    @app.route("/dashboard/calidad-inventario/resumen.json")
+    def dash_calidad_inventario_resumen_legacy():
+        return _estadisticas_redirect_legacy("reglas/resumen.json")
+
+    @app.route("/dashboard/estadisticas/reglas/hallazgos.json")
+    def dash_estadisticas_reglas_hallazgos_json():
         regla = (request.args.get("regla") or "").strip()
         estado_base = (request.args.get("estado_base") or "").strip()
         operador = (request.args.get("operador") or "").strip()
@@ -1202,55 +1377,43 @@ def register(app):
             return _log_and_internal_error("Error interno consultando hallazgos de calidad")
         return jsonify(payload)
 
-    @app.route("/dashboard/calidad-inventario/conciliacion.json")
-    def dash_calidad_inventario_conciliacion_json():
+    @app.route("/dashboard/calidad-inventario/hallazgos.json")
+    def dash_calidad_inventario_hallazgos_legacy():
+        return _estadisticas_redirect_legacy("reglas/hallazgos.json")
+
+    @app.route("/dashboard/estadisticas/reglas/conciliacion.json")
+    def dash_estadisticas_reglas_conciliacion_json():
         try:
             payload = dashboard_calidad_inventario_conciliacion()
         except Exception:
             return _log_and_internal_error("Error interno consultando conciliación por operador")
-        return jsonify(payload)
+        return _deprecated_estadisticas_json(
+            payload,
+            successor_path="/dashboard/estadisticas/inventario.json",
+        )
 
-    @app.route("/dashboard/calidad-inventario/resumen-general.json")
-    def dash_calidad_inventario_resumen_general_json():
-        days = request.args.get("days", default=90, type=int)
-        try:
-            payload = dashboard_calidad_inventario_resumen_general(days=days)
-        except Exception:
-            return _log_and_internal_error("Error interno consultando resumen general de calidad")
-        return jsonify(payload)
+    @app.route("/dashboard/calidad-inventario/conciliacion.json")
+    def dash_calidad_inventario_conciliacion_legacy():
+        return _estadisticas_redirect_legacy("reglas/conciliacion.json")
 
-    @app.route("/dashboard/calidad-inventario/tabla.json")
-    def dash_calidad_inventario_tabla_json():
-        tipo = (request.args.get("tipo") or "").strip()
-        q = (request.args.get("q") or "").strip()
-        limit = request.args.get("limit", default=10, type=int)
-        offset = request.args.get("offset", default=0, type=int)
-        loaders = {
-            "dtv_sin_serial": dashboard_calidad_dtv_sin_serial,
-            "aids_inconsistencia": dashboard_calidad_aids_inconsistencia_datos,
-            "fat_sin_nfc": dashboard_calidad_fat_sin_nfc_tabla,
-            "fat_nfc_duplicados": dashboard_calidad_fat_nfc_duplicados_tabla,
-        }
-        loader = loaders.get(tipo)
-        if not loader:
-            return jsonify({"error": "tipo de tabla no válido"}), 400
-        try:
-            payload = loader(q=q, limit=limit, offset=offset)
-        except Exception:
-            return _log_and_internal_error("Error interno consultando tabla de calidad")
-        return jsonify(payload)
-
-    @app.route("/dashboard/calidad-inventario/historico.json")
-    def dash_calidad_inventario_historico_json():
+    @app.route("/dashboard/estadisticas/reglas/historico.json")
+    def dash_estadisticas_reglas_historico_json():
         days = request.args.get("days", default=90, type=int)
         try:
             payload = dashboard_calidad_inventario_historico(days=days)
         except Exception:
             return _log_and_internal_error("Error interno consultando histórico de conciliaciones")
-        return jsonify(payload)
+        return _deprecated_estadisticas_json(
+            payload,
+            successor_path=f"/dashboard/estadisticas/inventario.json?days={days}",
+        )
 
-    @app.route("/dashboard/calidad-inventario/export.csv")
-    def dash_calidad_inventario_export_csv():
+    @app.route("/dashboard/calidad-inventario/historico.json")
+    def dash_calidad_inventario_historico_legacy():
+        return _estadisticas_redirect_legacy("reglas/historico.json")
+
+    @app.route("/dashboard/estadisticas/reglas/export.csv")
+    def dash_estadisticas_reglas_export_csv():
         regla = (request.args.get("regla") or "").strip()
         estado_base = (request.args.get("estado_base") or "").strip()
         operador = (request.args.get("operador") or "").strip()
@@ -1264,7 +1427,11 @@ def register(app):
             )
         except Exception:
             return _log_and_internal_error("Error interno exportando hallazgos de calidad")
-        return _csv_download_response(csv_text, "dashboard_calidad_inventario.csv")
+        return _csv_download_response(csv_text, "estadisticas_reglas.csv")
+
+    @app.route("/dashboard/calidad-inventario/export.csv")
+    def dash_calidad_inventario_export_legacy():
+        return _estadisticas_redirect_legacy("reglas/export.csv")
 
     @app.route("/api/potencias-historico/<ratc>")
     def api_potencias_historico(ratc):
@@ -1412,6 +1579,15 @@ def register(app):
         """Busca intents ont-connection en INP por device ``BA_OLTA_…`` o Access ID (no UUID de intent)."""
         data = request.get_json(silent=True) or {}
         device_name, by_id = _normalize_inp_device_by_id_fields_from_request(data)
+        if not (device_name or "").strip() and not (by_id or "").strip():
+            q_single = unicodedata.normalize("NFKC", (data.get("query") or "").strip())
+            if q_single:
+                device_name, by_id, q_err = classify_inp_consulta_query(q_single)
+                if q_err:
+                    return (
+                        jsonify({"ok": False, "message": q_err, "matches": []}),
+                        400,
+                    )
         device_name, by_id = _inp_consulta_remap_ba_olta_from_by_id(device_name, by_id)
 
         access_filter = None

@@ -42,6 +42,7 @@ def test_dashboard_rama_includes_cto_selection_and_no_expand_all(client, monkeyp
     assert 'data-rama-detail' in html
     assert "Ver historico" in html
     assert "noc-map-tiles.js" in html
+    assert "noc-map-fullscreen.js" in html
     assert "noc-tools.js" in html
     assert "dashboard-rama.js" in html
     assert "consultarRama(" in html
