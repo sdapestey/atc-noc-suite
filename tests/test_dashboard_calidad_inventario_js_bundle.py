@@ -35,6 +35,13 @@ def test_dashboard_calidad_js_contains_core_handlers():
     assert "_renderBigRow" in est_js
     assert "by_operator" in est_js
     assert "estadisticas-range" not in est_js
+    assert 'id="estadisticas-fecha"' in html
+    assert "estadisticas-flatpickr.css" in html
+    assert "flatpickr" in html
+    assert "data-granularity=\"month\"" in html
+    assert "data-granularity=\"day\"" not in html
+    assert "estadisticas-fecha" in est_js
+    assert "sftp_backup_latest" not in est_js
 
 
 def test_dashboard_calidad_resumen_js_bundle():

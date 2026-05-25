@@ -4,7 +4,11 @@
 <meta charset="UTF-8">
 <title>Estadisticas · ATC NOC Suite</title>
 {% include 'partials/noc_head.html' %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/estadisticas-flatpickr.css') }}">
 <script defer src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/es.js"></script>
 <script defer src="{{ url_for('static', filename='js/noc-tools.js') }}"></script>
 <script defer src="{{ url_for('static', filename='js/dashboard-estadisticas-shared.js') }}"></script>
 <script defer src="{{ url_for('static', filename='js/dashboard-estadisticas-reglas.js') }}"></script>
@@ -39,12 +43,23 @@
   <section id="panel-altas-bajas" class="panel calidad-panel calidad-panel--altas-bajas" role="tabpanel" aria-labelledby="tab-altas-bajas">
     <div class="calidad-resumen-toolbar">
       <p class="calidad-resumen-lead muted">
-        Clientes ATC · altas y bajas de inventario · <code>provided_date</code> / tablas de baja · backup SFTP <code>Inventario/</code>
+        Clientes ATC · altas y bajas · réplica Postgres <code>aux.bajada_inventario</code> / tablas de baja
       </p>
       <div class="calidad-resumen-toolbar-actions">
-        <div class="calidad-range" id="estadisticas-granularity" role="group" aria-label="Vista del gráfico">
-          <button type="button" class="btn btn-ghost is-active" data-granularity="day">Día</button>
-          <button type="button" class="btn btn-ghost" data-granularity="month">Mes</button>
+        <div class="calidad-estadisticas-fecha-wrap">
+          <span class="calidad-estadisticas-fecha-label-text muted">Día</span>
+          <input
+            type="text"
+            class="calidad-estadisticas-fecha"
+            id="estadisticas-fecha"
+            name="fecha"
+            placeholder="Seleccionar fecha"
+            autocomplete="off"
+            aria-label="Seleccionar día de referencia"
+            readonly>
+        </div>
+        <div class="calidad-range" id="estadisticas-granularity" role="group" aria-label="Agregación del gráfico">
+          <button type="button" class="btn btn-ghost is-active" data-granularity="month">Mes</button>
           <button type="button" class="btn btn-ghost" data-granularity="year">Año</button>
         </div>
         <button type="button" class="btn btn-ghost" id="btn-refresh-estadisticas">Actualizar</button>

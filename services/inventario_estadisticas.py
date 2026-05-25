@@ -1,14 +1,10 @@
-"""Estadísticas de altas/bajas de inventario (backup SFTP / aux.bajada_inventario)."""
+"""Estadísticas de altas/bajas de inventario (réplica Postgres aux.*)."""
 from __future__ import annotations
 
-import re
 from collections import defaultdict
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 
-from config import (
-    get_inventario_estadisticas_cache_seconds,
-    get_inventario_sftp_config,
-)
+from config import get_inventario_estadisticas_cache_seconds
 from psycopg2.errors import UndefinedTable
 
 from db import db_cursor
@@ -22,21 +18,20 @@ from services.inventario_fechas import (
     clamp_days,
     fecha_alta,
     fecha_baja,
-    inventario_reference_date,
+    inventario_data_date_bounds,
+    inventario_reference_date_from_data,
     parse_inventario_date,
-    parse_snapshot_date,
+    parse_reference_date_param,
+    resolve_reference_date,
 )
 
 # Alias para tests existentes
 _parse_fecha_text = parse_inventario_date
-_parse_snapshot_date = parse_snapshot_date
-_reference_date = inventario_reference_date
+_reference_date = inventario_reference_date_from_data
 _norm_days = clamp_days
 
 _BAJAS_AUX_TABLAS = ("bajas_de_inventario", "bajas_inventario")
 _OPERATOR_IDS = frozenset(op["id"] for op in CALIDAD_OPERATORS)
-
-_CSV_NAME_RE = re.compile(r"^inventario(\d{8})\.csv$", re.IGNORECASE)
 
 _SQL_ALTAS_RAW = """
 SELECT btrim(access_id::text), btrim(operatorid::text), provided_date, reserved_date
@@ -131,8 +126,6 @@ def _series_from_counts(
 
 
 def _aggregate_period(points: list[dict], granularity: str) -> list[dict]:
-    if granularity == "day":
-        return points
     buckets: dict[str, dict[str, int]] = defaultdict(lambda: {"altas": 0, "bajas": 0})
     for p in points:
         d = date.fromisoformat(p["fecha"])
@@ -198,11 +191,16 @@ def _bajas_source_label(tablas_usadas: list[str]) -> str:
     return " / ".join(parts) + " (réplica operativa del backup CSV)"
 
 
-def _stats_from_postgres(
+def _load_counts_from_postgres(
     days: int,
     operador: str = "",
-    sftp_snapshot: str | None = None,
-) -> dict:
+) -> tuple[
+    dict[date, int],
+    dict[date, int],
+    dict[str, dict[date, set[str]]],
+    dict[str, dict[date, set[str]]],
+    list[str],
+]:
     today = date.today()
     start = today - timedelta(days=days - 1)
     altas_all_sets, altas_by_op_sets = _empty_op_buckets()
@@ -256,136 +254,118 @@ def _stats_from_postgres(
                     today,
                 )
 
-    altas_all = _counts_from_sets(altas_all_sets)
-    bajas_all = _counts_from_sets(bajas_all_sets)
-    altas_view = _pick_counts(operador, altas_all, altas_by_op_sets)
-    bajas_view = _pick_counts(operador, bajas_all, bajas_by_op_sets)
-    ref = _reference_date(altas_view, bajas_view, sftp_snapshot, calendar_today=today)
-    daily = _series_from_counts(altas_view, bajas_view, start, today)
+    return (
+        _counts_from_sets(altas_all_sets),
+        _counts_from_sets(bajas_all_sets),
+        altas_by_op_sets,
+        bajas_by_op_sets,
+        bajas_tablas,
+    )
 
+
+def _build_by_operator(
+    altas_by_op_sets: dict[str, dict[date, set[str]]],
+    bajas_by_op_sets: dict[str, dict[date, set[str]]],
+    ref: date,
+) -> list[dict]:
     by_operator = []
-    if not operador:
-        for op in CALIDAD_OPERATORS:
-            oid = op["id"]
-            a = _counts_from_sets(altas_by_op_sets[oid])
-            b = _counts_from_sets(bajas_by_op_sets[oid])
-            by_operator.append({
-                "id": oid,
-                "label": op["label"],
-                "cards": _cards_from_daily(a, b, ref),
-            })
+    for op in CALIDAD_OPERATORS:
+        oid = op["id"]
+        a = _counts_from_sets(altas_by_op_sets[oid])
+        b = _counts_from_sets(bajas_by_op_sets[oid])
+        by_operator.append({
+            "id": oid,
+            "label": op["label"],
+            "cards": _cards_from_daily(a, b, ref),
+        })
+    return by_operator
+
+
+def _norm_granularity(value: str | None) -> str:
+    g = (value or "month").strip().lower()
+    return g if g in ("month", "year") else "month"
+
+
+def _days_for_granularity(granularity: str) -> int:
+    """Ventana del gráfico (agregación mes o año)."""
+    if granularity == "year":
+        return 365 * 3
+    return 365
+
+
+def _compute_estadisticas(granularity: str, fecha_param: str | None = None) -> dict:
+    gran = _norm_granularity(granularity)
+    days_chart = _days_for_granularity(gran)
+    today = date.today()
+    window_days = 365
+
+    altas_all, bajas_all, altas_by_op_sets, bajas_by_op_sets, bajas_tablas = _load_counts_from_postgres(
+        window_days
+    )
+    altas_view = _pick_counts("", altas_all, altas_by_op_sets)
+    bajas_view = _pick_counts("", bajas_all, bajas_by_op_sets)
+
+    auto_ref = inventario_reference_date_from_data(altas_view, bajas_view, calendar_today=today)
+    selected = parse_reference_date_param(fecha_param)
+    ref = resolve_reference_date(
+        altas_view,
+        bajas_view,
+        selected,
+        calendar_today=today,
+        window_days=window_days,
+    )
+    min_d, max_d = inventario_data_date_bounds(
+        altas_view, bajas_view, calendar_today=today, window_days=window_days
+    )
+
+    start_chart = ref - timedelta(days=days_chart - 1)
+    altas_d: dict[date, int] = {}
+    bajas_d: dict[date, int] = {}
+    cur = start_chart
+    while cur <= ref:
+        altas_d[cur] = int(altas_view.get(cur, 0))
+        bajas_d[cur] = int(bajas_view.get(cur, 0))
+        cur += timedelta(days=1)
 
     return {
         "source": "postgres",
         "source_label": _bajas_source_label(bajas_tablas),
-        "days": days,
+        "days": window_days,
         "latest_snapshot": ref.isoformat(),
         "reference_date": ref.isoformat(),
+        "reference_date_auto": auto_ref.isoformat(),
         "reference_date_is_today": ref == today,
+        "data_date_min": min_d.isoformat(),
+        "data_date_max": max_d.isoformat(),
+        "fecha_seleccionada": selected.isoformat() if selected else "",
         "operators": _operators_meta(),
         "filter": {
-            "operador": operador,
-            "operador_label": _operator_label(operador),
+            "operador": "",
+            "operador_label": "Todos",
         },
         "cards": _cards_from_daily(altas_view, bajas_view, ref),
-        "daily": daily,
-        "by_operator": by_operator,
+        "by_operator": _build_by_operator(altas_by_op_sets, bajas_by_op_sets, ref),
+        "granularity": gran,
+        "series": _aggregate_period(
+            _series_from_counts(altas_d, bajas_d, start_chart, ref),
+            gran,
+        ),
+        "chart_days": days_chart,
     }
-
-
-def _sftp_latest_snapshot_date() -> str | None:
-    cfg = get_inventario_sftp_config()
-    if not cfg.get("enabled"):
-        return None
-    try:
-        import paramiko
-
-        from services.ppk_private_key import load_paramiko_pkey
-
-        client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        pkey = load_paramiko_pkey(cfg["key_path"])
-        client.connect(
-            cfg["host"],
-            port=cfg["port"],
-            username=cfg["user"],
-            pkey=pkey,
-            timeout=cfg.get("timeout", 30),
-            allow_agent=False,
-            look_for_keys=False,
-        )
-        sftp = client.open_sftp()
-        remote = cfg["remote_dir"].rstrip("/")
-        names = sftp.listdir(remote)
-        sftp.close()
-        client.close()
-        dates = []
-        for name in names:
-            m = _CSV_NAME_RE.match(name)
-            if m:
-                dates.append(m.group(1))
-        return max(dates) if dates else None
-    except Exception:
-        return None
-
-
-def _norm_granularity(value: str | None) -> str:
-    g = (value or "day").strip().lower()
-    return g if g in ("day", "month", "year") else "day"
-
-
-def _days_for_granularity(granularity: str) -> int:
-    """Ventana de datos según vista (solo afecta el gráfico; tarjetas usan calendario fijo)."""
-    if granularity == "month":
-        return 365
-    if granularity == "year":
-        return 365 * 3
-    return 90
-
-
-def _compute_estadisticas(granularity: str) -> dict:
-    gran = _norm_granularity(granularity)
-    days_chart = _days_for_granularity(gran)
-    today = date.today()
-    snap = _sftp_latest_snapshot_date()
-    base = _stats_from_postgres(365, operador="", sftp_snapshot=snap)
-    ref = date.fromisoformat(base["reference_date"])
-    if snap:
-        parsed = _parse_snapshot_date(snap)
-        if parsed:
-            base["sftp_backup_latest"] = parsed.isoformat()
-        else:
-            base["sftp_backup_latest"] = snap
-    daily_full = base.pop("daily")
-    start_chart = ref - timedelta(days=days_chart - 1)
-    altas_d: dict[date, int] = {}
-    bajas_d: dict[date, int] = {}
-    for p in daily_full:
-        d = date.fromisoformat(p["fecha"])
-        if d < start_chart or d > ref:
-            continue
-        altas_d[d] = int(p["altas"])
-        bajas_d[d] = int(p["bajas"])
-    base["granularity"] = gran
-    base["series"] = _aggregate_period(
-        _series_from_counts(altas_d, bajas_d, start_chart, ref),
-        gran,
-    )
-    base["chart_days"] = days_chart
-    base["filter"] = {"operador": "", "operador_label": "Todos"}
-    return base
 
 
 def dashboard_calidad_inventario_estadisticas(
     days: int | None = None,
-    granularity: str = "day",
+    granularity: str = "month",
     operador: str | None = None,
+    fecha: str | None = None,
 ) -> dict:
     """Altas/bajas agregadas para el tablero Estadísticas."""
     gran = _norm_granularity(granularity)
     cache_secs = get_inventario_estadisticas_cache_seconds()
+    fecha_key = (fecha or "").strip()[:10]
 
     def _factory():
-        return _compute_estadisticas(gran)
+        return _compute_estadisticas(gran, fecha_param=fecha_key or None)
 
-    return get_cached_inventario_estadisticas(cache_secs, gran, _factory)
+    return get_cached_inventario_estadisticas(cache_secs, gran, fecha_key, _factory)

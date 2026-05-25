@@ -25,30 +25,15 @@ def test_cards_from_daily():
     assert cards["ayer"]["altas"] == 1
 
 
-def test_reference_date_prefers_sftp_snapshot():
-    altas = {date(2026, 5, 22): 99}
-    bajas = {}
-    ref = est._reference_date(altas, bajas, "20260521", calendar_today=date(2026, 5, 22))
-    assert ref == date(2026, 5, 21)
-
-
-def test_reference_date_falls_back_to_yesterday_not_max_active():
-    """Bajas en calendario hoy no deben empujar «Hoy» si las altas van un día atrás."""
+def test_reference_date_from_data_lag():
     altas = {date(2026, 5, 21): 259}
     bajas = {date(2026, 5, 22): 157, date(2026, 5, 21): 323}
-    ref = est._reference_date(altas, bajas, None, calendar_today=date(2026, 5, 22))
+    ref = est._reference_date(altas, bajas, calendar_today=date(2026, 5, 22))
     assert ref == date(2026, 5, 21)
 
 
 def test_reference_date_yesterday_when_no_data():
-    ref = est._reference_date({}, {}, None, calendar_today=date(2026, 5, 22))
-    assert ref == date(2026, 5, 21)
-
-
-def test_reference_date_sftp_today_without_altas_uses_yesterday():
-    altas = {date(2026, 5, 21): 259}
-    bajas = {date(2026, 5, 22): 157}
-    ref = est._reference_date(altas, bajas, "20260522", calendar_today=date(2026, 5, 22))
+    ref = est._reference_date({}, {}, calendar_today=date(2026, 5, 22))
     assert ref == date(2026, 5, 21)
 
 
@@ -63,6 +48,13 @@ def test_aggregate_period_month():
         {"periodo": "2026-05", "altas": 3, "bajas": 1},
         {"periodo": "2026-06", "altas": 5, "bajas": 3},
     ]
+
+
+def test_norm_granularity_month_year_only():
+    assert est._norm_granularity("day") == "month"
+    assert est._norm_granularity("month") == "month"
+    assert est._norm_granularity("year") == "year"
+    assert est._norm_granularity(None) == "month"
 
 
 def test_stats_from_postgres_mock(monkeypatch):
@@ -103,15 +95,18 @@ def test_stats_from_postgres_mock(monkeypatch):
         yield _Cur()
 
     monkeypatch.setattr(est, "db_cursor", _fake_db)
-    monkeypatch.setattr(est, "_sftp_latest_snapshot_date", lambda: None)
-    payload = est._compute_estadisticas("day")
+    payload = est._compute_estadisticas("month")
     assert payload["source"] == "postgres"
-    assert len(payload["series"]) >= 1
+    assert payload["granularity"] == "month"
+    assert all("periodo" in p for p in payload["series"])
     assert payload["cards"]["hoy"]["altas"] >= 0
     assert len(payload.get("by_operator", [])) == 6
+    assert "data_date_min" in payload
+    assert "sftp_backup_latest" not in payload
 
-    payload_year = est._compute_estadisticas("year")
+    payload_year = est._compute_estadisticas("year", fecha_param="2026-05-21")
     assert payload_year["granularity"] == "year"
+    assert payload_year["reference_date"] == "2026-05-21"
 
 
 def test_norm_operador():
@@ -129,16 +124,18 @@ def test_norm_op_id_maps_atc_vnos():
 def test_dashboard_estadisticas_granularity_normalized(monkeypatch):
     captured = {}
 
-    def _fake_compute(granularity):
+    def _fake_compute(granularity, fecha_param=None):
         captured["granularity"] = granularity
+        captured["fecha"] = fecha_param
         return {
             "cards": {},
-            "daily": [{"fecha": "2026-01-01", "altas": 0, "bajas": 0}],
             "granularity": granularity,
+            "series": [{"periodo": "2026-01", "altas": 0, "bajas": 0}],
         }
 
     monkeypatch.setattr(est, "_compute_estadisticas", _fake_compute)
     monkeypatch.setattr(est, "get_inventario_estadisticas_cache_seconds", lambda: 0)
-    out = est.dashboard_calidad_inventario_estadisticas(granularity="invalid")
-    assert captured["granularity"] == "day"
-    assert out["granularity"] == "day"
+    out = est.dashboard_calidad_inventario_estadisticas(granularity="invalid", fecha="2026-05-15")
+    assert captured["granularity"] == "month"
+    assert captured["fecha"] == "2026-05-15"
+    assert out["granularity"] == "month"

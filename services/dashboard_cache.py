@@ -175,12 +175,14 @@ def get_cached_calidad_resumen(ttl_seconds: int, factory: Callable[[], T]) -> T:
 def get_cached_inventario_estadisticas(
     ttl_seconds: int,
     granularity: str,
+    fecha: str,
     factory: Callable[[], T],
 ) -> T:
-    """Cachea estadísticas de altas/bajas por granularidad (día / mes / año)."""
+    """Cachea estadísticas de altas/bajas por granularidad y fecha seleccionada."""
     if ttl_seconds <= 0:
         return factory()
-    key = f"gran:{granularity}"
+    fecha_key = fecha or "auto"
+    key = f"gran:{granularity}|fecha:{fecha_key}"
     with _lock_inventario_estadisticas:
         now = time.monotonic()
         entry = _inventario_estadisticas.get(key)

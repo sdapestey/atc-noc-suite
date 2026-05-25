@@ -331,37 +331,6 @@ def get_inventario_estadisticas_cache_seconds() -> int:
     return 3600
 
 
-def get_inventario_sftp_config() -> dict:
-    """
-    SFTP del backup CSV (carpeta Inventario).
-    Requiere ``INVENTARIO_SFTP_KEY_PATH`` (PPK v3 sin passphrase u OpenSSH).
-
-    Nota: en ``.env`` no duplicar claves ``INVENTARIO_SFTP_*``; el último valor gana.
-    """
-    host = os.environ.get("INVENTARIO_SFTP_HOST", "sftp.atcfibraarg.com").strip()
-    user = os.environ.get("INVENTARIO_SFTP_USER", "atfar.noc").strip()
-    key_path = os.environ.get("INVENTARIO_SFTP_KEY_PATH", "").strip()
-    remote_dir = os.environ.get("INVENTARIO_SFTP_REMOTE_DIR", "Inventario").strip() or "Inventario"
-    try:
-        port = int(os.environ.get("INVENTARIO_SFTP_PORT", "22"))
-    except ValueError:
-        port = 22
-    try:
-        timeout = int(os.environ.get("INVENTARIO_SFTP_TIMEOUT", "30"))
-    except ValueError:
-        timeout = 30
-    enabled = bool(host and user and key_path)
-    return {
-        "enabled": enabled,
-        "host": host,
-        "port": port,
-        "user": user,
-        "key_path": key_path,
-        "remote_dir": remote_dir,
-        "timeout": timeout,
-    }
-
-
 def get_altiplano_token_cache_max_age_seconds() -> int:
     """
     Edad máxima del token Altiplano cacheado antes de forzar nuevo login.

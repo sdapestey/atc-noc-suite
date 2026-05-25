@@ -24,19 +24,6 @@ def parse_inventario_date(raw) -> date | None:
     return None
 
 
-def parse_snapshot_date(snap: str | None) -> date | None:
-    """Fecha desde nombre CSV ``inventarioYYYYMMDD`` o ISO."""
-    if not snap:
-        return None
-    text = str(snap).strip()
-    try:
-        if len(text) == 8 and text.isdigit():
-            return datetime.strptime(text, "%Y%m%d").date()
-        return date.fromisoformat(text[:10])
-    except ValueError:
-        return None
-
-
 def fecha_alta(provided, reserved) -> date | None:
     return parse_inventario_date(provided) or parse_inventario_date(reserved)
 
@@ -49,25 +36,83 @@ def fecha_baja(cancel, reserved, provided) -> date | None:
     return None
 
 
-def inventario_reference_date(
+def parse_reference_date_param(value: str | None) -> date | None:
+    """Fecha ISO ``YYYY-MM-DD`` desde query string del dashboard."""
+    if value is None:
+        return None
+    text = str(value).strip()[:10]
+    if not text:
+        return None
+    try:
+        return date.fromisoformat(text)
+    except ValueError:
+        return None
+
+
+def inventario_reference_date_from_data(
     altas: dict[date, int],
     bajas: dict[date, int],
-    sftp_snapshot: str | None = None,
     *,
     calendar_today: date | None = None,
 ) -> date:
     """
-    Día de referencia para la tarjeta «Hoy» (backup diario suele ir un día atrás).
+    Último día con actividad en Postgres, con regla de rezago de altas:
+    si hoy no hay altas pero ayer sí, se usa ayer.
     """
     today = calendar_today or date.today()
     yesterday = today - timedelta(days=1)
-    from_sftp = parse_snapshot_date(sftp_snapshot)
-    if from_sftp and from_sftp <= today:
-        ref = from_sftp
-        if ref == today and not int(altas.get(today, 0)) and int(altas.get(yesterday, 0)):
-            return yesterday
-        return ref
-    return yesterday
+    active = {
+        d
+        for d in set(altas) | set(bajas)
+        if int(altas.get(d, 0)) + int(bajas.get(d, 0)) > 0
+    }
+    if not active:
+        return yesterday
+    max_d = min(max(active), today)
+    if max_d == today and not int(altas.get(today, 0)) and int(altas.get(yesterday, 0)):
+        return yesterday
+    return max_d
+
+
+def inventario_data_date_bounds(
+    altas: dict[date, int],
+    bajas: dict[date, int],
+    *,
+    calendar_today: date | None = None,
+    window_days: int = 365,
+) -> tuple[date, date]:
+    """Rango [min, max] para el selector de fecha (ventana de consulta en Postgres)."""
+    today = calendar_today or date.today()
+    window_start = today - timedelta(days=window_days - 1)
+    active = {
+        d
+        for d in set(altas) | set(bajas)
+        if int(altas.get(d, 0)) + int(bajas.get(d, 0)) > 0 and window_start <= d <= today
+    }
+    min_bound = min(active) if active else window_start
+    return min_bound, today
+
+
+def resolve_reference_date(
+    altas: dict[date, int],
+    bajas: dict[date, int],
+    selected: date | None = None,
+    *,
+    calendar_today: date | None = None,
+    window_days: int = 365,
+) -> date:
+    """Día de referencia efectivo: selección del usuario acotada al rango disponible."""
+    auto = inventario_reference_date_from_data(altas, bajas, calendar_today=calendar_today)
+    min_d, max_d = inventario_data_date_bounds(
+        altas, bajas, calendar_today=calendar_today, window_days=window_days
+    )
+    if selected is None:
+        return auto
+    if selected < min_d:
+        return min_d
+    if selected > max_d:
+        return max_d
+    return selected
 
 
 def clamp_days(value, default: int = 90, *, min_days: int = 7, max_days: int = 365) -> int:

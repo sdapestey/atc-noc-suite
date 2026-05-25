@@ -1326,13 +1326,15 @@ def register(app):
     @app.route("/dashboard/estadisticas/altas-bajas.json")
     def dash_estadisticas_altas_bajas_json():
         days = request.args.get("days", default=90, type=int)
-        granularity = (request.args.get("granularity") or "day").strip().lower()
+        granularity = (request.args.get("granularity") or "month").strip().lower()
         operador = (request.args.get("operador") or "").strip()
+        fecha = (request.args.get("fecha") or "").strip()
         try:
             payload = dashboard_calidad_inventario_estadisticas(
                 days=days,
                 granularity=granularity,
                 operador=operador,
+                fecha=fecha,
             )
         except Exception:
             return _log_and_internal_error(
