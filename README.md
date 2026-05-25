@@ -26,7 +26,7 @@ pip install -r requirements.txt
 python app.py
 ```
 
-La app levanta con `FLASK_HOST` y `FLASK_PORT` (por defecto `0.0.0.0:9002`).
+La app levanta con `FLASK_HOST` y `FLASK_PORT` (por defecto `0.0.0.0:9000`).
 
 ## 2) Variables de entorno esenciales
 
