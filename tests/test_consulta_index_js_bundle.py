@@ -40,4 +40,6 @@ def test_consulta_index_uses_external_js_bundle():
     masivo_ui = Path("static/js/consulta-masivo-ui.js").read_text(encoding="utf-8")
     assert "markPotenciasLoaded" in masivo_ui
     assert "startBackgroundPotenciasPreload" in masivo_ui
+    assert "consulta-masivo-rama-summary__progress" in html
+    assert "consulta-masivo-ramas-spin" in html
     assert "window.togglePonAdminDesdeUIBtn = togglePonAdminDesdeUIBtn" in js

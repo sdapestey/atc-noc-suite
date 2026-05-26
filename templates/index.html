@@ -131,7 +131,7 @@ window.__CONSULTA_INDEX_CFG__ = {
 };
 </script>
 {% if consulta_row_counts %}
-<script defer src="{{ url_for('static', filename='js/consulta-masivo-ui.js') }}?v=5"></script>
+<script defer src="{{ url_for('static', filename='js/consulta-masivo-ui.js') }}?v=7"></script>
 {% endif %}
 <script defer src="{{ url_for('static', filename='js/consulta-index.js') }}?v=pon23"></script>
 </head>
@@ -214,7 +214,10 @@ window.__CONSULTA_INDEX_CFG__ = {
             <div class="consulta-masivo-rama-summary" id="consulta-masivo-rama-summary" aria-live="polite" aria-label="Resumen de ramas consultadas">
               <p class="consulta-masivo-rama-summary__line">
                 <span class="consulta-masivo-rama-summary__label">Ramas consultadas:</span>
-                <span class="consulta-masivo-rama-summary__val" id="consulta-masivo-ramas-total">{{ ns_rama_summary.total }}</span>
+                <span class="consulta-masivo-rama-summary__val consulta-masivo-rama-summary__progress" id="consulta-masivo-ramas-progress">
+                  <span class="consulta-masivo-rama-summary__spin" id="consulta-masivo-ramas-spin" hidden aria-hidden="true"></span>
+                  <span id="consulta-masivo-ramas-total">{{ ns_rama_summary.total }}</span>
+                </span>
               </p>
               <p class="consulta-masivo-rama-summary__line consulta-masivo-rama-summary__line--up">
                 <span class="consulta-masivo-rama-summary__label">Ramas UP:</span>

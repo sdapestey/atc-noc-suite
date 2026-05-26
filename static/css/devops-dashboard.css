@@ -9220,6 +9220,33 @@ details.consulta-panel[open] > .consulta-panel__summary--dash .arrow {
   font-variant-numeric: tabular-nums;
 }
 
+.page-consulta-index .consulta-masivo-rama-summary__progress {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.page-consulta-index .consulta-masivo-rama-summary__spin {
+  display: none;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border-muted);
+  border-top-color: var(--accent, #58a6ff);
+  border-radius: 50%;
+  animation: consulta-masivo-rama-spin 0.75s linear infinite;
+  flex-shrink: 0;
+}
+
+.page-consulta-index .consulta-masivo-rama-summary__progress--active .consulta-masivo-rama-summary__spin {
+  display: inline-block;
+}
+
+@keyframes consulta-masivo-rama-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .page-consulta-index .consulta-masivo-rama-summary__line--up .consulta-masivo-rama-summary__val {
   color: var(--success-text, #3fb950);
 }

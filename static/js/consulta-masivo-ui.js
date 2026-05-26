@@ -11,9 +11,7 @@
   var potenciasLoaded = new WeakSet();
   /** Mostrar paginador solo si hay más de 10 RAMAs (11+). */
   var PAGER_SHOW_ABOVE = 10;
-  /** RAMAs por request ``/potencias/batch`` en la precarga en segundo plano. */
-  var POTENCIAS_PRELOAD_CHUNK = 10;
-  /** Lotes ``/potencias/batch`` en paralelo (1 = sin saturar Altiplano). */
+  /** RAMAs en paralelo durante la precarga (1–2; ver ``CONSULTA_POTENCIAS_PRELOAD_BATCH_WORKERS``). */
   var POTENCIAS_PRELOAD_BATCH_WORKERS = 1;
   var preloadGeneration = 0;
   var preloadPromise = null;
@@ -224,16 +222,42 @@
     });
   }
 
+  function ramaPreloadCounts() {
+    var ramas = ramaSections();
+    var total = ramas.length;
+    var done = 0;
+    ramas.forEach(function (sec) {
+      if (sectionPotenciasAlreadyLoaded(sec)) done += 1;
+    });
+    return { total: total, done: done };
+  }
+
   function updateRamaSummary() {
     var totalEl = document.getElementById("consulta-masivo-ramas-total");
+    var progressWrap = document.getElementById("consulta-masivo-ramas-progress");
+    var spinEl = document.getElementById("consulta-masivo-ramas-spin");
     var upEl = document.getElementById("consulta-masivo-ramas-up");
     var downEl = document.getElementById("consulta-masivo-ramas-down");
     if (!totalEl || !upEl || !downEl) return;
 
-    var ramas = ramaSections();
+    var counts = ramaPreloadCounts();
+    var total = counts.total;
+    var done = counts.done;
+    var loading = Boolean(preloadPromise) && total > 0 && done < total;
+
+    if (loading) {
+      totalEl.textContent = String(done) + "/" + String(total);
+      if (progressWrap) progressWrap.classList.add("consulta-masivo-rama-summary__progress--active");
+      if (spinEl) spinEl.hidden = false;
+    } else {
+      totalEl.textContent = String(total);
+      if (progressWrap) progressWrap.classList.remove("consulta-masivo-rama-summary__progress--active");
+      if (spinEl) spinEl.hidden = true;
+    }
+
     var up = 0;
     var down = 0;
-    ramas.forEach(function (sec) {
+    ramaSections().forEach(function (sec) {
       var s = classifyRamaRxStatus(sec);
       if (s.pending > 0) return;
       if (s.checked === 0) return;
@@ -241,7 +265,6 @@
       else up += 1;
     });
 
-    totalEl.textContent = String(ramas.length);
     upEl.textContent = String(up);
     downEl.textContent = String(down);
   }
@@ -312,14 +335,7 @@
   function cancelBackgroundPotenciasPreload() {
     preloadGeneration += 1;
     preloadPromise = null;
-  }
-
-  function buildPreloadChunks(ordered) {
-    var chunks = [];
-    for (var i = 0; i < ordered.length; i += POTENCIAS_PRELOAD_CHUNK) {
-      chunks.push(ordered.slice(i, i + POTENCIAS_PRELOAD_CHUNK));
-    }
-    return chunks;
+    updateRamaSummary();
   }
 
   function preloadBatchWorkers() {
@@ -357,16 +373,15 @@
       else rest.push(e);
     });
     var ordered = priority.concat(rest);
-    var chunks = buildPreloadChunks(ordered);
-    if (!chunks.length) return Promise.resolve();
+    if (!ordered.length) return Promise.resolve();
 
-    var jobs = chunks.map(function (chunk) {
+    updateRamaSummary();
+
+    var jobs = ordered.map(function (e) {
       return function () {
         if (gen !== preloadGeneration) return Promise.resolve();
-        return window._consultaCargarPotenciasEntries(chunk).then(function () {
-          chunk.forEach(function (e) {
-            evalRamaAllDown(e.root);
-          });
+        return window._consultaCargarPotenciasEntries([e]).then(function () {
+          evalRamaAllDown(e.root);
           updateRamaSummary();
         });
       };
