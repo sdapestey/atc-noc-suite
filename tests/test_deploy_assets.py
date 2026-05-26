@@ -28,4 +28,6 @@ def test_docker_compose_files_exist():
     compose = Path("docker-compose.yml").read_text(encoding="utf-8")
     assert "noc-suite:" in compose
     assert "env_file:" in compose
-    assert Path("deploy/nginx-docker.conf").is_file()
+    assert "9000:9000" in compose or "NOC_SUITE_PUBLISH_PORT" in compose
+    assert "nginx:" not in compose
+    assert "profile nginx" not in compose

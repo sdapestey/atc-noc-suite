@@ -19,25 +19,28 @@ En desarrollo suele alcanzar `python app.py` (un proceso). Con **8 operadores**,
 
 ### Docker (servidor)
 
-En Docker, **Gunicorn va dentro del contenedor de la app**. Nginx es **opcional** (segundo contenedor con profile `nginx`).
+En Docker, **Gunicorn corre dentro de un único contenedor** (`noc-suite`) publicado en el puerto **9000**.
 
 ```bash
 # En el servidor, con .env configurado (DB, Altiplano, SECRET_KEY, etc.)
-docker compose up -d --build noc-suite
+docker compose up -d --build
 # UI: http://<IP-del-servidor>:9000
-
-# Con Nginx delante (puerto 80):
-docker compose --profile nginx up -d --build
-# UI: http://<IP-del-servidor>/
 ```
 
-Archivos: `Dockerfile`, `docker-compose.yml`, `deploy/nginx-docker.conf`.
+Archivos: `Dockerfile`, `docker-compose.yml`.
 
 **Red:** el contenedor debe llegar a Postgres (`DB_HOST`) y Altiplano en tu LAN. Si la DB está en el mismo host que Docker, probá `DB_HOST=host.docker.internal` (Linux con `extra_hosts: host-gateway` ya está en el compose) o la IP real del host, no `127.0.0.1` del contenedor.
 
 ```bash
 docker compose exec noc-suite curl -fsS http://127.0.0.1:9000/health?db=1
 docker compose logs -f noc-suite
+```
+
+Si antes levantaste el contenedor `atc-noc-suite-nginx` (stack antiguo con Nginx en Docker), eliminalo y volvé a levantar solo la app:
+
+```bash
+docker compose stop nginx 2>/dev/null; docker compose rm -f atc-noc-suite-nginx 2>/dev/null
+docker compose up -d --build
 ```
 
 ## 2) Variables de entorno mínimas
