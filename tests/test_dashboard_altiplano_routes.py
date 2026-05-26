@@ -4,7 +4,12 @@ def test_dashboard_altiplano_get_login_page_sin_sesion(client):
     html = r.get_data(as_text=True)
     assert 'id="orquestador-login-form"' in html
     assert "Acceso Orquestador" in html
-    assert "orquestador-panel-head--solo-credit" in html
+    assert "orquestador-login-card" in html
+    assert "orquestador-login-input" in html
+    assert 'id="login_username"' in html
+    assert 'id="login_password"' in html
+    assert "orquestador-login-submit" in html
+    assert "orquestador-login-note" in html
     assert "orquestador-credit" in html
     assert "Desarrollo e implementación por Lucas Gimenez" in html
 
@@ -27,6 +32,8 @@ def test_dashboard_altiplano_get_panel_cuando_hay_sesion(client):
     assert 'id="alt-inp-tab-consulta"' in html
     assert 'id="btn-consulta-run"' in html
     assert 'id="consulta_query"' in html
+    assert "suite-search-surface" in html
+    assert "noc-suite-surface.css" in html
     assert "consultaClassifyQuery" in html
     assert "Location Name#Slice Owner Name#PON Type" in html
     assert "Required Network State" in html
@@ -34,6 +41,17 @@ def test_dashboard_altiplano_get_panel_cuando_hay_sesion(client):
     assert "data-consulta-act=" in html
     assert '"sync"' in html and "consultaRowActionsCell" in html
     assert 'id="consulta-rn-dialog"' in html
+    assert 'id="consulta-tasa-hsi-dialog"' in html
+    assert 'id="consulta-success-toast"' in html
+    assert "consultaToast" in html
+    assert "consultaRowTasaHsiEditAllowed" in html
+    assert 'act === "tasa-hsi"' in html
+    assert "Traffic Descriptor Profile" in html
+    assert "/dashboard/altiplano/actualizar-tasa-composite-profiles" in html
+    assert "/dashboard/altiplano/tasa-composite-profile-suggestions" in html
+    assert "consultaFetchTasaHsiSuggestions" in html
+    assert "consulta-tasa-hsi-upstream-suggest" in html
+    assert "altiplano-tasa-hsi-dialog" in html
     assert "consultaRowRnEditAllowed" in html
     assert "consultaRnTargetOptions" in html
     assert 'act === "rn"' in html
@@ -85,7 +103,7 @@ def test_dashboard_altiplano_get_panel_cuando_hay_sesion(client):
     assert 'id="alt-vno-tab-sion"' in html
     assert 'id="alt-vno-tab-cambio-cto"' in html
     assert "dash-segment__btn--warn" in html
-    assert "Próximamente." in html
+    assert "próxima versión" in html
     assert 'id="tasa-postman-api"' in html
     assert "Configure / Create ONT + Services" in html
     assert "Colección Postman" in html or "TASA - PROD ALTIPLANO" in html
@@ -729,6 +747,71 @@ def test_dashboard_altiplano_consultar_intent_solo_access_id_resolver_falla_sigu
     assert captured.get("device_prefix") is None
 
 
+def test_dashboard_altiplano_consultar_intent_access_id_enriquece_operador(client, monkeypatch):
+    import web.routes as routes
+
+    monkeypatch.setattr(
+        routes,
+        "resolver_target_ont_connection_por_access_id",
+        lambda _aid: {
+            "ok": True,
+            "device_location_prefix": "BA_OLTA_ES01_01-1-1-1",
+            "suggested_target": "BA_OLTA_ES01_01-1-1-1#1001#gpon",
+            "invocator_system": 1001,
+        },
+    )
+    monkeypatch.setattr(
+        routes,
+        "buscar_intents_ont_connection_inp",
+        lambda *_a, **_kw: {
+            "ok": True,
+            "message": "1 intent encontrado",
+            "matches": [
+                {
+                    "target": "BA_OLTA_ES01_01-1-1-1#1001#gpon",
+                    "location_slice_pon": "BA_OLTA_ES01_01-1-1-1#1001#gpon",
+                    "access_id": "1055568367",
+                }
+            ],
+        },
+    )
+
+    def fake_enriquecer(out, **kwargs):
+        out = dict(out)
+        out["consulta_layout"] = "access_id_tabs"
+        out["operator_resolution"] = {
+            "operator": "TASA",
+            "found": True,
+            "operator_device_name": "BA_OLT_E501_01-1-1-1#1001#gpon",
+        }
+        out["matches"][0]["inp_device_name"] = "BA_OLTA_ES01_01-1-1-1"
+        out["vno_matches"] = [
+            {
+                "target": "BA_OLT_E501_01-1-1-1#1001#gpon",
+                "location_slice_pon": "BA_OLT_E501_01-1-1-1#1001#gpon",
+                "access_id": "1055568367",
+            }
+        ]
+        return out
+
+    monkeypatch.setattr(routes, "enriquecer_consulta_con_operador", fake_enriquecer)
+
+    with client.session_transaction() as sess:
+        sess["orquestador_ok"] = True
+        sess["orquestador_inp_token"] = "tok"
+
+    r = client.post(
+        "/dashboard/altiplano/consultar-intent",
+        json={"by_id": "1055568367"},
+    )
+    assert r.status_code == 200
+    payload = r.get_json()
+    assert payload["consulta_layout"] == "access_id_tabs"
+    assert payload["matches"][0]["inp_device_name"] == "BA_OLTA_ES01_01-1-1-1"
+    assert len(payload["vno_matches"]) == 1
+    assert payload["operator_resolution"]["operator"] == "TASA"
+
+
 def test_dashboard_altiplano_consultar_intent_solo_access_id_resuelve_inventario(client, monkeypatch):
     import web.routes as routes
 
@@ -1055,6 +1138,41 @@ def test_dashboard_altiplano_actualizar_rn_sin_valor_400(client):
         json={"device_name": "BA_OLTA_X#1001#gpon"},
     )
     assert r.status_code == 400
+
+
+def test_dashboard_altiplano_actualizar_tasa_profiles_ok(client, monkeypatch):
+    import web.routes as routes
+
+    monkeypatch.setattr(
+        routes,
+        "actualizar_tasa_composite_profiles_nbi",
+        lambda *_a, **_kw: {
+            "ok": True,
+            "message": "Perfiles actualizados",
+            "tasa_hsi": {
+                "downstream_profile": "TASA_SH100MB_DN",
+                "upstream_profile": "TASA_BW100MB_UP",
+            },
+        },
+    )
+    with client.session_transaction() as sess:
+        sess["orquestador_ok"] = True
+        sess["orquestador_inp_token"] = "tok"
+    r = client.post(
+        "/dashboard/altiplano/actualizar-tasa-composite-profiles",
+        json={
+            "scope": "vno",
+            "operator": "TASA",
+            "target": "BA_OLTA_SF01_01-2-1-9#HSI-1501",
+            "intent_type": "tasa-composite",
+            "tasa_hsi": {
+                "downstream_profile": "TASA_SH100MB_DN",
+                "upstream_profile": "TASA_BW100MB_UP",
+            },
+        },
+    )
+    assert r.status_code == 200
+    assert r.get_json()["ok"] is True
 
 
 def test_dashboard_altiplano_actualizar_rn_by_id_con_hash_se_normaliza(client, monkeypatch):

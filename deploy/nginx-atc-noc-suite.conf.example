@@ -1,0 +1,47 @@
+# Copiar a /etc/nginx/sites-available/atc-noc-suite y enlazar en sites-enabled.
+# Ajustar server_name, rutas TLS y upstream según el host.
+
+upstream atc_noc_suite {
+    server 127.0.0.1:9000;
+    keepalive 16;
+}
+
+server {
+    listen 80;
+    server_name noc-suite.ejemplo.local;
+
+    # Redirigir a HTTPS en producción (descomentar y configurar ssl_certificate):
+    # return 301 https://$host$request_uri;
+
+    client_max_body_size 4m;
+
+    location /static/ {
+        alias /opt/atc-noc-suite/static/;  # ruta real del clone en el servidor
+        expires 7d;
+        add_header Cache-Control "public";
+        access_log off;
+    }
+
+    location / {
+        proxy_pass http://atc_noc_suite;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Connection "";
+
+        # Consulta masiva / inventario LT pueden tardar varios minutos
+        proxy_connect_timeout 30s;
+        proxy_send_timeout 300s;
+        proxy_read_timeout 300s;
+    }
+}
+
+# server {
+#     listen 443 ssl http2;
+#     server_name noc-suite.ejemplo.local;
+#     ssl_certificate     /etc/ssl/certs/noc-suite.crt;
+#     ssl_certificate_key /etc/ssl/private/noc-suite.key;
+#     ...
+# }

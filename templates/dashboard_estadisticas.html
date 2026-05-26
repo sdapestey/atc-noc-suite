@@ -40,11 +40,13 @@
     <button type="button" class="calidad-tab" role="tab" aria-selected="false" data-tab="reglas" id="tab-reglas">Reglas de calidad</button>
   </div>
 
-  <section id="panel-altas-bajas" class="panel calidad-panel calidad-panel--altas-bajas" role="tabpanel" aria-labelledby="tab-altas-bajas">
-    <div class="calidad-resumen-toolbar">
-      <p class="calidad-resumen-lead muted">
+  <section id="panel-altas-bajas" class="panel calidad-panel calidad-panel--altas-bajas card suite-index-card" role="tabpanel" aria-labelledby="tab-altas-bajas">
+    <div class="calidad-resumen-toolbar suite-search-surface">
+      <div class="orquestador-panel-head suite-panel-head consulta-panel-head calidad-panel-head">
+        <p class="calidad-resumen-lead suite-search-lead consulta-search-lead muted orquestador-panel-head__main">
         Clientes ATC · altas y bajas · réplica Postgres <code>aux.bajada_inventario</code> / tablas de baja
       </p>
+      </div>
       <div class="calidad-resumen-toolbar-actions">
         <div class="calidad-estadisticas-fecha-wrap">
           <span class="calidad-estadisticas-fecha-label-text muted">Día</span>
@@ -70,9 +72,11 @@
     </div>
   </section>
 
-  <section id="panel-inventario" class="panel calidad-panel calidad-panel--inventario" role="tabpanel" aria-labelledby="tab-inventario" hidden>
-    <div class="calidad-resumen-toolbar">
-      <p class="calidad-resumen-lead muted" style="font-size: 11px;"><em>Vista equivalente al tablero Superset implementado por Jeelbert Salazar</em>.</p>
+  <section id="panel-inventario" class="panel calidad-panel calidad-panel--inventario card suite-index-card" role="tabpanel" aria-labelledby="tab-inventario" hidden>
+    <div class="calidad-resumen-toolbar suite-search-surface">
+      <div class="orquestador-panel-head suite-panel-head consulta-panel-head calidad-panel-head orquestador-panel-head--solo-credit">
+        {% include 'partials/inventario_credit.html' %}
+      </div>
       <div class="calidad-resumen-toolbar-actions">
         <div class="calidad-range" id="resumen-historico-range" aria-label="Rango histórico">
           <button type="button" class="btn btn-ghost" data-days="365">1 año</button>
@@ -87,7 +91,14 @@
     </div>
   </section>
 
-  <section id="panel-reglas" class="panel calidad-panel" role="tabpanel" aria-labelledby="tab-reglas" hidden>
+  <section id="panel-reglas" class="panel calidad-panel card suite-index-card" role="tabpanel" aria-labelledby="tab-reglas" hidden>
+    <div class="calidad-resumen-toolbar suite-search-surface calidad-panel-head-wrap">
+      <div class="orquestador-panel-head suite-panel-head consulta-panel-head">
+        <p class="suite-search-lead consulta-search-lead orquestador-panel-head__main">
+          <strong>Reglas de calidad</strong> — KPIs y detalle de incumplimientos sobre inventario y clientes.
+        </p>
+      </div>
+    </div>
     <div class="metrics-grid calidad-kpi-grid" id="calidad-kpi-grid" aria-live="polite">
       <p class="muted calidad-kpi-loading">Cargando KPIs…</p>
     </div>

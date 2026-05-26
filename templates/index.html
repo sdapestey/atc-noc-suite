@@ -159,33 +159,36 @@ window.__CONSULTA_INDEX_CFG__ = {
 
   {% include 'partials/nav_dashboard.html' %}
 
-  <div class="card consulta-index-card{% if consulta_row_counts %} card--multi-results{% endif %}">
+  <div class="card suite-index-card consulta-index-card{% if consulta_row_counts %} card--multi-results{% endif %}">
     <form method="POST" class="search consulta-search-form" autocomplete="off">
-      <div class="consulta-search-card">
-        <p class="consulta-search-lead">Buscá por <strong>Access ID</strong>, <strong>CTO</strong> o <strong>RAMA</strong> — en <em>Masivo</em> podés pegar listas (una por línea).</p>
+        <div class="suite-search-surface consulta-search-card">
+          <div class="orquestador-panel-head suite-panel-head consulta-panel-head">
+            <p class="suite-search-lead consulta-search-lead orquestador-panel-head__main">Buscá por <strong>Access ID</strong>, <strong>CTO</strong> o <strong>RAMA</strong> — en <em>Masivo</em> podés pegar listas (una por línea).</p>
+          {% include 'partials/orquestador_credit.html' %}
+        </div>
         <div class="dash-segment dash-segment--sentence" role="tablist" aria-label="Tipo de consulta">
           <button type="button" class="dash-segment__btn consulta-mode-tab" role="tab" data-modo="individual" aria-selected="{{ 'true' if consulta_modo != 'masivo' else 'false' }}">Individual</button>
           <button type="button" class="dash-segment__btn consulta-mode-tab" role="tab" data-modo="masivo" aria-selected="{{ 'true' if consulta_modo == 'masivo' else 'false' }}">Masivo</button>
         </div>
         <input type="hidden" name="consulta_modo" id="consulta_modo" value="{{ consulta_modo }}">
 
-        <div class="consulta-query-row">
-          <div class="consulta-query-row__field">
+        <div class="suite-query-row consulta-query-row">
+          <div class="suite-query-row__field consulta-query-row__field">
             <div id="consulta-panel-individual" class="consulta-mode-panel" {% if consulta_modo == 'masivo' %}hidden{% endif %}>
-              <div class="field consulta-field" role="search">
+              <div class="field suite-field consulta-field" role="search">
                 <span class="search-icon" aria-hidden="true">⌕</span>
                 <input id="q" name="value" value="{{ value_individual }}" placeholder="Ej. 1058516041 · SM01-FATC-8-101444 · SM01-RATC-0-001592" autocomplete="off">
               </div>
             </div>
             <div id="consulta-panel-masivo" class="consulta-mode-panel" {% if consulta_modo != 'masivo' %}hidden{% endif %}>
-              <div class="field consulta-masivo-field consulta-field" role="search">
+              <div class="field suite-field consulta-masivo-field consulta-field" role="search">
                 <span class="search-icon" aria-hidden="true">⌕</span>
                 <textarea id="qm" name="value_masivo" rows="10" class="consulta-masivo-input" placeholder="Un valor por línea (RAMA, CTO o AID). También podés separar por comas en una misma línea.">{{ value_masivo }}</textarea>
               </div>
             </div>
           </div>
 
-          <div class="consulta-search-actions{% if consulta_masivo_totals or consulta_row_counts %} consulta-search-actions--with-totals{% endif %}">
+          <div class="suite-search-actions consulta-search-actions{% if consulta_masivo_totals or consulta_row_counts %} consulta-search-actions--with-totals{% endif %}">
             <div class="consulta-search-actions__buttons">
               <div class="consulta-search-actions__primary">
                 <button class="btn btn-primary consulta-btn-buscar" type="submit">Buscar</button>

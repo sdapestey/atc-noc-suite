@@ -16,12 +16,19 @@ from urllib.parse import quote_plus
 
 from altiplano import (
     _access_id_match_mode_for_inp_consult,
+    actualizar_required_network_state_nbi,
     actualizar_required_network_state_ont_connection_inp,
+    actualizar_tasa_composite_profiles_nbi,
+    tasa_composite_profile_suggestions_nbi,
+    borrar_intent_nbi,
+    reinyectar_tasa_composite_nbi,
     build_consulta_create_prefill,
+    enriquecer_consulta_con_operador,
     obtener_token_entorno_nbi,
     corregir_dependencias_l1_y_alinear_intent_inp,
     inp_advanced_filters_active_aligned_blocked,
     parse_l1_scheduler_missing_ont_connection,
+    sincronizar_intent_nbi,
     sincronizar_intent_ont_connection_inp,
 )
 from db import ensure_db_connection_ready, healthcheck_db
@@ -297,6 +304,39 @@ def _enrich_consulta_inp_no_match(
         if prefill:
             out["create_prefill"] = prefill
     return out
+
+
+def _vno_mutacion_from_request(data: dict) -> dict | None:
+    """
+    Mutación directa en NBI operador (pestaña VNO): ``target`` + ``intent_type`` + ``operator``.
+    """
+    scope = (data.get("scope") or data.get("consulta_scope") or "").strip().lower()
+    op = (data.get("operator") or data.get("entorno_nbi") or "").strip().upper()
+    if scope != "vno" and not (op and op != "INP"):
+        return None
+    if not op:
+        op = "TASA"
+    target = (data.get("target") or data.get("device_name") or "").strip()
+    intent_type = (data.get("intent_type") or data.get("intent-type") or "").strip()
+    if not target:
+        return {
+            "error": (
+                {"ok": False, "message": "Target requerido para acción en VNO", "matches": []},
+                400,
+            )
+        }
+    if not intent_type:
+        return {
+            "error": (
+                {
+                    "ok": False,
+                    "message": "intent_type requerido (ont, ont-connection, tasa-composite, …)",
+                    "matches": [],
+                },
+                400,
+            )
+        }
+    return {"operator": op, "target": target, "intent_type": intent_type, "vno": True}
 
 
 def _inp_intent_mutacion_context(data: dict) -> dict:
@@ -1749,6 +1789,13 @@ def register(app):
             inventory_resolution=inventory_resolution,
             has_advanced_filters=has_advanced,
         )
+        if access_filter:
+            out = enriquecer_consulta_con_operador(
+                out,
+                access_id=access_filter,
+                inventory_resolution=inventory_resolution,
+                access_id_match_mode=aid_mode,
+            )
         code = 200 if out.get("ok") else 502
         return jsonify(out), code
 
@@ -1756,6 +1803,21 @@ def register(app):
     def dash_altiplano_sincronizar_intent():
         """POST operación IBN equivalente a «Synchronize intent» en la GUI (un solo match)."""
         data = request.get_json(silent=True) or {}
+        vno = _vno_mutacion_from_request(data)
+        if vno and vno.get("error"):
+            body, st = vno["error"]
+            return jsonify(body), st
+        if vno and vno.get("vno"):
+            out = sincronizar_intent_nbi(
+                vno["operator"],
+                target=vno["target"],
+                intent_type=vno["intent_type"],
+            )
+            code = 200 if out.get("ok") else 502
+            if not out.get("ok"):
+                code = _http_code_for_borrado_payload(out)
+            return jsonify(out), code
+
         ctx = _inp_intent_mutacion_context(data)
         if ctx.get("error"):
             body, st = ctx["error"]
@@ -1980,6 +2042,22 @@ def register(app):
                 400,
             )
 
+        vno = _vno_mutacion_from_request(data)
+        if vno and vno.get("error"):
+            body, st = vno["error"]
+            return jsonify(body), st
+        if vno and vno.get("vno"):
+            out = actualizar_required_network_state_nbi(
+                vno["operator"],
+                rn,
+                target=vno["target"],
+                intent_type=vno["intent_type"],
+            )
+            code = 200 if out.get("ok") else 502
+            if not out.get("ok"):
+                code = _http_code_for_borrado_payload(out)
+            return jsonify(out), code
+
         ctx = _inp_intent_mutacion_context(data)
         if ctx.get("error"):
             body, st = ctx["error"]
@@ -2017,10 +2095,151 @@ def register(app):
             code = _http_code_for_borrado_payload(out)
         return jsonify(out), code
 
+    @app.route("/dashboard/altiplano/tasa-composite-profile-suggestions", methods=["POST"])
+    def dash_altiplano_tasa_composite_profile_suggestions():
+        """Sugerencias GUI TASA (autocomplete) para perfiles HSI tasa-composite."""
+        data = request.get_json(silent=True) or {}
+        target = (data.get("target") or "").strip()
+        operator = (data.get("operator") or "TASA").strip().upper()
+        kind = (data.get("kind") or data.get("profile_kind") or "").strip().lower()
+        if not target:
+            vno = _vno_mutacion_from_request(data)
+            if vno and not vno.get("error") and vno.get("vno"):
+                target = (vno.get("target") or "").strip()
+                operator = (vno.get("operator") or operator).strip().upper()
+        if not target or kind not in ("upstream", "downstream", "traffic", "shaper"):
+            return (
+                jsonify(
+                    {
+                        "ok": False,
+                        "message": "Indicá target y kind (upstream o downstream)",
+                        "profiles": [],
+                    }
+                ),
+                400,
+            )
+        tasa_hsi = data.get("tasa_hsi")
+        if tasa_hsi is not None and not isinstance(tasa_hsi, dict):
+            tasa_hsi = None
+        query = (data.get("query") or data.get("searchQuery") or "").strip()
+        out = tasa_composite_profile_suggestions_nbi(
+            operator,
+            target,
+            kind,
+            tasa_hsi=tasa_hsi,
+            search_query=query,
+        )
+        code = 200 if out.get("ok") else 502
+        return jsonify(out), code
+
+    @app.route("/dashboard/altiplano/actualizar-tasa-composite-profiles", methods=["POST"])
+    def dash_altiplano_actualizar_tasa_composite_profiles():
+        """PATCH Shaper + Traffic Descriptor en intent ``tasa-composite`` (VNO TASA)."""
+        data = request.get_json(silent=True) or {}
+        vno = _vno_mutacion_from_request(data)
+        if vno and vno.get("error"):
+            body, st = vno["error"]
+            return jsonify(body), st
+        if not vno or not vno.get("vno"):
+            return (
+                jsonify(
+                    {
+                        "ok": False,
+                        "message": "Solo aplica en VNO (scope=vno, tasa-composite)",
+                    }
+                ),
+                400,
+            )
+        if (vno.get("intent_type") or "").strip().lower() != "tasa-composite":
+            return (
+                jsonify(
+                    {
+                        "ok": False,
+                        "message": "Solo para intent-type tasa-composite",
+                    }
+                ),
+                400,
+            )
+        hsi = data.get("tasa_hsi") if isinstance(data.get("tasa_hsi"), dict) else {}
+        downstream = (
+            data.get("downstream_profile")
+            or data.get("shaper_profile")
+            or hsi.get("downstream_profile")
+            or ""
+        )
+        upstream = (
+            data.get("upstream_profile")
+            or data.get("traffic_descriptor_profile")
+            or hsi.get("upstream_profile")
+            or ""
+        )
+        out = actualizar_tasa_composite_profiles_nbi(
+            vno["operator"],
+            vno["target"],
+            downstream_profile=str(downstream).strip(),
+            upstream_profile=str(upstream).strip(),
+        )
+        code = 200 if out.get("ok") else 502
+        return jsonify(out), code
+
+    @app.route("/dashboard/altiplano/reinyectar-tasa-composite", methods=["POST"])
+    def dash_altiplano_reinyectar_tasa_composite():
+        """Borra y recrea un intent ``tasa-composite`` en el NBI del operador (TASA)."""
+        data = request.get_json(silent=True) or {}
+        vno = _vno_mutacion_from_request(data)
+        if vno and vno.get("error"):
+            body, st = vno["error"]
+            return jsonify(body), st
+        if not vno or not vno.get("vno"):
+            return (
+                jsonify(
+                    {
+                        "ok": False,
+                        "message": "Reinyección solo aplica en VNO (scope=vno, tasa-composite)",
+                    }
+                ),
+                400,
+            )
+        if (vno.get("intent_type") or "").strip().lower() != "tasa-composite":
+            return (
+                jsonify(
+                    {
+                        "ok": False,
+                        "message": "Reinyección solo para intent-type tasa-composite",
+                    }
+                ),
+                400,
+            )
+        tasa_hsi = data.get("tasa_hsi")
+        if tasa_hsi is not None and not isinstance(tasa_hsi, dict):
+            tasa_hsi = None
+        out = reinyectar_tasa_composite_nbi(
+            vno["operator"],
+            vno["target"],
+            tasa_hsi=tasa_hsi,
+        )
+        code = 200 if out.get("ok") else 502
+        if not out.get("ok") and out.get("phase") == "delete":
+            code = _http_code_for_borrado_payload(out)
+        return jsonify(out), code
+
     @app.route("/dashboard/altiplano/borrar-intent", methods=["POST"])
     def dash_altiplano_borrar_intent():
-        """Elimina un intent ont-connection en INP (un solo match). Solo device name y/o Access ID (sin UUID)."""
+        """Elimina un intent en INP (cascada VNO) o solo en VNO si ``scope=vno``."""
         data = request.get_json(silent=True) or {}
+        vno = _vno_mutacion_from_request(data)
+        if vno and vno.get("error"):
+            body, st = vno["error"]
+            return jsonify(body), st
+        if vno and vno.get("vno"):
+            out = borrar_intent_nbi(
+                vno["operator"],
+                target=vno["target"],
+                intent_type=vno["intent_type"],
+            )
+            code = _http_code_for_borrado_payload(out)
+            return jsonify(out), code
+
         device_name = (data.get("device_name") or "").strip()
         by_id = (data.get("by_id") or data.get("id") or "").strip()
         svlan = (data.get("svlan") or data.get("SVLAN") or "").strip() or None

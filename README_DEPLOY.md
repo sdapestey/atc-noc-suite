@@ -4,9 +4,41 @@ Guía breve para desplegar y operar la app sin tocar código.
 
 ## 1) Requisitos
 
-- Python 3.11+
+- Python 3.11+ (instalación bare metal) **o** Docker + Docker Compose (recomendado en servidor)
 - Acceso de red a Postgres y endpoints Altiplano
 - Variables de entorno configuradas (idealmente en `.env` fuera de repositorio)
+
+### ¿Qué son Gunicorn y Nginx?
+
+| Componente | Rol |
+|------------|-----|
+| **Gunicorn** | Servidor de aplicación Python. Ejecuta varios **workers** (procesos) de tu app Flask para atender varios usuarios a la vez. Reemplaza `python app.py` en producción. |
+| **Nginx** | **Reverse proxy** y servidor web delante de Gunicorn: recibe el HTTP en el puerto 80/443, sirve archivos estáticos (`/static/`) y reenvía el resto a Gunicorn. Aporta timeouts largos, TLS y un solo punto de entrada. |
+
+En desarrollo suele alcanzar `python app.py` (un proceso). Con **8 operadores**, conviene Gunicorn con varios workers.
+
+### Docker (servidor)
+
+En Docker, **Gunicorn va dentro del contenedor de la app**. Nginx es **opcional** (segundo contenedor con profile `nginx`).
+
+```bash
+# En el servidor, con .env configurado (DB, Altiplano, SECRET_KEY, etc.)
+docker compose up -d --build noc-suite
+# UI: http://<IP-del-servidor>:9000
+
+# Con Nginx delante (puerto 80):
+docker compose --profile nginx up -d --build
+# UI: http://<IP-del-servidor>/
+```
+
+Archivos: `Dockerfile`, `docker-compose.yml`, `deploy/nginx-docker.conf`.
+
+**Red:** el contenedor debe llegar a Postgres (`DB_HOST`) y Altiplano en tu LAN. Si la DB está en el mismo host que Docker, probá `DB_HOST=host.docker.internal` (Linux con `extra_hosts: host-gateway` ya está en el compose) o la IP real del host, no `127.0.0.1` del contenedor.
+
+```bash
+docker compose exec noc-suite curl -fsS http://127.0.0.1:9000/health?db=1
+docker compose logs -f noc-suite
+```
 
 ## 2) Variables de entorno mínimas
 
@@ -67,8 +99,13 @@ Parámetros de pool/timeouts recomendados (hasta ~10 concurrentes):
 ## 3) Instalación
 
 ```bash
-pip install -r requirements.txt
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements-prod.txt
+pip install -r requirements-dev.txt   # solo en host de CI/desarrollo
 ```
+
+`requirements-prod.txt` incluye `gunicorn` además de `requirements.txt`.
 
 ## 4) Ejecución
 
@@ -78,16 +115,68 @@ pip install -r requirements.txt
 python app.py
 ```
 
-### Producción (Gunicorn + wsgi)
+Usar `FLASK_DEBUG=1` solo en local. No exponer `0.0.0.0` sin proxy en producción.
+
+### Producción (~8 operadores): Gunicorn + Nginx
+
+La app escucha en **loopback**; Nginx termina TLS y sirve `/static/` directo.
+
+**1. Variables** (ver `.env.example`). Perfil sugerido 8 operadores:
+
+- `FLASK_DEBUG=0`, `STATIC_CACHE_MAX_AGE=86400`
+- `DB_POOL_MIN=2`, `DB_POOL_MAX=8` (con 4 workers Gunicorn → hasta ~32 conexiones pico; validar en Postgres)
+- `DASHBOARD_TREE_CACHE_SECONDS=1800`
+- `CONSULTA_POTENCIAS_BATCH_WORKERS=12`, `CONSULTA_POTENCIAS_PARALLEL_MAX=32`
+- `ALTIPLANO_POWER_CTO_WORKERS=6`, `ALTIPLANO_POWER_WORKERS=16`
+
+**2. Gunicorn** (desde la raíz del repo, con `.env` cargado por `config.py`):
 
 ```bash
-gunicorn -w 4 -b 0.0.0.0:9000 wsgi:app
+gunicorn -c deploy/gunicorn.conf.py wsgi:app
+```
+
+Equivalente explícito:
+
+```bash
+gunicorn -w 4 -b 127.0.0.1:9000 --timeout 300 wsgi:app
+```
+
+Archivos de referencia en `deploy/`:
+
+- `deploy/gunicorn.conf.py` — workers, timeout 300 s (consulta masiva)
+- `deploy/nginx-atc-noc-suite.conf.example` — proxy + `proxy_read_timeout 300s` + `/static/`
+- `deploy/atc-noc-suite.service.example` — unidad systemd
+
+**3. systemd** (ejemplo):
+
+```bash
+sudo cp deploy/atc-noc-suite.service.example /etc/systemd/system/atc-noc-suite.service
+# Editar User, WorkingDirectory, EnvironmentFile y ruta al venv
+sudo systemctl daemon-reload
+sudo systemctl enable --now atc-noc-suite
+```
+
+**4. Nginx**:
+
+```bash
+sudo cp deploy/nginx-atc-noc-suite.conf.example /etc/nginx/sites-available/atc-noc-suite
+# Editar server_name, alias de /static/ y TLS
+sudo ln -sf /etc/nginx/sites-available/atc-noc-suite /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+**5. Verificación**
+
+```bash
+curl -sS http://127.0.0.1:9000/health
+curl -sS http://127.0.0.1:9000/health?db=1
 ```
 
 Notas:
 
-- Ajustar `-w` según CPU/RAM.
-- Ejecutar detrás de reverse proxy (Nginx/Traefik) para TLS y timeouts.
+- **No** usar `python app.py` en producción (un solo proceso, sin timeouts de proxy).
+- Ajustar `GUNICORN_WORKERS` (típico 4 en VM 4 vCPU / 8 GB RAM).
+- Si Altiplano devuelve muchos HTTP 500, bajar workers de potencias en `.env` antes de subir CPU.
 
 ## 5) Healthchecks
 

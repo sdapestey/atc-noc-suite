@@ -1,0 +1,40 @@
+# ATC NOC Suite — Docker (servidor, ~8 operadores)
+#
+# Solo app (puerto 9000):
+#   docker compose up -d --build noc-suite
+#
+# App + Nginx (puerto 80 público):
+#   docker compose --profile nginx up -d --build
+
+services:
+  noc-suite:
+    build: .
+    image: atc-noc-suite:latest
+    container_name: atc-noc-suite
+    env_file:
+      - .env
+    environment:
+      GUNICORN_BIND: 0.0.0.0:9000
+      GUNICORN_WORKERS: "4"
+      GUNICORN_TIMEOUT: "300"
+      FLASK_DEBUG: "0"
+    ports:
+      - "${NOC_SUITE_PUBLISH_PORT:-9000}:9000"
+    restart: unless-stopped
+    # La app debe alcanzar Postgres y Altiplano en la red del host/LAN
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  nginx:
+    profiles: ["nginx"]
+    image: nginx:1.27-alpine
+    container_name: atc-noc-suite-nginx
+    depends_on:
+      noc-suite:
+        condition: service_healthy
+    ports:
+      - "${NOC_SUITE_HTTP_PORT:-80}:80"
+    volumes:
+      - ./deploy/nginx-docker.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./static:/app/static:ro
+    restart: unless-stopped

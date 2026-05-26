@@ -19,39 +19,57 @@
     {% include 'partials/noc_topbar.html' %}
   </div>
   {% include 'partials/nav_dashboard.html' %}
+
   <div class="orquestador-login-shell">
-    <div class="panel altiplano-panel orquestador-login-panel">
-      <div class="orquestador-login-panel-inner">
-        <div class="orquestador-panel-head orquestador-panel-head--solo-credit">
-          <span class="orquestador-panel-head__spacer" aria-hidden="true"></span>
-          {% include 'partials/orquestador_credit.html' %}
+    <div class="orquestador-login-card">
+      <header class="orquestador-login-hero">
+        <h2 class="orquestador-login-title">Acceso Orquestador</h2>
+        <p class="orquestador-login-lead muted">
+          Las credenciales se validan contra <strong>Altiplano</strong> antes de abrir el panel.
+        </p>
+        {% include 'partials/orquestador_credit.html' %}
+      </header>
+
+      <form id="orquestador-login-form" class="orquestador-login-form" autocomplete="on">
+        <div class="orquestador-login-fields">
+          <div class="orquestador-login-field">
+            <label class="t" for="login_username">Usuario</label>
+            <input
+              id="login_username"
+              name="username"
+              type="text"
+              class="orquestador-login-input"
+              autocomplete="username"
+              autocapitalize="none"
+              spellcheck="false"
+              placeholder="Usuario Altiplano"
+              required
+            >
+          </div>
+          <div class="orquestador-login-field">
+            <label class="t" for="login_password">Contraseña</label>
+            <input
+              id="login_password"
+              name="password"
+              type="password"
+              class="orquestador-login-input"
+              autocomplete="current-password"
+              placeholder="Contraseña"
+              required
+            >
+          </div>
         </div>
-        <header class="orquestador-login-head">
-          <h2 class="orquestador-login-title">Acceso Orquestador</h2>
-          <p class="orquestador-login-subtitle muted">Las credenciales se validan contra Altiplano antes de abrir el panel.</p>
-        </header>
-        <div class="controls-hint orquestador-login-hint">
-          Utilice el mismo usuario y contraseña que en Altiplano
-        </div>
-        <div class="altiplano-panel-inner orquestador-login-body">
-          <form id="orquestador-login-form" class="orquestador-login-form" autocomplete="on">
-            <div class="row altiplano-row orquestador-login-fields">
-              <div class="altiplano-field altiplano-field-site">
-                <label class="t" for="login_username">Usuario</label>
-                <input id="login_username" name="username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="Ej. usuario Altiplano" required>
-              </div>
-              <div class="altiplano-field altiplano-field-site">
-                <label class="t" for="login_password">Contraseña</label>
-                <input id="login_password" name="password" type="password" autocomplete="current-password" placeholder="••••••••" required>
-              </div>
-              <div class="orquestador-login-submit-cell">
-                <button id="login_submit" type="submit" class="btn btn-primary">Ingresar</button>
-              </div>
-            </div>
-          </form>
-          <div id="orquestador-login-msg" class="orquestador-login-feedback muted" role="status" aria-live="polite"></div>
-        </div>
-      </div>
+
+        <button id="login_submit" type="submit" class="btn btn-primary orquestador-login-submit">
+          Ingresar
+        </button>
+
+        <p class="orquestador-login-note muted">
+          Utilice el mismo <strong>usuario</strong> y <strong>contraseña</strong> que en Altiplano.
+        </p>
+
+        <div id="orquestador-login-msg" class="orquestador-login-feedback muted" role="status" aria-live="polite"></div>
+      </form>
     </div>
   </div>
 </div>
@@ -69,9 +87,11 @@
     const password = pwdEl ? String(pwdEl.value || "") : "";
     if (!username || !password) {
       msg.textContent = "Completá usuario y contraseña.";
+      msg.classList.add("orquestador-login-feedback--error");
       return;
     }
     btn.disabled = true;
+    msg.classList.remove("orquestador-login-feedback--error");
     msg.textContent = "Validando con Altiplano…";
     fetch("{{ url_for('dash_altiplano_login') }}", {
       method: "POST",
@@ -90,11 +110,13 @@
           window.location.href = "{{ url_for('dash_altiplano') }}";
           return;
         }
-        var m = (r.body && r.body.message) ? r.body.message : "No se pudo ingresar.";
+        var m = r.body && r.body.message ? r.body.message : "No se pudo ingresar.";
         msg.textContent = m;
+        msg.classList.add("orquestador-login-feedback--error");
       })
       .catch(function () {
         msg.textContent = "Error de red o servidor.";
+        msg.classList.add("orquestador-login-feedback--error");
       })
       .finally(function () {
         btn.disabled = false;

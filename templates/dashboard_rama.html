@@ -28,19 +28,28 @@
 
   {% include 'partials/nav_dashboard.html' %}
 
-  <div class="panel dashboard-tree-panel">
-    <div class="controls dashboard-tree-controls">
-      <div class="field" role="search">
-        <span class="search-icon" aria-hidden="true">⌕</span>
-        <input id="q" placeholder="Buscar por sitio, RAMA o CTO… (ej: San Fernando / SF01-RATC / SF01-FATC-8-202018)" autocomplete="off" aria-label="Filtrar árbol">
+  <div class="panel dashboard-tree-panel card suite-index-card">
+    <div class="suite-search-surface dashboard-tree-controls">
+      <div class="orquestador-panel-head suite-panel-head consulta-panel-head">
+        <p class="suite-search-lead consulta-search-lead orquestador-panel-head__main">
+          Filtrá por sitio, <strong>RAMA</strong> o <strong>CTO</strong>; expandí nodos y consultá potencias (Altiplano).
+        </p>
       </div>
-      <div class="toolbar-actions" role="toolbar" aria-label="Exportar y vista">
-        <button class="btn" type="button" onclick="copiarCtosSeleccionadas()" title="TSV solo CTO marcadas">Copiar CTO seleccionadas</button>
-        <button class="btn" type="button" onclick="exportarCtosSeleccionadasCsv()" title="CSV cliente, UTF-8">Exportar CTO seleccionadas CSV</button>
-        <button class="btn btn-ghost" type="button" onclick="colapsarTodoYLimpiarRama()" title="Colapsar sitios, limpiar búsqueda y desmarcar CTO">Colapsar todo</button>
+      <div class="suite-query-row consulta-query-row dashboard-tree-query-row">
+        <div class="suite-query-row__field">
+          <div class="field suite-field consulta-field" role="search">
+            <span class="search-icon" aria-hidden="true">⌕</span>
+            <input id="q" placeholder="Buscar por sitio, RAMA o CTO… (ej: San Fernando / SF01-RATC / SF01-FATC-8-202018)" autocomplete="off" aria-label="Filtrar árbol">
+          </div>
+        </div>
+        <div class="toolbar-actions suite-search-actions" role="toolbar" aria-label="Exportar y vista">
+          <button class="btn" type="button" onclick="copiarCtosSeleccionadas()" title="TSV solo CTO marcadas">Copiar CTO seleccionadas</button>
+          <button class="btn" type="button" onclick="exportarCtosSeleccionadasCsv()" title="CSV cliente, UTF-8">Exportar CTO seleccionadas CSV</button>
+          <button class="btn btn-ghost" type="button" onclick="colapsarTodoYLimpiarRama()" title="Colapsar sitios, limpiar búsqueda y desmarcar CTO">Colapsar todo</button>
+        </div>
       </div>
     </div>
-    <div class="controls-hint dashboard-tree-hint dashboard-tree-hint--metrics">
+    <div class="controls-hint dashboard-tree-hint dashboard-tree-hint--metrics suite-note">
       <div class="dashboard-tree-hint__text">
         <strong class="hint-kicker">NOC</strong>
         Marcá CTO (o “todas en esta RAMA”) y usá copiar / exportar CSV seleccionadas (UTF‑8, descarga local).
@@ -61,10 +70,14 @@
       </div>
     </div>
 
+    <div class="dashboard-tree-body">
 {% for bloque in ramas %}
 <div class="principal-block" data-principal-search="{{ bloque.SEARCH_TEXT }}" data-principal-name="{{ bloque.PRINCIPAL }}">
-  <div class="card node site-head" data-toggle-node aria-expanded="false" onclick="toggle(this)">
-    <span class="arrow">▶</span> {{ bloque.PRINCIPAL }}
+  <div class="card node site-head site-head--metrics" data-toggle-node aria-expanded="false" onclick="toggle(this)">
+    <span class="site-head__title">
+      <span class="arrow">▶</span> {{ bloque.PRINCIPAL }}
+    </span>
+    <span class="site-head-meta" onclick="event.stopPropagation()" aria-label="Totales {{ bloque.PRINCIPAL }}" title="RAMAs {{ bloque.TOTALES.RAMAS }} · CTO {{ bloque.TOTALES.CTO }} · ONT {{ bloque.TOTALES.ONT }}">{{ bloque.TOTALES.RAMAS }} RAMAs · {{ bloque.TOTALES.CTO }} CTO · {{ bloque.TOTALES.ONT }} ONT</span>
   </div>
 
   <div class="hidden indent1">
@@ -81,7 +94,7 @@
     <span class="rama-row-actions" onclick="event.stopPropagation()">
       <button class="btn" type="button" onclick="consultarRama('{{ r.RAMA }}', this)">Consultar RX</button>
       <button
-        class="btn btn-ghost"
+        class="btn"
         type="button"
         onclick="event.stopPropagation(); verMapaRama(this);"
         title="Mapa con todas las CTO que tengan coordenadas"
@@ -113,6 +126,7 @@
   </div>
 </div>
 {% endfor %}
+    </div>
 
 </div>
 

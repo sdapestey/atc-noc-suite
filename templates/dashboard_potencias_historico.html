@@ -21,12 +21,23 @@
 
   {% include 'partials/nav_dashboard.html' %}
 
-  <div class="card">
-    <form class="search" onsubmit="event.preventDefault(); fetchData();">
-      <div class="field" role="search">
+  <div class="card suite-index-card">
+    <div class="suite-search-surface suite-search-surface--historico">
+      <div class="orquestador-panel-head suite-panel-head consulta-panel-head">
+        <p class="suite-search-lead consulta-search-lead orquestador-panel-head__main">
+          Tendencia <strong>Rx</strong> por rama <code class="inline-code">RATC</code> — elegí rango y consultá potencias actuales.
+        </p>
+      </div>
+    <form class="search suite-search-form" onsubmit="event.preventDefault(); fetchData();">
+      <div class="suite-query-row consulta-query-row">
+        <div class="suite-query-row__field">
+      <div class="field suite-field consulta-field" role="search">
         <span class="search-icon" aria-hidden="true">⌕</span>
+        <label class="sr-only" for="ratc-input">Rama RATC</label>
         <input id="ratc-input" placeholder="Ej: MR01-RATC-0-000200" autocomplete="off">
       </div>
+        </div>
+      <div class="suite-search-actions consulta-search-actions">
       <div class="historico-range" id="range-picker" aria-label="Rango de dias">
         <button class="btn btn-ghost is-active" type="button" data-days="30">30d</button>
         <button class="btn btn-ghost" type="button" data-days="15">15d</button>
@@ -37,7 +48,10 @@
       <button class="btn btn-ghost" type="button" id="btn-consultar-ahora" disabled>Consultar RX</button>
       <button class="btn btn-ghost" type="button" id="btn-export" disabled>Exportar CSV</button>
       <button class="btn btn-ghost" type="button" onclick="resetDashboard()">Limpiar</button>
+      </div>
+      </div>
     </form>
+    </div>
 
     <div class="metrics-grid" id="stats-grid">
       <div class="metric-card metric-card--pon">

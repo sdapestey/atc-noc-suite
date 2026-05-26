@@ -1476,3 +1476,101 @@ def test_buscar_intents_advanced_filters_only(monkeypatch):
     assert out["ok"] is True
     assert len(out["matches"]) == 1
     assert out.get("search_source") == "gui-search-intents-advanced"
+
+
+def test_operator_gui_search_body_target_es_string():
+    import altiplano as ap
+
+    body = ap._operator_gui_search_intents_body_by_target("BA_OLTA_ES01_01-1-1-1")
+    filt = body["ibn:search-intents"]["filter"]
+    assert filt["target"] == "BA_OLTA_ES01_01-1-1-1"
+    assert filt["argument"] == []
+    assert filt["intent-type-list"][0]["intent-type"] == "ont-connection"
+
+    body_tc = ap._operator_gui_search_intents_body_by_target(
+        "BA_OLTA_SF01_01-2-1-9",
+        intent_type="tasa-composite",
+        intent_type_version="3",
+    )
+    tc = body_tc["ibn:search-intents"]["filter"]["intent-type-list"][0]
+    assert tc["intent-type"] == "tasa-composite"
+    assert tc["intent-type-version"] == "3"
+
+
+def test_operator_intent_types_for_vno_consult_tasa_incluye_composite():
+    import altiplano as ap
+
+    types = ap._operator_intent_types_for_vno_consult("TASA")
+    assert ("tasa-composite", "3") in types
+    assert ("ont", "11") in types
+    dtv = ap._operator_intent_types_for_vno_consult("DTV")
+    assert not any(t[0] == "tasa-composite" for t in dtv)
+
+
+def test_enriquecer_consulta_con_operador_agrega_vno_por_device_inp(monkeypatch):
+    import altiplano as ap
+
+    captured: list[tuple] = []
+
+    def fake_operador(_op, target, **kw):
+        captured.append((target, kw))
+        return {
+            "ok": True,
+            "matches": [
+                {
+                    "target": "BA_OLTA_ES01_01-1-1-1",
+                    "location_slice_pon": "BA_OLTA_ES01_01-1-1-1",
+                    "access_id": "1055568367",
+                    "intent_type": "ont",
+                },
+                {
+                    "target": "BA_OLTA_ES01_01-1-1-1#HSI-1501",
+                    "location_slice_pon": "BA_OLTA_ES01_01-1-1-1#HSI-1501",
+                    "intent_type": "tasa-composite",
+                },
+            ],
+        }
+
+    monkeypatch.setattr(ap, "buscar_ont_connection_operador_por_target_exact", fake_operador)
+
+    out = ap.enriquecer_consulta_con_operador(
+        {
+            "ok": True,
+            "matches": [
+                {
+                    "target": "BA_OLTA_ES01_01-1-1-1#1001#gpon",
+                    "access_id": "1055568367",
+                }
+            ],
+        },
+        access_id="1055568367",
+        inventory_resolution={"invocator_system": 1001},
+    )
+    assert out["consulta_layout"] == "access_id_tabs"
+    assert out["matches"][0]["inp_device_name"] == "BA_OLTA_ES01_01-1-1-1"
+    assert out["operator_resolution"]["operator"] == "TASA"
+    assert out["operator_resolution"]["found"] is True
+    assert len(out["vno_matches"]) == 2
+    assert any(r.get("intent_type") == "tasa-composite" for r in out["vno_matches"])
+    assert captured[0][0] == "BA_OLTA_ES01_01-1-1-1"
+    assert captured[0][1]["access_id"] == "1055568367"
+
+
+def test_enriquecer_consulta_con_operador_sin_match_operador(monkeypatch):
+    import altiplano as ap
+
+    monkeypatch.setattr(
+        ap,
+        "buscar_ont_connection_operador_por_target_exact",
+        lambda *_a, **_kw: {"ok": True, "matches": []},
+    )
+
+    out = ap.enriquecer_consulta_con_operador(
+        {"ok": True, "matches": [{"target": "BA_OLTA_X#1001#gpon", "access_id": "1"}]},
+        access_id="1",
+        inventory_resolution={"invocator_system": 1001},
+    )
+    assert out["consulta_layout"] == "access_id_tabs"
+    assert out["operator_resolution"]["operator"] == "TASA"
+    assert out["operator_resolution"]["found"] is False
+    assert out["vno_matches"] == []

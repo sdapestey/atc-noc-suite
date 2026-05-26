@@ -1183,17 +1183,21 @@ def _maybe_enrich_alignment_from_restconf_get(
 
 
 def _inp_rel_path_ont_connection_instance(full_target: str) -> str:
+    """Path RESTCONF para intent ``ont-connection`` (alias de :func:`_rel_path_intent_instance`)."""
+    return _rel_path_intent_instance(full_target, "ont-connection")
+
+
+def _rel_path_intent_instance(full_target: str, intent_type: str) -> str:
     """
-    Path RESTCONF para un intent ``ont-connection`` concreto (Northbound INP / Postman).
+    Path RESTCONF para un intent concreto (``target`` + ``intent-type``).
 
     Ejemplo::
         ibn:ibn/intent=BA_OLTA_ES01_01-1-1-7%231001%23gpon,ont-connection
-
-    La clave de lista es compuesta (``target``, ``intent-type``), no UUID.
     """
     t = (full_target or "").strip()
     enc = t.replace("#", "%23")
-    return f"ibn:ibn/intent={enc},ont-connection"
+    it = (intent_type or "ont-connection").strip() or "ont-connection"
+    return f"ibn:ibn/intent={enc},{it}"
 
 
 def _inp_restconf_operations_root_from_data_base(base_rest: str) -> str | None:
@@ -1345,6 +1349,51 @@ def _inp_gui_search_intents_body_by_access_id(
         intent_type_version=intent_type_version,
         page_size=page_size,
     )
+
+
+def _operator_gui_search_intents_body_by_target(
+    target: str,
+    *,
+    intent_type: str = "ont-connection",
+    intent_type_version: str | None = None,
+    page_number: int = 0,
+    page_size: int = 10,
+) -> dict:
+    """
+    Cuerpo ``ibn:search-intents`` por device/target exacto en NBI operador (GUI TASA).
+
+    La GUI envía ``filter.target`` como **string** (ej. ``BA_OLTA_ES01_01-1-1-1``), no como lista,
+    y sin ``argument`` access-id en el filtro.
+    """
+    ver = (intent_type_version or "").strip() or "11"
+    tgt = (target or "").strip()
+    it = (intent_type or "ont-connection").strip() or "ont-connection"
+    return {
+        "ibn:search-intents": {
+            "search-from": "ES",
+            "page-number": max(0, int(page_number)),
+            "page-size": max(1, min(int(page_size), 500)),
+            "filter": {
+                "device-name": [],
+                "target": tgt,
+                "label": [],
+                "config-required": True,
+                "state-required": False,
+                "predicate": "CONTAINS",
+                "relative-object-id": [],
+                "intent-type-list": [
+                    {
+                        "intent-type": it,
+                        "intent-type-version": ver,
+                    }
+                ],
+                "required-network-state": [],
+                "health": [],
+                "argument": [],
+                "order-by-input": {"direction": "asc", "argument": "target"},
+            },
+        }
+    }
 
 
 def _search_intents_output_meta(body: dict) -> tuple[int | None, int | None]:
@@ -1600,6 +1649,458 @@ def buscar_ont_connection_inp_via_gui_access_id_search(
             continue
         matches.append(_match_entry_to_result_dict(entry))
     return matches
+
+
+def _operator_intent_types_for_vno_consult(operator: str) -> list[tuple[str, str]]:
+    """``(intent-type, version)`` a consultar en VNO por device (GUI operador)."""
+    op = (operator or "").strip().upper()
+    types: list[tuple[str, str]] = [
+        ("ont-connection", "11"),
+        ("ont", "11"),
+    ]
+    if op == "TASA":
+        types.append(("tasa-composite", "3"))
+    return types
+
+
+def buscar_intents_via_gui_target_search(
+    base_rest: str,
+    headers: dict,
+    target: str,
+    *,
+    intent_type: str = "ont-connection",
+    intent_type_version: str | None = None,
+    access_id: str | None = None,
+    access_id_match_mode: str = "exact",
+    timeout_s: float = 90.0,
+) -> list[dict]:
+    """
+    Lista intents por target exacto (``filter.target`` string), como la GUI del operador.
+    """
+    tgt = (target or "").strip()
+    if not tgt:
+        return []
+    url = _inp_search_intents_operation_url(base_rest)
+    if not url:
+        return []
+    body = _operator_gui_search_intents_body_by_target(
+        tgt,
+        intent_type=intent_type,
+        intent_type_version=intent_type_version,
+    )
+    post_headers = {
+        **headers,
+        "Content-Type": "application/yang-data+json",
+        "Accept": "application/yang-data+json, application/json;q=0.9, */*;q=0.5",
+    }
+    try:
+        res = requests.post(
+            url,
+            headers=post_headers,
+            json=body,
+            verify=False,
+            timeout=timeout_s,
+        )
+    except requests.RequestException:
+        return []
+    if res.status_code == 401:
+        return []
+    if res.status_code != 200:
+        return []
+    data = _json_loads_altiplano_http_response(res)
+    if not isinstance(data, dict) or isinstance(data.get("ietf-restconf:errors"), dict):
+        return []
+    rows = _extract_intent_list_from_search_intents_response(data)
+    want_it = (intent_type or "ont-connection").strip()
+    aid = (access_id or "").strip()
+    matches: list[dict] = []
+    for row in rows:
+        row_it = (row.get("intent-type") or "").strip()
+        if want_it and row_it != want_it:
+            continue
+        if aid:
+            row_aid = _access_id_from_search_intents_row(row)
+            if not _intent_access_id_matches(row_aid, aid, access_id_match_mode):
+                continue
+        entry = _search_intent_row_to_ont_connection_entry(row)
+        if not (entry.get("target") or "").strip():
+            continue
+        matches.append(_match_entry_to_result_dict(entry))
+    return matches
+
+
+def _operator_name_for_ont_connection_consult(
+    inventory_resolution: dict | None,
+    matches: list[dict] | None,
+) -> str | None:
+    """Operador comercial (TASA, DTV, …) desde inventario o VNO del target INP."""
+    from services.domain import OPERADORES
+
+    inv = inventory_resolution if isinstance(inventory_resolution, dict) else {}
+    inv_sys = inv.get("invocator_system")
+    if inv_sys is not None:
+        try:
+            name = OPERADORES.get(int(inv_sys))
+            if name:
+                return name
+        except (TypeError, ValueError):
+            pass
+    for row in matches or []:
+        if not isinstance(row, dict):
+            continue
+        tgt = (row.get("target") or row.get("location_slice_pon") or "").strip()
+        vno_s = _vno_from_ont_connection_target(tgt)
+        if not vno_s:
+            continue
+        try:
+            name = OPERADORES.get(int(vno_s))
+            if name:
+                return name
+        except ValueError:
+            continue
+    return None
+
+
+def _operator_nbi_search_session(
+    operator: str,
+) -> tuple[dict | None, dict | None]:
+    """
+    Sesión REST (``base_rest``, ``headers``, ``operator``) para ``ibn:search-intents`` del operador.
+
+    Returns:
+        ``(session, None)`` o ``(None, error_dict)`` con ``ok`` False.
+    """
+    op = (operator or "").strip().upper()
+    if not op:
+        return None, {
+            "ok": False,
+            "message": "Operador no indicado",
+            "matches": [],
+            "operator": None,
+        }
+    host, port, base_url = get_altiplano_nbi_target(op)
+    if not host or not port or not base_url:
+        return None, {
+            "ok": False,
+            "message": f"Entorno NBI no configurado para operador {op}",
+            "matches": [],
+            "operator": op,
+        }
+    username, pwd = get_altiplano_operator_credentials(op)
+    if not username or not pwd:
+        return None, {
+            "ok": False,
+            "message": f"Credenciales no configuradas para operador {op}",
+            "matches": [],
+            "operator": op,
+        }
+    token = obtener_token_entorno_nbi(op, username, pwd)
+    if not token:
+        return None, {
+            "ok": False,
+            "message": f"No se pudo autenticar contra Altiplano ({op})",
+            "matches": [],
+            "operator": op,
+        }
+    return (
+        {
+            "base_rest": f"https://{host}:{port}/{base_url}/rest/restconf/data",
+            "headers": {
+                "Authorization": f"Bearer {token}",
+                "Accept": (
+                    "application/yang-data+json, application/json;q=0.9, "
+                    "text/plain;q=0.8, */*;q=0.5"
+                ),
+            },
+            "operator": op,
+        },
+        None,
+    )
+
+
+def buscar_ont_connection_operador_por_access_id(
+    access_id: str,
+    operator: str,
+    *,
+    access_id_match_mode: str = "exact",
+    timeout_s: float | None = None,
+) -> dict:
+    """
+    Lista intents ``ont-connection`` en el NBI del operador (TASA, DTV, …) por Access ID.
+
+    Usa la misma operación ``ibn:search-intents`` que la GUI; credenciales del operador en ``.env``.
+    """
+    aid = (access_id or "").strip()
+    op = (operator or "").strip().upper()
+    if not aid:
+        return {"ok": False, "message": "Access ID requerido", "matches": [], "operator": op or None}
+    return buscar_ont_connection_operador_por_criterios(
+        op,
+        access_id=aid,
+        access_id_match_mode=access_id_match_mode,
+        timeout_s=timeout_s,
+    )
+
+
+def buscar_ont_connection_operador_por_criterios(
+    operator: str,
+    *,
+    device_prefix: str | None = None,
+    access_id: str | None = None,
+    access_id_match_mode: str = "exact",
+    timeout_s: float | None = None,
+) -> dict:
+    """
+    Lista intents ``ont-connection`` en el NBI del operador por device/target y/o Access ID.
+    """
+    op = (operator or "").strip().upper()
+    dp = (device_prefix or "").strip()
+    aid = (access_id or "").strip()
+    if not dp and not aid:
+        return {
+            "ok": False,
+            "message": "Indicá device name o Access ID",
+            "matches": [],
+            "operator": op or None,
+        }
+
+    session, err = _operator_nbi_search_session(op)
+    if err:
+        return err
+
+    tmo = float(timeout_s) if timeout_s is not None else float(get_altiplano_inp_search_http_timeout_s())
+    base_rest = session["base_rest"]
+    headers = session["headers"]
+    if dp:
+        search = buscar_ont_connection_operador_por_target_exact(
+            op,
+            dp,
+            access_id=aid or None,
+            access_id_match_mode=access_id_match_mode,
+            timeout_s=tmo,
+        )
+        if not search.get("ok"):
+            return search
+        return {
+            "ok": True,
+            "message": "ok",
+            "matches": search.get("matches") or [],
+            "operator": op,
+        }
+    else:
+        matches = buscar_ont_connection_inp_via_gui_access_id_search(
+            base_rest,
+            headers,
+            aid,
+            access_id_match_mode=access_id_match_mode,
+            timeout_s=tmo,
+        )
+    return {"ok": True, "message": "ok", "matches": matches, "operator": op}
+
+
+def _vno_match_dedupe_key(row: dict) -> str:
+    it = str(row.get("intent_type") or row.get("intent-type") or "").strip().lower()
+    tgt = (row.get("target") or row.get("location_slice_pon") or "").strip()
+    return f"{it}|{tgt}"
+
+
+def _filter_vno_rows_for_device_and_access(
+    rows: list[dict],
+    device_prefix: str,
+    intent_type: str,
+    access_id: str | None,
+    access_id_match_mode: str,
+) -> list[dict]:
+    """Acota filas VNO al device INP; Access ID solo en ont-connection / ont."""
+    dp = (device_prefix or "").strip()
+    it = (intent_type or "").strip().lower()
+    out: list[dict] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        head = _target_head((row.get("target") or row.get("location_slice_pon") or "").strip())
+        if dp and head != dp and not head.startswith(dp + "#"):
+            continue
+        out.append(row)
+    if not access_id or it == "tasa-composite":
+        return out
+    aid = access_id.strip()
+    matched = [
+        r
+        for r in out
+        if _intent_access_id_matches(str(r.get("access_id") or ""), aid, access_id_match_mode)
+    ]
+    if it == "ont-connection":
+        return matched
+    return matched or out
+
+
+def buscar_ont_connection_operador_por_target_exact(
+    operator: str,
+    target: str,
+    *,
+    access_id: str | None = None,
+    access_id_match_mode: str = "exact",
+    timeout_s: float | None = None,
+) -> dict:
+    """
+    Busca en el NBI del operador por device name exacto (GUI: ``target`` string).
+
+    Acumula ``ont-connection``, ``ont`` y, en TASA, ``tasa-composite`` (v3) como filas separadas.
+    El Access ID se filtra en cliente; el POST del operador no lleva ``argument`` access-id.
+    """
+    tgt = (target or "").strip()
+    op = (operator or "").strip().upper()
+    if not tgt:
+        return {"ok": False, "message": "Target requerido", "matches": [], "operator": op or None}
+    session, err = _operator_nbi_search_session(op)
+    if err:
+        return err
+    tmo = float(timeout_s) if timeout_s is not None else float(get_altiplano_inp_search_http_timeout_s())
+    base_rest = session["base_rest"]
+    headers = session["headers"]
+    aid = (access_id or "").strip() or None
+    merged: list[dict] = []
+    for intent_type, ver in _operator_intent_types_for_vno_consult(op):
+        rows = buscar_intents_via_gui_target_search(
+            base_rest,
+            headers,
+            tgt,
+            intent_type=intent_type,
+            intent_type_version=ver,
+            access_id=None,
+            timeout_s=tmo,
+        )
+        rows = _filter_vno_rows_for_device_and_access(
+            rows, tgt, intent_type, aid, access_id_match_mode
+        )
+        _merge_vno_matches_unique(merged, rows)
+    return {"ok": True, "message": "ok", "matches": merged, "operator": op}
+
+
+def _inp_device_prefixes_for_vno_lookup(
+    matches: list[dict] | None,
+    inventory_resolution: dict | None,
+) -> list[str]:
+    """Prefijos device (location) desde targets INP o inventario ATC, sin duplicados."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for row in matches or []:
+        if not isinstance(row, dict):
+            continue
+        tgt = (row.get("target") or row.get("location_slice_pon") or "").strip()
+        head = _target_head(tgt)
+        if head and head not in seen:
+            seen.add(head)
+            out.append(head)
+    inv = inventory_resolution if isinstance(inventory_resolution, dict) else {}
+    inv_dp = (inv.get("device_location_prefix") or "").strip()
+    if inv_dp and inv_dp not in seen:
+        out.append(inv_dp)
+    return out
+
+
+def _annotate_inp_matches_device_names(matches: list[dict] | None) -> None:
+    for row in matches or []:
+        if not isinstance(row, dict):
+            continue
+        tgt = (row.get("target") or row.get("location_slice_pon") or "").strip()
+        head = _target_head(tgt)
+        if head:
+            row["inp_device_name"] = head
+
+
+def _merge_vno_matches_unique(vno_matches: list[dict], new_rows: list[dict]) -> None:
+    seen = {_vno_match_dedupe_key(r) for r in vno_matches if isinstance(r, dict)}
+    for row in new_rows:
+        if not isinstance(row, dict):
+            continue
+        key = _vno_match_dedupe_key(row)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        vno_matches.append(row)
+
+
+def enriquecer_consulta_con_operador(
+    out: dict,
+    *,
+    access_id: str | None,
+    inventory_resolution: dict | None,
+    access_id_match_mode: str = "exact",
+) -> dict:
+    """
+    Tras consulta INP por Access ID: pestañas INP + VNO.
+
+    - ``matches``: solo Altiplano INP (con ``inp_device_name``).
+    - ``vno_matches``: intents en el NBI del operador buscados por device name INP (+ Access ID).
+    - ``consulta_layout``: ``access_id_tabs``.
+    """
+    aid = (access_id or "").strip()
+    if not aid or not isinstance(out, dict):
+        return out
+
+    out["consulta_layout"] = "access_id_tabs"
+    inp_rows = out.get("matches") or []
+    _annotate_inp_matches_device_names(inp_rows)
+
+    operator = _operator_name_for_ont_connection_consult(
+        inventory_resolution, inp_rows
+    )
+    op_res: dict = {
+        "operator": operator,
+        "found": False,
+        "operator_device_name": None,
+        "message": None,
+        "searched_device_prefixes": [],
+    }
+    out["vno_matches"] = []
+
+    if not operator:
+        out["operator_resolution"] = op_res
+        return out
+
+    prefixes = _inp_device_prefixes_for_vno_lookup(inp_rows, inventory_resolution)
+    op_res["searched_device_prefixes"] = prefixes
+    if not prefixes:
+        op_res["message"] = (
+            "Sin device name en INP para buscar en el operador; "
+            "revisá inventario ATC o creá el intent en INP."
+        )
+        out["operator_resolution"] = op_res
+        return out
+
+    vno_matches: list[dict] = []
+    last_err: str | None = None
+    for dp in prefixes:
+        search = buscar_ont_connection_operador_por_target_exact(
+            operator,
+            dp,
+            access_id=aid,
+            access_id_match_mode=access_id_match_mode,
+        )
+        if not search.get("ok"):
+            last_err = search.get("message")
+            continue
+        _merge_vno_matches_unique(vno_matches, search.get("matches") or [])
+
+    out["vno_matches"] = vno_matches
+    if vno_matches:
+        op_res["found"] = True
+        op_target = (
+            vno_matches[0].get("target") or vno_matches[0].get("location_slice_pon") or ""
+        ).strip()
+        if op_target:
+            op_res["operator_device_name"] = op_target
+    elif last_err:
+        op_res["message"] = last_err
+    else:
+        op_res["message"] = (
+            f"Sin intent ont-connection en {operator} para los device INP buscados"
+        )
+
+    out["operator_resolution"] = op_res
+    return out
 
 
 def _extract_intent_list_from_search_intents_response(body: object) -> list[dict]:
@@ -2349,6 +2850,108 @@ def _match_entry_rn_edit_allowed(rn_raw: str) -> bool:
     )
 
 
+_TASA_COMPOSITE_TARGET_RE = re.compile(
+    r"^(?P<device>BA_OLTA_.+)-(?P<lt>\d+)-(?P<pon>\d+)-(?P<ont>\d+)#HSI-(?P<svlan>[^#,]+)$",
+    re.IGNORECASE,
+)
+
+
+def _hsi_from_ibn_row(row_or_entry: dict) -> dict:
+    """Perfiles HSI desde ``intent-specific-data`` de ``tasa-composite``."""
+    if not isinstance(row_or_entry, dict):
+        return {}
+    block = row_or_entry.get("intent-specific-data")
+    if not isinstance(block, dict):
+        return {}
+    hsi = block.get("tasa-composite:hsi")
+    if not isinstance(hsi, dict):
+        hsi = block.get("hsi")
+    if not isinstance(hsi, dict):
+        return {}
+    out: dict = {}
+    ds = hsi.get("downstream-profile") or hsi.get("downstream_profile")
+    if ds is not None and str(ds).strip():
+        out["downstream_profile"] = str(ds).strip()
+    us = hsi.get("upstream-profile") or hsi.get("upstream_profile")
+    if us is not None and str(us).strip():
+        out["upstream_profile"] = str(us).strip()
+    cv = hsi.get("c-vlan-id")
+    if cv is None:
+        cv = hsi.get("c_vlan_id")
+    if cv is not None and str(cv).strip() != "":
+        try:
+            out["c_vlan_id"] = int(cv)
+        except (TypeError, ValueError):
+            out["c_vlan_id"] = cv
+    return out
+
+
+def parse_tasa_composite_target(target: str) -> dict | None:
+    """``BA_OLTA_…-LT-PON-ONT#HSI-SVLAN`` → variables Postman."""
+    m = _TASA_COMPOSITE_TARGET_RE.match((target or "").strip())
+    if not m:
+        return None
+    return {
+        "device_name": m.group("device"),
+        "lt": m.group("lt"),
+        "pon": m.group("pon"),
+        "ont": m.group("ont"),
+        "svlan": m.group("svlan"),
+        "target": (target or "").strip(),
+    }
+
+
+def tasa_composite_modify_profiles_variables(
+    target: str,
+    *,
+    downstream_profile: str,
+    upstream_profile: str,
+) -> dict[str, str] | None:
+    """Variables Postman para ``Modify Profiles`` (Shaper + Traffic Descriptor)."""
+    parsed = parse_tasa_composite_target(target)
+    if not parsed:
+        return None
+    ds = (downstream_profile or "").strip()
+    us = (upstream_profile or "").strip()
+    if not ds or not us:
+        return None
+    return {
+        "Device Name": parsed["device_name"],
+        "LT": parsed["lt"],
+        "PON": parsed["pon"],
+        "ONT": parsed["ont"],
+        "SVLAN": parsed["svlan"],
+        "Downstream Profile": ds,
+        "Upstream Profile": us,
+    }
+
+
+def tasa_composite_postman_variables(
+    target: str,
+    tasa_hsi: dict | None = None,
+) -> dict[str, str] | None:
+    """Mapa de variables para ``configure-create-services`` (colección TASA)."""
+    parsed = parse_tasa_composite_target(target)
+    if not parsed:
+        return None
+    hsi = tasa_hsi if isinstance(tasa_hsi, dict) else {}
+    ds = (hsi.get("downstream_profile") or "").strip() or "TASA_SH300MB_DN"
+    us = (hsi.get("upstream_profile") or "").strip() or "TASA_BW300MB_UP"
+    cv = hsi.get("c_vlan_id")
+    if cv is None or str(cv).strip() == "":
+        cv = 101
+    return {
+        "Device Name": parsed["device_name"],
+        "LT": parsed["lt"],
+        "PON": parsed["pon"],
+        "ONT": parsed["ont"],
+        "SVLAN": parsed["svlan"],
+        "CVLAN": str(cv),
+        "Downstream Profile": ds,
+        "Upstream Profile": us,
+    }
+
+
 def _match_entry_to_result_dict(entry: dict) -> dict:
     rn_raw = (
         entry.get("required-network-state") or entry.get("required_network_state") or ""
@@ -2359,13 +2962,14 @@ def _match_entry_to_result_dict(entry: dict) -> dict:
     ed_raw = entry.get("error-detail") or entry.get("error_detail") or ""
     ed_raw = str(ed_raw).strip() if ed_raw else ""
     missing_l1 = parse_l1_scheduler_missing_ont_connection(ed_raw) if ed_raw else None
-    return {
+    it = (entry.get("intent-type") or entry.get("intent_type") or "ont-connection").strip()
+    out = {
         "target": tgt,
         # Misma clave que en la GUI NBI: Location Name#Slice Owner Name#PON Type
         "location_slice_pon": tgt or None,
         "access_id": _intent_access_id_from_entry(entry),
         "intent_uuid": _intent_uuid_from_entry(entry),
-        "intent_type": entry.get("intent-type") or "ont-connection",
+        "intent_type": it or "ont-connection",
         "required_network_state": rn_raw or None,
         "network_state": _format_intent_ui_label(rn_raw, _INTENT_UI_NETWORK),
         "alignment_state": _format_intent_ui_label(al_raw, _INTENT_UI_ALIGNMENT),
@@ -2374,6 +2978,11 @@ def _match_entry_to_result_dict(entry: dict) -> dict:
         "can_create_missing_ont_connection": bool(missing_l1),
         "rn_edit_allowed": _match_entry_rn_edit_allowed(rn_raw),
     }
+    if it.lower() == "tasa-composite":
+        hsi = _hsi_from_ibn_row(entry)
+        if hsi:
+            out["tasa_hsi"] = hsi
+    return out
 
 
 def _buscar_is_wide_access_only_global_list(
@@ -2980,22 +3589,27 @@ def _inp_synchronize_intent_operation_names() -> tuple[str, ...]:
     )
 
 
-def _inp_sync_intent_rpc_body_variants(full_target: str) -> tuple[dict, ...]:
+def _sync_intent_rpc_body_variants(full_target: str, intent_type: str) -> tuple[dict, ...]:
     t = (full_target or "").strip()
+    it = (intent_type or "ont-connection").strip() or "ont-connection"
     seen: set[str] = set()
     out: list[dict] = []
     for b in (
-        {"ibn:input": {"target": t, "intent-type": "ont-connection"}},
-        {"ibn:input": {"intent-type": "ont-connection", "target": t}},
-        {"ibn:input": {"intent": {"target": t, "intent-type": "ont-connection"}}},
-        {"ibn:input": {"intent-type": "ont-connection", "intent-target": t}},
-        {"ibn:input": {"intent-type": "ont-connection", "intentTarget": t}},
+        {"ibn:input": {"target": t, "intent-type": it}},
+        {"ibn:input": {"intent-type": it, "target": t}},
+        {"ibn:input": {"intent": {"target": t, "intent-type": it}}},
+        {"ibn:input": {"intent-type": it, "intent-target": t}},
+        {"ibn:input": {"intent-type": it, "intentTarget": t}},
     ):
         sig = json.dumps(b, sort_keys=True, default=str)
         if sig not in seen:
             seen.add(sig)
             out.append(b)
     return tuple(out)
+
+
+def _inp_sync_intent_rpc_body_variants(full_target: str) -> tuple[dict, ...]:
+    return _sync_intent_rpc_body_variants(full_target, "ont-connection")
 
 
 def _inp_post_restconf_operation(
@@ -3068,9 +3682,10 @@ def _inp_netconf_execute_response_ok(res: requests.Response) -> bool:
     return _inp_restconf_operation_response_ok(res)
 
 
-def _inp_sync_intent_netconf_rpc_xml(full_target: str) -> str:
-    """RPC NETCONF equivalente al botón **Synchronize intent** (HAR GUI INP)."""
+def _sync_intent_netconf_rpc_xml(full_target: str, intent_type: str = "ont-connection") -> str:
+    """RPC NETCONF equivalente al botón **Synchronize intent** (GUI Altiplano)."""
     t = html.escape((full_target or "").strip(), quote=False)
+    it = html.escape((intent_type or "ont-connection").strip() or "ont-connection", quote=False)
     mid = str(int(time.time() * 1000))
     return (
         f"<rpc xmlns='urn:ietf:params:xml:ns:netconf:base:1.0' message-id='{mid}'>"
@@ -3078,7 +3693,7 @@ def _inp_sync_intent_netconf_rpc_xml(full_target: str) -> str:
         "<ibn xmlns='http://www.nokia.com/management-solutions/ibn'>"
         "<intent>"
         f"<target>{t}</target>"
-        "<intent-type>ont-connection</intent-type>"
+        f"<intent-type>{it}</intent-type>"
         "<synchronize></synchronize>"
         "</intent>"
         "</ibn>"
@@ -3087,12 +3702,34 @@ def _inp_sync_intent_netconf_rpc_xml(full_target: str) -> str:
     )
 
 
+def _inp_sync_intent_netconf_rpc_xml(full_target: str) -> str:
+    return _sync_intent_netconf_rpc_xml(full_target, "ont-connection")
+
+
+def _nbi_bearer_token_for_entorno(entorno_nbi: str) -> tuple[str | None, str | None]:
+    """Token Bearer para INP (sesión) u operador (``.env``). Returns ``(token, error)``."""
+    op = (entorno_nbi or "").strip().upper()
+    if not op:
+        return None, "Entorno NBI no indicado"
+    if op == "INP":
+        return None, "INP requiere token de sesión Orquestador"
+    username, pwd = get_altiplano_operator_credentials(op)
+    if not username or not pwd:
+        return None, f"Credenciales no configuradas para operador {op}"
+    token = obtener_token_entorno_nbi(op, username, pwd)
+    if not token:
+        return None, f"No se pudo autenticar contra Altiplano ({op})"
+    return token, None
+
+
 def _inp_synchronize_intent_via_netconf_execute(
     host: str,
     port: str,
     base_url: str,
     token: str,
     full_target: str,
+    *,
+    intent_type: str = "ont-connection",
 ) -> tuple[bool, str]:
     """
     POST ``…/rest/netconf/v1/execute`` (como Chrome al pulsar Synchronize intent).
@@ -3105,7 +3742,7 @@ def _inp_synchronize_intent_via_netconf_execute(
         "Accept": "application/json, text/plain, */*",
         "Content-Type": "application/xml;charset=UTF-8",
     }
-    xml_body = _inp_sync_intent_netconf_rpc_xml(full_target)
+    xml_body = _sync_intent_netconf_rpc_xml(full_target, intent_type)
     try:
         res = requests.post(
             url,
@@ -3766,6 +4403,688 @@ def borrar_intent_ont_connection_inp(
         "message": f"No se pudo borrar el intent: {msg}",
         "target": full_target,
         "matches": matches,
+    }
+
+
+def sincronizar_intent_nbi(
+    entorno_nbi: str,
+    *,
+    target: str,
+    intent_type: str,
+) -> dict:
+    """Synchronize intent en NBI operador (TASA, …) por ``target`` + ``intent-type`` explícitos."""
+    op = (entorno_nbi or "").strip().upper()
+    full_target = (target or "").strip()
+    it = (intent_type or "").strip() or "ont-connection"
+    if not full_target:
+        return {"ok": False, "message": "Target requerido", "target": None, "operator": op}
+    token, err = _nbi_bearer_token_for_entorno(op)
+    if err:
+        return {"ok": False, "message": err, "target": full_target, "operator": op}
+    host, port, base_url = get_altiplano_nbi_target(op)
+    if not host or not port or not base_url:
+        return {
+            "ok": False,
+            "message": f"Entorno NBI no configurado para {op}",
+            "target": full_target,
+            "operator": op,
+        }
+    ok_nc, err_nc = _inp_synchronize_intent_via_netconf_execute(
+        host, port, base_url, token, full_target, intent_type=it
+    )
+    if ok_nc:
+        return {
+            "ok": True,
+            "message": f"Sincronización solicitada en {op} ({it}).",
+            "target": full_target,
+            "intent_type": it,
+            "operator": op,
+        }
+    last_err = err_nc
+    base_rest = f"https://{host}:{port}/{base_url}/rest/restconf/data"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/yang-data+json, application/json;q=0.9, */*;q=0.5",
+        "Content-Type": "application/yang-data+json",
+    }
+    for op_name in _inp_synchronize_intent_operation_names():
+        for body in _sync_intent_rpc_body_variants(full_target, it):
+            res = _inp_post_restconf_operation(
+                base_rest, op_name, body, headers, query=None, timeout_s=90.0
+            )
+            if res is None:
+                continue
+            if isinstance(res, requests.RequestException):
+                return {
+                    "ok": False,
+                    "message": f"Error de red hacia Altiplano: {res}",
+                    "target": full_target,
+                    "operator": op,
+                }
+            if res.status_code == 401:
+                return {
+                    "ok": False,
+                    "message": f"Sesión/credenciales Altiplano ({op}) rechazadas.",
+                    "target": full_target,
+                    "operator": op,
+                }
+            if _inp_restconf_operation_response_ok(res):
+                return {
+                    "ok": True,
+                    "message": f"Sincronización solicitada en {op} ({it}).",
+                    "target": full_target,
+                    "intent_type": it,
+                    "operator": op,
+                }
+            if res.status_code != 404:
+                last_err = _extract_altiplano_error_message(res)
+    return {
+        "ok": False,
+        "message": (last_err or "No se pudo sincronizar el intent.") + f" ({op}/{it})",
+        "target": full_target,
+        "intent_type": it,
+        "operator": op,
+    }
+
+
+def actualizar_required_network_state_nbi(
+    entorno_nbi: str,
+    required_network_state: str,
+    *,
+    target: str,
+    intent_type: str,
+) -> dict:
+    """Modify intent (required-network-state) en NBI operador."""
+    op = (entorno_nbi or "").strip().upper()
+    full_target = (target or "").strip()
+    it = (intent_type or "").strip() or "ont-connection"
+    yang = _normalize_required_network_state_yang_value(required_network_state)
+    if not yang:
+        return {
+            "ok": False,
+            "message": "Valor inválido; usá active, suspended, not-present o delete.",
+            "target": None,
+            "operator": op,
+        }
+    if not full_target:
+        return {"ok": False, "message": "Target requerido", "target": None, "operator": op}
+    token, err = _nbi_bearer_token_for_entorno(op)
+    if err:
+        return {"ok": False, "message": err, "target": full_target, "operator": op}
+    host, port, base_url = get_altiplano_nbi_target(op)
+    if not host or not port or not base_url:
+        return {
+            "ok": False,
+            "message": f"Entorno NBI no configurado para {op}",
+            "target": full_target,
+            "operator": op,
+        }
+    base_rest = f"https://{host}:{port}/{base_url}/rest/restconf/data"
+    rel = _rel_path_intent_instance(full_target, it)
+    url = f"{base_rest}/{rel}"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/yang-data+json, application/json;q=0.9, */*;q=0.5",
+        "Content-Type": "application/yang-data+json",
+    }
+    patch_bodies: tuple[dict, ...] = (
+        {"required-network-state": yang},
+        {"ibn:intent": {"required-network-state": yang}},
+    )
+    last_err = ""
+    for payload in patch_bodies:
+        try:
+            res = requests.patch(
+                url,
+                headers=headers,
+                params={"altiplano-triggerSyncUponSuccess": "true"},
+                json=payload,
+                verify=False,
+                timeout=90,
+            )
+        except requests.RequestException as ex:
+            return {
+                "ok": False,
+                "message": f"Error de red hacia Altiplano: {ex}",
+                "target": full_target,
+                "operator": op,
+            }
+        if res.status_code == 401:
+            return {
+                "ok": False,
+                "message": f"Credenciales Altiplano ({op}) rechazadas.",
+                "target": full_target,
+                "operator": op,
+            }
+        if 200 <= res.status_code < 300:
+            return {
+                "ok": True,
+                "message": f"Required network state actualizado a «{yang}» en {op}.",
+                "target": full_target,
+                "required_network_state": yang,
+                "intent_type": it,
+                "operator": op,
+            }
+        last_err = _extract_altiplano_error_message(res)
+    return {
+        "ok": False,
+        "message": (last_err or "PATCH rechazado") + f" ({op}/{it})",
+        "target": full_target,
+        "intent_type": it,
+        "operator": op,
+    }
+
+
+def borrar_intent_nbi(
+    entorno_nbi: str,
+    *,
+    target: str,
+    intent_type: str,
+) -> dict:
+    """Elimina un intent en el NBI del operador (sin cascada INP)."""
+    op = (entorno_nbi or "").strip().upper()
+    full_target = (target or "").strip()
+    it = (intent_type or "").strip()
+    if not full_target or not it:
+        return {
+            "ok": False,
+            "message": "Target e intent-type requeridos",
+            "target": full_target or None,
+            "operator": op,
+        }
+    token, err = _nbi_bearer_token_for_entorno(op)
+    if err:
+        return {"ok": False, "message": err, "target": full_target, "operator": op}
+    host, port, base_url = get_altiplano_nbi_target(op)
+    if not host or not port or not base_url:
+        return {
+            "ok": False,
+            "message": f"Entorno NBI no configurado para {op}",
+            "target": full_target,
+            "operator": op,
+        }
+    base_rest = f"https://{host}:{port}/{base_url}/rest/restconf/data"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/yang-data+json, application/json;q=0.9, */*;q=0.5",
+        "Content-Type": "application/yang-data+json",
+    }
+    del_body = {
+        "ibn:delete-intent-from-network-and-controller": {
+            "intent-type": it,
+            "target": full_target,
+        }
+    }
+    for op_seg in (
+        "ibn:delete-intent-from-network-and-controller",
+        "ibn:delete-intent-from-network",
+    ):
+        res = _inp_post_restconf_operation(
+            base_rest,
+            op_seg,
+            del_body,
+            headers,
+            query={"history": "false"},
+            timeout_s=90.0,
+        )
+        if res is None or isinstance(res, requests.RequestException):
+            continue
+        if res.status_code == 401:
+            return {
+                "ok": False,
+                "message": f"Credenciales Altiplano ({op}) rechazadas.",
+                "target": full_target,
+                "operator": op,
+            }
+        if _inp_restconf_operation_response_ok(res) or res.status_code in (200, 204):
+            return {
+                "ok": True,
+                "message": f"Intent {it} eliminado en {op}.",
+                "target": full_target,
+                "intent_type": it,
+                "operator": op,
+            }
+    rel = _rel_path_intent_instance(full_target, it)
+    url = f"{base_rest}/{rel}"
+    del_headers = {**headers, "Accept": "application/yang-data+json"}
+    try:
+        res = requests.delete(
+            url,
+            headers=del_headers,
+            params={"altiplano-triggerSyncUponSuccess": "true"},
+            verify=False,
+            timeout=90,
+        )
+    except requests.RequestException as ex:
+        return {
+            "ok": False,
+            "message": f"Error de red: {ex}",
+            "target": full_target,
+            "operator": op,
+        }
+    if res.status_code in (200, 204):
+        return {
+            "ok": True,
+            "message": f"Intent {it} eliminado en {op}.",
+            "target": full_target,
+            "intent_type": it,
+            "operator": op,
+        }
+    return {
+        "ok": False,
+        "message": _extract_altiplano_error_message(res) or "No se pudo borrar el intent",
+        "target": full_target,
+        "intent_type": it,
+        "operator": op,
+    }
+
+
+def _tasa_composite_device_search_target(full_target: str) -> str | None:
+    """
+    Target para ``search-intents`` en TASA (misma forma que la consulta VNO por device).
+
+    Ej.: ``BA_OLTA_SF01_01-2-1-9#HSI-1501`` → ``BA_OLTA_SF01_01-2-1-9``.
+    """
+    parsed = parse_tasa_composite_target(full_target)
+    if parsed:
+        return (
+            f"{parsed['device_name']}-{parsed['lt']}-{parsed['pon']}-{parsed['ont']}"
+        )
+    head = _target_head(full_target)
+    return head or None
+
+
+def _tasa_composite_row_matches_target(row: dict, full_target: str) -> bool:
+    """True si la fila corresponde al intent HSI reinyectado."""
+    rt = (row.get("target") or "").strip()
+    ft = (full_target or "").strip()
+    if not rt or not ft:
+        return False
+    if rt == ft:
+        return True
+    parsed = parse_tasa_composite_target(ft)
+    if not parsed:
+        return False
+    expected = f"{_target_head(ft)}#HSI-{parsed['svlan']}"
+    return rt == expected
+
+
+def _wait_tasa_composite_visible(
+    operator: str,
+    target: str,
+    *,
+    timeout_s: float = 90.0,
+    interval_s: float = 2.0,
+) -> tuple[bool, str, float]:
+    """
+    Tras Create Services, espera a que ``search-intents`` liste el target en TASA.
+
+    Usa el prefijo device (como la GUI/consulta VNO) y ``tasa-composite`` v3.
+
+    Returns:
+        ``(found, detail_message, elapsed_seconds)``
+    """
+    import time
+
+    op = (operator or "TASA").strip().upper()
+    tgt = (target or "").strip()
+    search_tgt = _tasa_composite_device_search_target(tgt)
+    if not tgt or not search_tgt:
+        return False, "Target vacío o inválido", 0.0
+    start = time.monotonic()
+    deadline = start + max(5.0, float(timeout_s))
+    interval = max(1.0, float(interval_s))
+    last_err = ""
+    while time.monotonic() < deadline:
+        session, err = _operator_nbi_search_session(op)
+        if err:
+            last_err = str(err.get("message") or "error de sesión")
+            time.sleep(interval)
+            continue
+        rows = buscar_intents_via_gui_target_search(
+            session["base_rest"],
+            session["headers"],
+            search_tgt,
+            intent_type="tasa-composite",
+            intent_type_version="3",
+            timeout_s=min(30.0, interval + 8.0),
+        )
+        for row in rows:
+            if _tasa_composite_row_matches_target(row, tgt):
+                elapsed = time.monotonic() - start
+                return True, "intent visible en NBI", elapsed
+        time.sleep(interval)
+    elapsed = time.monotonic() - start
+    detail = last_err or f"sin confirmación tras {int(timeout_s)}s"
+    return False, detail, elapsed
+
+
+_TASA_COMPOSITE_SUGGEST_OPERATIONS = {
+    "upstream": "suggestUpstreamProfiles",
+    "downstream": "suggestShaperProfiles",
+    "traffic": "suggestUpstreamProfiles",
+    "shaper": "suggestShaperProfiles",
+}
+
+
+def _tasa_composite_suggest_arguments_xml(hsi_entry: dict) -> str:
+    parts = [
+        "<intent-specific-data><hsi xmlns='http://www.nokia.com/management-solutions/tasa-composite'>"
+    ]
+    cv = hsi_entry.get("c-vlan-id")
+    if cv is not None and str(cv).strip() != "":
+        parts.append(f"<c-vlan-id>{cv}</c-vlan-id>")
+    ds = hsi_entry.get("downstream-profile")
+    if ds:
+        parts.append(f"<downstream-profile>{ds}</downstream-profile>")
+    us = hsi_entry.get("upstream-profile")
+    if us:
+        parts.append(f"<upstream-profile>{us}</upstream-profile>")
+    parts.append("</hsi></intent-specific-data>")
+    return "".join(parts)
+
+
+def _tasa_composite_suggest_request_body(
+    target: str,
+    tasa_hsi: dict | None,
+    search_query: str,
+) -> dict | None:
+    """Cuerpo POST ``.../suggest/suggest*Profiles`` (misma forma que la GUI TASA)."""
+    parsed = parse_tasa_composite_target(target)
+    if not parsed:
+        return None
+    ont_name = (
+        f"{parsed['device_name']}-{parsed['lt']}-{parsed['pon']}-{parsed['ont']}"
+    )
+    hsi_name = f"HSI-{parsed['svlan']}"
+    hsi = tasa_hsi if isinstance(tasa_hsi, dict) else {}
+    hsi_entry: dict = {
+        "_xmlns": "http://www.nokia.com/management-solutions/tasa-composite",
+    }
+    cv = hsi.get("c_vlan_id")
+    if cv is not None and str(cv).strip() != "":
+        try:
+            hsi_entry["c-vlan-id"] = int(cv)
+        except (TypeError, ValueError):
+            hsi_entry["c-vlan-id"] = cv
+    ds = (hsi.get("downstream_profile") or "").strip()
+    us = (hsi.get("upstream_profile") or "").strip()
+    if ds:
+        hsi_entry["downstream-profile"] = ds
+    if us:
+        hsi_entry["upstream-profile"] = us
+    return {
+        "searchQuery": (search_query or "").strip(),
+        "inputValues": {
+            "arguments": {"intent-specific-data": {"hsi": [hsi_entry]}},
+            "argumentsInXML": _tasa_composite_suggest_arguments_xml(hsi_entry),
+            "maps-to-child-intent": "hsi",
+            "currentListValue": "",
+            "choiceModel": {},
+            "target": {"ont-name": ont_name, "hsi-name": hsi_name},
+        },
+    }
+
+
+def _profile_names_from_tasa_suggest_response(data: object) -> list[str]:
+    """Nombres de perfil desde JSON ``{ \"TASA_BW300MB_UP\": \"...\", ... }``."""
+    if not isinstance(data, dict):
+        return []
+    out: list[str] = []
+    for key, val in data.items():
+        ks = str(key).strip()
+        if not ks or ks.startswith("_"):
+            continue
+        if isinstance(val, str) and val.strip():
+            out.append(val.strip())
+        else:
+            out.append(ks)
+    return sorted(set(out), key=str.lower)
+
+
+def tasa_composite_profile_suggestions_nbi(
+    operator: str,
+    target: str,
+    profile_kind: str,
+    *,
+    tasa_hsi: dict | None = None,
+    search_query: str = "",
+) -> dict:
+    """
+    Sugerencias GUI TASA para Traffic Descriptor (upstream) o Shaper (downstream).
+    """
+    op = (operator or "TASA").strip().upper()
+    tgt = (target or "").strip()
+    kind = (profile_kind or "").strip().lower()
+    suggest_op = _TASA_COMPOSITE_SUGGEST_OPERATIONS.get(kind)
+    if not tgt or not suggest_op:
+        return {
+            "ok": False,
+            "message": "Target y kind (upstream/downstream) requeridos",
+            "profiles": [],
+            "operator": op,
+        }
+    body = _tasa_composite_suggest_request_body(tgt, tasa_hsi, search_query)
+    if not body:
+        return {
+            "ok": False,
+            "message": f"Target inválido para tasa-composite: {tgt}",
+            "profiles": [],
+            "operator": op,
+        }
+    token, err = _nbi_bearer_token_for_entorno(op)
+    if err:
+        return {
+            "ok": False,
+            "message": str(err),
+            "profiles": [],
+            "operator": op,
+            "target": tgt,
+        }
+    host, port, base_url = get_altiplano_nbi_target(op)
+    if not host or not port or not base_url:
+        return {
+            "ok": False,
+            "message": f"Entorno NBI no configurado para {op}",
+            "profiles": [],
+            "operator": op,
+            "target": tgt,
+        }
+    url = (
+        f"https://{host}:{port}/{base_url}/rest/ibn/v1/attributes/"
+        f"tasa-composite/3/suggest/{suggest_op}"
+    )
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/json, text/plain, */*",
+        "Content-Type": "application/json",
+    }
+    try:
+        res = requests.post(url, headers=headers, json=body, verify=False, timeout=45)
+    except requests.RequestException as ex:
+        return {
+            "ok": False,
+            "message": f"Error de red: {ex}",
+            "profiles": [],
+            "operator": op,
+            "target": tgt,
+        }
+    if res.status_code == 401:
+        return {
+            "ok": False,
+            "message": f"Credenciales Altiplano ({op}) rechazadas.",
+            "profiles": [],
+            "operator": op,
+            "target": tgt,
+        }
+    if res.status_code != 200:
+        return {
+            "ok": False,
+            "message": _extract_altiplano_error_message(res)
+            or f"HTTP {res.status_code} al consultar sugerencias",
+            "profiles": [],
+            "operator": op,
+            "target": tgt,
+        }
+    data = _json_loads_altiplano_http_response(res)
+    profiles = _profile_names_from_tasa_suggest_response(data)
+    return {
+        "ok": True,
+        "message": "ok",
+        "profiles": profiles,
+        "operator": op,
+        "target": tgt,
+        "profile_kind": kind,
+    }
+
+
+def actualizar_tasa_composite_profiles_nbi(
+    operator: str,
+    target: str,
+    *,
+    downstream_profile: str,
+    upstream_profile: str,
+) -> dict:
+    """
+    PATCH perfiles HSI de ``tasa-composite`` (GUI: Shaper + Traffic Descriptor).
+
+    ``downstream-profile`` = Shaper Profile; ``upstream-profile`` = Traffic Descriptor Profile.
+    """
+    from services.tasa_postman_catalog import TASA_MODIFY_PROFILES_API_ID
+    from services.tasa_postman_execute import execute_tasa_postman_api
+
+    tgt = (target or "").strip()
+    op = (operator or "TASA").strip().upper()
+    vars_map = tasa_composite_modify_profiles_variables(
+        tgt,
+        downstream_profile=downstream_profile,
+        upstream_profile=upstream_profile,
+    )
+    if not vars_map:
+        return {
+            "ok": False,
+            "message": (
+                "Target o perfiles inválidos (target BA_OLTA_…-LT-PON-ONT#HSI-SVLAN y "
+                "ambos perfiles requeridos)."
+            ),
+            "target": tgt or None,
+            "operator": op,
+        }
+    patch_out = execute_tasa_postman_api(TASA_MODIFY_PROFILES_API_ID, vars_map)
+    if patch_out.get("ok"):
+        return {
+            "ok": True,
+            "message": (
+                f"Perfiles actualizados en {op}: Traffic Descriptor "
+                f"«{vars_map['Upstream Profile']}», Shaper «{vars_map['Downstream Profile']}»."
+            ),
+            "target": tgt,
+            "operator": op,
+            "intent_type": "tasa-composite",
+            "tasa_hsi": {
+                "downstream_profile": vars_map["Downstream Profile"],
+                "upstream_profile": vars_map["Upstream Profile"],
+            },
+        }
+    return {
+        "ok": False,
+        "message": patch_out.get("message") or "No se pudieron modificar los perfiles HSI.",
+        "target": tgt,
+        "operator": op,
+        "intent_type": "tasa-composite",
+        "patch": patch_out,
+    }
+
+
+def reinyectar_tasa_composite_nbi(
+    operator: str,
+    target: str,
+    *,
+    tasa_hsi: dict | None = None,
+    verify_timeout_s: float = 90.0,
+) -> dict:
+    """
+    Reinyección ``tasa-composite``: borra el intent en TASA y lo vuelve a crear (Create Services).
+
+    Usa los perfiles HSI de la fila de consulta si están disponibles; si no, defaults de la colección Postman.
+    """
+    from services.tasa_postman_catalog import TASA_SERVICES_API_ID
+    from services.tasa_postman_execute import execute_tasa_postman_api
+
+    tgt = (target or "").strip()
+    op = (operator or "TASA").strip().upper()
+    if not tgt:
+        return {"ok": False, "message": "Target requerido", "operator": op}
+    vars_map = tasa_composite_postman_variables(tgt, tasa_hsi)
+    if not vars_map:
+        return {
+            "ok": False,
+            "message": (
+                f"Target no válido para tasa-composite (esperado "
+                f"BA_OLTA_…-LT-PON-ONT#HSI-SVLAN): {tgt}"
+            ),
+            "target": tgt,
+            "operator": op,
+        }
+
+    del_out = borrar_intent_nbi(op, target=tgt, intent_type="tasa-composite")
+    if not del_out.get("ok"):
+        return {
+            **del_out,
+            "phase": "delete",
+            "operator": op,
+            "intent_type": "tasa-composite",
+        }
+
+    create_out = execute_tasa_postman_api(TASA_SERVICES_API_ID, vars_map)
+    if not create_out.get("ok"):
+        return {
+            "ok": False,
+            "message": (
+                f"Se borró el intent en {op}, pero falló la recreación (Create Services): "
+                f"{create_out.get('message') or 'error'}"
+            ),
+            "target": tgt,
+            "operator": op,
+            "intent_type": "tasa-composite",
+            "phase": "create_failed",
+            "delete_ok": True,
+            "create": create_out,
+            "variables": vars_map,
+        }
+
+    found, wait_detail, elapsed = _wait_tasa_composite_visible(
+        op, tgt, timeout_s=verify_timeout_s
+    )
+    if not found:
+        return {
+            "ok": False,
+            "message": (
+                f"Create Services OK en {op}, pero el intent no apareció en el NBI a tiempo "
+                f"({wait_detail}). Target: {tgt}"
+            ),
+            "target": tgt,
+            "operator": op,
+            "intent_type": "tasa-composite",
+            "phase": "verify_timeout",
+            "delete_ok": True,
+            "create_ok": True,
+            "variables": vars_map,
+            "verify_elapsed_s": round(elapsed, 1),
+        }
+
+    return {
+        "ok": True,
+        "message": (
+            f"Reinyección completada en {op}: servicio HSI recreado y visible en NBI "
+            f"({tgt}, {round(elapsed, 1)} s)."
+        ),
+        "target": tgt,
+        "operator": op,
+        "intent_type": "tasa-composite",
+        "phase": "done",
+        "variables": vars_map,
+        "verify_elapsed_s": round(elapsed, 1),
     }
 
 

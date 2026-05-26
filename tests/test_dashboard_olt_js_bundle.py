@@ -12,6 +12,10 @@ def test_dashboard_olt_pon_badge_selected_style():
 def test_dashboard_olt_js_contains_core_handlers():
     js = Path("static/js/dashboard-olt.js").read_text(encoding="utf-8")
     assert "function buildPonBlockHtml(" in js
+    assert "updatePonesSelectionSummary" in js
+    assert 'getElementById("pon-selection-summary")' in js
+    assert "data-pon-id=" in js
+    assert "function findTrByAid(" in js
     assert "Consultar RX" in js
     assert "rama-row-kind--pon" in js
     assert "cto-head-row" in js
@@ -37,5 +41,7 @@ def test_dashboard_olt_js_contains_core_handlers():
     assert "_skipAutoPotenciasCto" in js
     assert "_oltRamaPotenciasCache" in js
     assert "autoPotencias !== false" in js
+    assert "_syncTreeNodeAccentVisual" in js
+    assert "_OLT_TREE_ACCENT_CLASSES" in js
     assert "<th>Estado</th>" not in js
     assert "OLT_COL_EST" not in js

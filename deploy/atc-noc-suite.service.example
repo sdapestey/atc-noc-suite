@@ -1,0 +1,24 @@
+# systemd — copiar a /etc/systemd/system/atc-noc-suite.service
+# Ajustar User, WorkingDirectory y EnvironmentFile.
+
+[Unit]
+Description=ATC NOC Suite (Gunicorn)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=sdapestey
+Group=sdapestey
+WorkingDirectory=/home/sdapestey/Documents/devops/atc-noc-suite
+EnvironmentFile=/home/sdapestey/Documents/devops/atc-noc-suite/.env
+Environment=GUNICORN_BIND=127.0.0.1:9000
+Environment=GUNICORN_WORKERS=4
+Environment=GUNICORN_TIMEOUT=300
+ExecStart=/home/sdapestey/Documents/devops/atc-noc-suite/.venv/bin/gunicorn -c deploy/gunicorn.conf.py wsgi:app
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

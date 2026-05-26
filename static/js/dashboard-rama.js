@@ -222,6 +222,13 @@ function _bindRamaDashboardTabCollapse() {
 
 function setExpanded(el, expanded) {
   el.setAttribute("aria-expanded", expanded ? "true" : "false");
+  if (el.classList.contains("site-head")) {
+    el.classList.toggle("site-head-accent", expanded);
+  } else if (el.classList.contains("rama-row")) {
+    el.classList.toggle("rama-row-accent", expanded);
+  } else if (el.hasAttribute("data-cto-node")) {
+    el.classList.toggle("cto-row-accent", expanded);
+  }
 }
 
 function _escHtml(s) {
@@ -1170,7 +1177,7 @@ function renderInventarioRama(rama, inv, container) {
           <button type="button" class="btn-mini pot-cto" data-pot-cto="${encodeURIComponent(cto)}">Consultar RX</button>
           <button
             type="button"
-            class="btn btn-ghost btn-mini"
+            class="btn-mini pot-cto"
             onclick="event.stopPropagation(); verMapaCto(this);"
             title="Mostrar mapa de la CTO"
             aria-expanded="false"

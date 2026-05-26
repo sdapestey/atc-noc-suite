@@ -76,12 +76,16 @@
     </div>
 
     <div id="alt-inp-panel-creacion" role="tabpanel" aria-labelledby="alt-inp-tab-creacion" hidden>
-    <div class="panel altiplano-panel">
-      <div class="altiplano-panel-inner">
-      <div class="orquestador-panel-head orquestador-panel-head--solo-credit">
-        <span class="orquestador-panel-head__spacer" aria-hidden="true"></span>
+    <div class="panel altiplano-panel altiplano-work-card card suite-index-card">
+      <div class="suite-search-surface altiplano-work-surface">
+      <div class="orquestador-panel-head suite-panel-head consulta-panel-head">
+        <p class="suite-search-lead consulta-search-lead orquestador-panel-head__main">
+          Creá intents <code class="inline-code">ont-connection</code> en <strong>Altiplano INP</strong> con device, Access ID y perfiles.
+        </p>
         {% include 'partials/orquestador_credit.html' %}
       </div>
+      </div>
+      <div class="altiplano-panel-inner">
       <div class="altiplano-create-form" id="altiplano-create-form-grid" aria-label="Formulario ONT Connection INP">
         <section class="altiplano-create-step altiplano-create-step--location">
           <header class="altiplano-create-step__head">
@@ -254,33 +258,33 @@
     </div>
 
     <div id="alt-inp-panel-consulta" role="tabpanel" aria-labelledby="alt-inp-tab-consulta">
-      <div class="altiplano-consulta-shell">
-        <div class="panel altiplano-panel altiplano-consulta-panel--search">
-          <div class="altiplano-consulta-panel-inner">
-            <div class="orquestador-panel-head">
-              <p class="muted altiplano-consulta-lead orquestador-panel-head__main">
+      <div class="altiplano-consulta-shell altiplano-consulta-suite-card card suite-index-card consulta-index-card">
+        <div class="suite-search-surface consulta-search-card altiplano-consulta-panel--search">
+          <div class="orquestador-panel-head suite-panel-head consulta-panel-head">
+            <p class="suite-search-lead consulta-search-lead orquestador-panel-head__main">
                 Buscá intents <code class="inline-code">ont-connection</code> en <strong>Altiplano INP</strong>.
                 Pegá <strong>device</strong> (<code class="inline-code">BA_OLTA_…</code> o target
-                <code class="inline-code">…#VNO#gpon</code>) o <strong>Access ID</strong> en un solo campo; también podés usar
-                <strong>búsqueda avanzada</strong> por estados.
+                <code class="inline-code">…#VNO#gpon</code>) o <strong>Access ID</strong> en un solo campo (resultado en pestañas
+                <strong>INP</strong> y <strong>VNO</strong>); también podés usar <strong>búsqueda avanzada</strong> por estados.
               </p>
               {% include 'partials/orquestador_credit.html' %}
             </div>
-            <div class="altiplano-consulta-search-row">
-              <div class="altiplano-consulta-grid altiplano-consulta-grid--single">
-                <div class="altiplano-field altiplano-field--consulta-query">
-                  <label class="t" for="consulta_query">Device name o Access ID</label>
+            <div class="suite-query-row consulta-query-row altiplano-consulta-search-row">
+              <div class="suite-query-row__field consulta-query-row__field altiplano-consulta-grid altiplano-consulta-grid--single">
+                <div class="field suite-field consulta-field altiplano-field--consulta-query">
+                  <span class="search-icon" aria-hidden="true">⌕</span>
+                  <label class="sr-only" for="consulta_query">Device name o Access ID</label>
                   <input
                     id="consulta_query"
                     type="text"
-                    placeholder="Ej. BA_OLTA_ES01_01-1-1-99, …#3001#gpon, 1051234567 o ALCL00010199"
+                    placeholder="Ej. BA_OLTA_ES01_01-1-1-99, …#3001#gpon o 1051234567"
                     autocomplete="off"
                     spellcheck="false"
                   >
                   <p id="consulta_query_kind" class="muted altiplano-field-hint" hidden></p>
                 </div>
               </div>
-              <div class="altiplano-consulta-actions">
+              <div class="suite-search-actions consulta-search-actions altiplano-consulta-actions">
                 <button type="button" id="btn-consulta-run" class="btn btn-primary">Consultar</button>
                 <button type="button" id="btn-consulta-clear" class="btn btn-ghost">Limpiar</button>
               </div>
@@ -333,9 +337,8 @@
                 </div>
               </div>
             </details>
-            <p id="consulta-inline-hint" class="muted altiplano-consulta-inline-msg" aria-live="polite"></p>
-          </div>
         </div>
+        <p id="consulta-inline-hint" class="muted suite-note altiplano-consulta-inline-msg" aria-live="polite"></p>
         <div
           id="altiplano-consulta-result"
           class="panel altiplano-result altiplano-consulta-panel--result"
@@ -344,12 +347,12 @@
           <div id="consulta-result-body">
             <p class="muted">Completá un criterio y pulsá Consultar.</p>
           </div>
-          <div id="consulta-busy-overlay" class="altiplano-consulta-result-busy" hidden>
-            <span class="altiplano-consulta-loading" role="status">
-              <span class="altiplano-consulta-loading__spinner" aria-hidden="true"></span>
-              <span class="altiplano-consulta-loading__text">Consultando Altiplano INP…</span>
-            </span>
-          </div>
+        </div>
+        <div id="consulta-busy-overlay" class="altiplano-consulta-result-busy" hidden>
+          <span class="altiplano-consulta-loading altiplano-consulta-loading--overlay" role="status">
+            <span class="altiplano-consulta-loading__spinner" aria-hidden="true"></span>
+            <span class="altiplano-consulta-loading__text">Consultando Altiplano INP…</span>
+          </span>
         </div>
       </div>
       <dialog id="consulta-rn-dialog" class="altiplano-rn-dialog" aria-labelledby="consulta-rn-dialog-title" aria-modal="true">
@@ -369,14 +372,96 @@
           </div>
         </div>
       </dialog>
+      <dialog
+        id="consulta-tasa-hsi-dialog"
+        class="altiplano-rn-dialog altiplano-tasa-hsi-dialog"
+        aria-labelledby="consulta-tasa-hsi-dialog-title"
+        aria-modal="true"
+      >
+        <div class="altiplano-rn-dialog-inner altiplano-tasa-hsi-dialog__inner">
+          <header class="altiplano-tasa-hsi-dialog__head">
+            <div class="altiplano-tasa-hsi-dialog__head-text">
+              <p class="altiplano-tasa-hsi-dialog__eyebrow">VNO TASA · Modify Profiles</p>
+              <h2 id="consulta-tasa-hsi-dialog-title" class="altiplano-tasa-hsi-dialog__title">
+                Perfiles HSI
+              </h2>
+            </div>
+            <span class="altiplano-tasa-hsi-dialog__badge">tasa-composite</span>
+          </header>
+          <p id="consulta-tasa-hsi-dialog-target" class="altiplano-tasa-hsi-dialog__target"></p>
+          <div class="altiplano-tasa-hsi-dialog__form">
+            <div class="altiplano-tasa-hsi-field">
+              <label for="consulta-tasa-hsi-upstream" class="altiplano-tasa-hsi-field__label">
+                Traffic Descriptor Profile
+              </label>
+              <span class="altiplano-tasa-hsi-field__meta">upstream-profile</span>
+              <div class="altiplano-tasa-hsi-input-wrap">
+                <input
+                  type="text"
+                  id="consulta-tasa-hsi-upstream"
+                  class="altiplano-tasa-hsi-input"
+                  autocomplete="off"
+                  spellcheck="false"
+                  placeholder="Buscar o seleccionar perfil…"
+                  aria-autocomplete="list"
+                  aria-controls="consulta-tasa-hsi-upstream-suggest"
+                  aria-expanded="false"
+                />
+                <ul
+                  id="consulta-tasa-hsi-upstream-suggest"
+                  class="altiplano-tasa-hsi-suggest"
+                  role="listbox"
+                  hidden
+                ></ul>
+              </div>
+            </div>
+            <div class="altiplano-tasa-hsi-field">
+              <label for="consulta-tasa-hsi-downstream" class="altiplano-tasa-hsi-field__label">
+                Shaper Profile
+              </label>
+              <span class="altiplano-tasa-hsi-field__meta">downstream-profile</span>
+              <div class="altiplano-tasa-hsi-input-wrap">
+                <input
+                  type="text"
+                  id="consulta-tasa-hsi-downstream"
+                  class="altiplano-tasa-hsi-input"
+                  autocomplete="off"
+                  spellcheck="false"
+                  placeholder="Buscar o seleccionar perfil…"
+                  aria-autocomplete="list"
+                  aria-controls="consulta-tasa-hsi-downstream-suggest"
+                  aria-expanded="false"
+                />
+                <ul
+                  id="consulta-tasa-hsi-downstream-suggest"
+                  class="altiplano-tasa-hsi-suggest"
+                  role="listbox"
+                  hidden
+                ></ul>
+              </div>
+            </div>
+          </div>
+          <p class="altiplano-tasa-hsi-dialog__note">
+            Sugerencias desde el NBI TASA. Al aplicar se sincroniza el intent (PATCH HSI).
+          </p>
+          <div class="altiplano-rn-dialog-actions altiplano-tasa-hsi-dialog__actions">
+            <button type="button" id="consulta-tasa-hsi-dialog-cancel" class="btn btn-ghost altiplano-rn-dialog-btn-cancel">
+              Cancelar
+            </button>
+            <button type="button" id="consulta-tasa-hsi-dialog-apply" class="btn btn-primary altiplano-rn-dialog-btn-apply">
+              Aplicar cambios
+            </button>
+          </div>
+        </div>
+      </dialog>
     </div>
 
     <div id="alt-inp-panel-borrado" role="tabpanel" aria-labelledby="alt-inp-tab-borrado" hidden>
-      <div class="panel altiplano-panel">
-        <div class="altiplano-panel-inner">
-          <div class="orquestador-panel-head">
+      <div class="panel altiplano-panel altiplano-work-card card suite-index-card">
+        <div class="suite-search-surface altiplano-work-surface">
+          <div class="orquestador-panel-head suite-panel-head consulta-panel-head">
             <div class="orquestador-panel-head__main">
-              <p class="muted altiplano-consulta-lead">
+              <p class="suite-search-lead consulta-search-lead">
                 Indicá <strong>device name</strong> (prefijo antes del <code class="inline-code">#</code> o target completo
                 <code class="inline-code">…#VNO#gpon</code>) y/o <strong>Access ID</strong> del servicio.
                 El Access ID puede resolverse desde inventario ATC cuando ya está sincronizado; si no, se busca en Altiplano INP.
@@ -391,20 +476,29 @@
             </div>
             {% include 'partials/orquestador_credit.html' %}
           </div>
-          <div class="altiplano-consulta-grid">
-            <div class="altiplano-field">
-              <label class="t" for="borrado_device_name">Device name (prefijo target)</label>
-              <input id="borrado_device_name" type="text" placeholder="Ej. BA_OLTA_ES01_01-1-1-99 o …#3001#gpon" autocomplete="off">
+          <div class="suite-query-row consulta-query-row">
+            <div class="suite-query-row__field altiplano-consulta-grid">
+            <div class="field suite-field consulta-field altiplano-field">
+              <span class="search-icon" aria-hidden="true">⌕</span>
+              <label class="sr-only" for="borrado_device_name">Device name (prefijo target)</label>
+              <input id="borrado_device_name" type="text" placeholder="Device name o target …#VNO#gpon" autocomplete="off">
             </div>
-            <div class="altiplano-field">
-              <label class="t" for="borrado_by_id">Access ID</label>
-              <input id="borrado_by_id" type="text" placeholder="Ej. 1051234567 o identificador de servicio (sin UUID)" autocomplete="off">
+            <div class="field suite-field consulta-field altiplano-field">
+              <span class="search-icon" aria-hidden="true">⌕</span>
+              <label class="sr-only" for="borrado_by_id">Access ID</label>
+              <input id="borrado_by_id" type="text" placeholder="Access ID" autocomplete="off">
             </div>
-          </div>
-          <div class="altiplano-consulta-actions">
+            </div>
+          <div class="suite-search-actions consulta-search-actions altiplano-consulta-actions">
             <button type="button" id="btn-borrado-clear" class="btn btn-ghost">Limpiar</button>
             <button type="button" id="btn-borrado-run" class="btn btn-primary" style="border-color:var(--danger);background:linear-gradient(180deg,#f85149,#da3633);">Borrar intent</button>
           </div>
+          </div>
+        </div>
+        <div class="altiplano-panel-inner">
+          <p class="muted suite-note empty-state-note">
+            Completá <strong>device</strong> y/o <strong>Access ID</strong> para borrar un intent, o usá <strong>borrado masivo</strong> con archivo.
+          </p>
 
           <hr class="altiplano-borrado-sep" aria-hidden="true">
           <h3 class="altiplano-borrado-lote-heading">Borrado masivo</h3>
@@ -542,52 +636,66 @@
         <script type="application/json" id="tasa-postman-apis-json">{{ tasa_postman_apis | tojson }}</script>
       </div>
     </div>
-    <div id="alt-vno-panel-directv" class="panel altiplano-result" role="tabpanel" aria-labelledby="alt-vno-tab-directv" hidden>
-      <div class="altiplano-panel-inner">
-        <div class="orquestador-panel-head orquestador-panel-head--solo-credit">
-          <span class="orquestador-panel-head__spacer" aria-hidden="true"></span>
+    <div id="alt-vno-panel-directv" class="panel altiplano-result card suite-index-card" role="tabpanel" aria-labelledby="alt-vno-tab-directv" hidden>
+      <div class="suite-search-surface altiplano-work-surface">
+        <div class="orquestador-panel-head suite-panel-head consulta-panel-head">
+          <p class="suite-search-lead consulta-search-lead orquestador-panel-head__main"><strong>DIRECTV</strong> — próximamente.</p>
           {% include 'partials/orquestador_credit.html' %}
         </div>
-        <p class="muted">Próximamente.</p>
+      </div>
+      <div class="altiplano-panel-inner">
+        <p class="muted suite-note empty-state-note">Esta sección estará disponible en una próxima versión.</p>
       </div>
     </div>
-    <div id="alt-vno-panel-iplan" class="panel altiplano-result" role="tabpanel" aria-labelledby="alt-vno-tab-iplan" hidden>
-      <div class="altiplano-panel-inner">
-        <div class="orquestador-panel-head orquestador-panel-head--solo-credit">
-          <span class="orquestador-panel-head__spacer" aria-hidden="true"></span>
+    <div id="alt-vno-panel-iplan" class="panel altiplano-result card suite-index-card" role="tabpanel" aria-labelledby="alt-vno-tab-iplan" hidden>
+      <div class="suite-search-surface altiplano-work-surface">
+        <div class="orquestador-panel-head suite-panel-head consulta-panel-head">
+          <p class="suite-search-lead consulta-search-lead orquestador-panel-head__main"><strong>IPLAN</strong> — próximamente.</p>
           {% include 'partials/orquestador_credit.html' %}
         </div>
-        <p class="muted">Próximamente.</p>
       </div>
+      <div class="altiplano-panel-inner"><p class="muted suite-note empty-state-note">Esta sección estará disponible en una próxima versión.</p></div>
     </div>
-    <div id="alt-vno-panel-metrotel" class="panel altiplano-result" role="tabpanel" aria-labelledby="alt-vno-tab-metrotel" hidden>
-      <div class="altiplano-panel-inner">
-        <div class="orquestador-panel-head orquestador-panel-head--solo-credit">
-          <span class="orquestador-panel-head__spacer" aria-hidden="true"></span>
+    <div id="alt-vno-panel-metrotel" class="panel altiplano-result card suite-index-card" role="tabpanel" aria-labelledby="alt-vno-tab-metrotel" hidden>
+      <div class="suite-search-surface altiplano-work-surface">
+        <div class="orquestador-panel-head suite-panel-head consulta-panel-head">
+          <p class="suite-search-lead consulta-search-lead orquestador-panel-head__main"><strong>METROTEL</strong> — próximamente.</p>
           {% include 'partials/orquestador_credit.html' %}
         </div>
-        <p class="muted">Próximamente.</p>
       </div>
+      <div class="altiplano-panel-inner"><p class="muted suite-note empty-state-note">Esta sección estará disponible en una próxima versión.</p></div>
     </div>
-    <div id="alt-vno-panel-sion" class="panel altiplano-result" role="tabpanel" aria-labelledby="alt-vno-tab-sion" hidden>
-      <div class="altiplano-panel-inner">
-        <div class="orquestador-panel-head orquestador-panel-head--solo-credit">
-          <span class="orquestador-panel-head__spacer" aria-hidden="true"></span>
+    <div id="alt-vno-panel-sion" class="panel altiplano-result card suite-index-card" role="tabpanel" aria-labelledby="alt-vno-tab-sion" hidden>
+      <div class="suite-search-surface altiplano-work-surface">
+        <div class="orquestador-panel-head suite-panel-head consulta-panel-head">
+          <p class="suite-search-lead consulta-search-lead orquestador-panel-head__main"><strong>SION</strong> — próximamente.</p>
           {% include 'partials/orquestador_credit.html' %}
         </div>
-        <p class="muted">Próximamente.</p>
       </div>
+      <div class="altiplano-panel-inner"><p class="muted suite-note empty-state-note">Esta sección estará disponible en una próxima versión.</p></div>
     </div>
-    <div id="alt-vno-panel-cambio-cto" class="panel altiplano-result" role="tabpanel" aria-labelledby="alt-vno-tab-cambio-cto" hidden>
-      <div class="altiplano-panel-inner">
-        <div class="orquestador-panel-head orquestador-panel-head--solo-credit">
-          <span class="orquestador-panel-head__spacer" aria-hidden="true"></span>
+    <div id="alt-vno-panel-cambio-cto" class="panel altiplano-result card suite-index-card" role="tabpanel" aria-labelledby="alt-vno-tab-cambio-cto" hidden>
+      <div class="suite-search-surface altiplano-work-surface">
+        <div class="orquestador-panel-head suite-panel-head consulta-panel-head">
+          <p class="suite-search-lead consulta-search-lead orquestador-panel-head__main"><strong>Cambio de CTO</strong> — próximamente.</p>
           {% include 'partials/orquestador_credit.html' %}
         </div>
-        <p class="muted">Próximamente.</p>
       </div>
+      <div class="altiplano-panel-inner"><p class="muted suite-note empty-state-note">Esta sección estará disponible en una próxima versión.</p></div>
     </div>
   </div>
+</div>
+
+<div
+  id="consulta-success-toast"
+  class="altiplano-consulta-toast altiplano-consulta-toast--success"
+  role="status"
+  aria-live="polite"
+  hidden
+>
+  <span class="altiplano-consulta-toast__icon" aria-hidden="true">✓</span>
+  <p class="altiplano-consulta-toast__text"></p>
+  <button type="button" class="altiplano-consulta-toast__close" aria-label="Cerrar">×</button>
 </div>
 
 <dialog
@@ -688,8 +796,11 @@
   const btnConsulta = document.getElementById("btn-consulta-run");
   const btnConsultaClear = document.getElementById("btn-consulta-clear");
   var lastConsultaCriteria = null;
+  var consultaLastResultPayload = null;
   var consultaLastCreatePrefill = null;
   var consultaLastResultRows = [];
+  var consultaLastVnoResultRows = [];
+  var consultaLastVnoOperator = "TASA";
   const borradoOut = document.getElementById("altiplano-borrado-result");
   const btnBorrado = document.getElementById("btn-borrado-run");
   const btnBorradoClear = document.getElementById("btn-borrado-clear");
@@ -798,6 +909,46 @@
 
   var consultaBusyDefaultMessage = "Consultando Altiplano INP…";
   var consultaAdvancedBusyMessage = "Búsqueda avanzada en Altiplano INP…";
+  var consultaReinyeccionOkMessage = "Reinyección completada";
+  var consultaToastTimer = null;
+
+  function consultaHideToast() {
+    var el = document.getElementById("consulta-success-toast");
+    if (!el) return;
+    el.classList.remove("is-visible");
+    if (consultaToastTimer) {
+      clearTimeout(consultaToastTimer);
+      consultaToastTimer = null;
+    }
+    window.setTimeout(function () {
+      if (el && !el.classList.contains("is-visible")) el.hidden = true;
+    }, 220);
+  }
+
+  function consultaToast(message, opts) {
+    opts = opts || {};
+    var el = document.getElementById("consulta-success-toast");
+    if (!el) return;
+    var textEl = el.querySelector(".altiplano-consulta-toast__text");
+    if (textEl) textEl.textContent = message != null ? String(message) : "";
+    el.classList.remove("altiplano-consulta-toast--success", "altiplano-consulta-toast--error");
+    el.classList.add("altiplano-consulta-toast--" + (opts.variant || "success"));
+    el.hidden = false;
+    requestAnimationFrame(function () {
+      el.classList.add("is-visible");
+    });
+    if (consultaToastTimer) clearTimeout(consultaToastTimer);
+    var ms = opts.durationMs != null ? Number(opts.durationMs) : 4800;
+    if (ms > 0) {
+      consultaToastTimer = window.setTimeout(consultaHideToast, ms);
+    }
+  }
+
+  function consultaClearSuccessHint() {
+    if (!consultaHint) return;
+    consultaHint.textContent = "";
+    consultaHint.classList.remove("altiplano-consulta-inline-msg--success");
+  }
 
   function setConsultaOverlayMessage(message) {
     var overlay = document.getElementById("consulta-busy-overlay");
@@ -1066,6 +1217,14 @@
         "</svg>"
       );
     }
+    if (kind === "tasa-hsi") {
+      return (
+        '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">' +
+        '<path d="M4 20h16" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>' +
+        '<path d="M7 20v-5M11 20V8M15 20v-8M19 20V5" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>' +
+        "</svg>"
+      );
+    }
     return (
       '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">' +
       '<path d="M4 20h4l10.5-10.5a2.1 2.1 0 0 0 0-3L16.5 4a2.1 2.1 0 0 0-3 0L3 14.5V20z" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>' +
@@ -1074,11 +1233,127 @@
     );
   }
 
-  function consultaActButton(act, row, disabled, title) {
+  function consultaCloseAllActMenus() {
+    document.querySelectorAll(".altiplano-consulta-act-menu.is-open").forEach(function (el) {
+      el.classList.remove("is-open");
+      var trigger = el.querySelector("[data-consulta-act-menu-trigger]");
+      if (trigger) trigger.setAttribute("aria-expanded", "false");
+    });
+  }
+
+  function consultaActDelMenuItem(act, label, description, row, meta, variant) {
+    meta = meta || {};
+    var tgt = row && row.target ? String(row.target) : "";
+    var aid = row && row.access_id != null && String(row.access_id) !== "" ? String(row.access_id) : "";
+    var scope = meta.scope || "vno";
+    var extra =
+      ' data-consulta-scope="' +
+      escAttr(scope) +
+      '"';
+    if (meta.operator) extra += ' data-operator="' + escAttr(String(meta.operator)) + '"';
+    if (row && row.intent_type) {
+      extra += ' data-intent-type="' + escAttr(String(row.intent_type)) + '"';
+    }
+    if (aid) extra += ' data-access-id="' + escAttr(aid) + '"';
+    var iconKind = act === "reinyeccion" ? "sync" : "del";
+    var mod = variant ? " altiplano-consulta-act-menu-item--" + variant : "";
+    return (
+      '<button type="button" class="altiplano-consulta-act-menu-item' +
+      mod +
+      '" role="menuitem" data-consulta-act="' +
+      escAttr(act) +
+      '" data-target="' +
+      escAttr(tgt) +
+      '"' +
+      extra +
+      ' title="' +
+      escAttr(description) +
+      '">' +
+      '<span class="altiplano-consulta-act-menu-item__icon" aria-hidden="true">' +
+      consultaActIconSvg(iconKind) +
+      "</span>" +
+      '<span class="altiplano-consulta-act-menu-item__body">' +
+      '<span class="altiplano-consulta-act-menu-item__label">' +
+      escHtml(label) +
+      "</span>" +
+      '<span class="altiplano-consulta-act-menu-item__desc">' +
+      escHtml(description) +
+      "</span>" +
+      "</span></button>"
+    );
+  }
+
+  function consultaActDelMenuCell(row, disabled, title, meta) {
+    meta = meta || {};
+    var tgt = row && row.target ? String(row.target) : "";
+    var aid = row && row.access_id != null && String(row.access_id) !== "" ? String(row.access_id) : "";
+    var scope = meta.scope || "vno";
+    var extra =
+      ' data-consulta-scope="' +
+      escAttr(scope) +
+      '"';
+    if (meta.operator) extra += ' data-operator="' + escAttr(String(meta.operator)) + '"';
+    if (row && row.intent_type) {
+      extra += ' data-intent-type="' + escAttr(String(row.intent_type)) + '"';
+    }
+    if (aid) extra += ' data-access-id="' + escAttr(aid) + '"';
+    var tgtLabel = tgt.length > 48 ? tgt.slice(0, 46) + "…" : tgt;
+    return (
+      '<div class="altiplano-consulta-act-menu">' +
+      '<button type="button" class="altiplano-consulta-act-btn altiplano-consulta-act-menu-trigger" data-consulta-act-menu-trigger="1"' +
+      ' data-target="' +
+      escAttr(tgt) +
+      '"' +
+      extra +
+      (disabled ? " disabled" : "") +
+      ' aria-haspopup="menu" aria-expanded="false"' +
+      ' title="' +
+      escAttr(title || "Borrar o reinyectar servicio HSI") +
+      '">' +
+      consultaActIconSvg("del") +
+      "</button>" +
+      '<div class="altiplano-consulta-act-menu-panel" role="menu" aria-label="Acciones tasa-composite">' +
+      '<div class="altiplano-consulta-act-menu-head">' +
+      '<span class="altiplano-consulta-act-menu-head__title">tasa-composite</span>' +
+      '<code class="altiplano-consulta-act-menu-head__target">' +
+      escHtml(tgtLabel) +
+      "</code></div>" +
+      consultaActDelMenuItem(
+        "del",
+        "Borrado",
+        "Quita el intent en TASA (definitivo)",
+        row,
+        meta,
+        "danger"
+      ) +
+      '<div class="altiplano-consulta-act-menu-divider" role="separator"></div>' +
+      consultaActDelMenuItem(
+        "reinyeccion",
+        "Reinyección",
+        "Borra y recrea HSI con los mismos perfiles",
+        row,
+        meta,
+        "accent"
+      ) +
+      "</div></div>"
+    );
+  }
+
+  function consultaActButton(act, row, disabled, title, meta) {
+    meta = meta || {};
     var tgt = row && row.target ? String(row.target) : "";
     var aid = row && row.access_id != null && String(row.access_id) !== "" ? String(row.access_id) : "";
     var rn = row && row.required_network_state != null ? String(row.required_network_state) : "";
-    var extra = aid ? ' data-access-id="' + escAttr(aid) + '"' : "";
+    var scope = meta.scope || "inp";
+    var extra =
+      ' data-consulta-scope="' +
+      escAttr(scope) +
+      '"';
+    if (meta.operator) extra += ' data-operator="' + escAttr(String(meta.operator)) + '"';
+    if (row && row.intent_type) {
+      extra += ' data-intent-type="' + escAttr(String(row.intent_type)) + '"';
+    }
+    if (aid) extra += ' data-access-id="' + escAttr(aid) + '"';
     if (rn && (act === "sync" || act === "rn")) {
       extra += ' data-required-network-state="' + escAttr(rn) + '"';
     }
@@ -1118,12 +1393,65 @@
 
   function consultaRowRnEditAllowed(row) {
     if (!row) return false;
+    if (String((row && row.intent_type) || "").toLowerCase() === "tasa-composite") {
+      return false;
+    }
     if (row.rn_edit_allowed === true) return true;
     if (row.rn_edit_allowed === false) return false;
     var rn = consultaNormalizeRn(
       row.required_network_state != null ? row.required_network_state : row.network_state
     );
     return rn === "active" || rn === "not-present" || rn === "suspended";
+  }
+
+  function consultaRowTasaHsiEditAllowed(row) {
+    if (!row || !row.target) return false;
+    return String(row.intent_type || "").toLowerCase() === "tasa-composite";
+  }
+
+  function consultaRowCurrentRn(row) {
+    return consultaNormalizeRn(
+      row && row.required_network_state != null
+        ? row.required_network_state
+        : row && row.network_state
+    );
+  }
+
+  /** VNO (ont, ont-connection, tasa-composite): lápiz RN solo si RN = Not present. */
+  function consultaRowVnoRnEditEnabled(row) {
+    if (!row) return false;
+    return consultaRowCurrentRn(row) === "not-present";
+  }
+
+  /** Lápiz RN en ``tasa-composite`` (alias de regla VNO). */
+  function consultaRowTasaCompositeRnEditEnabled(row) {
+    return (
+      consultaRowTasaHsiEditAllowed(row) && consultaRowVnoRnEditEnabled(row)
+    );
+  }
+
+  function consultaRowRnButtonDisabled(row, scope) {
+    if (!row || !row.target) return true;
+    if (scope === "vno") {
+      if (consultaRowTasaHsiEditAllowed(row) || consultaRowRnEditAllowed(row)) {
+        return !consultaRowVnoRnEditEnabled(row);
+      }
+      return true;
+    }
+    return false;
+  }
+
+  function consultaRowRnButtonTitle(row, scope) {
+    if (scope === "vno" && consultaRowVnoRnEditEnabled(row)) {
+      return "Pasar a Active (Required Network State en Not present)";
+    }
+    if (scope === "vno") {
+      var rn = consultaRowCurrentRn(row) || "—";
+      return (
+        "Modificar RN solo en Not present (estado actual: " + rn + ")"
+      );
+    }
+    return "Modificar Required Network State (como Modify intent en la GUI)";
   }
 
   function consultaRowNeedsActive(row) {
@@ -1133,14 +1461,48 @@
   }
 
   var consultaRnDialogCtx = null;
+  var consultaTasaHsiDialogCtx = null;
 
   function consultaRowFromActButton(btn) {
-    return {
+    var scope = (btn && btn.getAttribute("data-consulta-scope")) || "inp";
+    var row = {
       target: btn.getAttribute("data-target") || "",
       access_id: btn.getAttribute("data-access-id") || "",
       error_detail: btn.getAttribute("data-error-detail") || "",
       required_network_state: btn.getAttribute("data-required-network-state") || "",
+      intent_type: btn.getAttribute("data-intent-type") || "",
     };
+    var full =
+      scope === "vno"
+        ? consultaFindVnoResultRow(row.target, row.access_id)
+        : consultaFindResultRow(row.target, row.access_id);
+    if (full) row = Object.assign({}, full, row);
+    return row;
+  }
+
+  function consultaRowActionMeta(btn) {
+    var scope = (btn && btn.getAttribute("data-consulta-scope")) || "inp";
+    return {
+      scope: scope,
+      operator:
+        (btn && btn.getAttribute("data-operator")) ||
+        consultaLastVnoOperator ||
+        "TASA",
+      intent_type:
+        (btn && btn.getAttribute("data-intent-type")) ||
+        "ont-connection",
+    };
+  }
+
+  function consultaFindVnoResultRow(target, accessId) {
+    var tgt = target != null ? String(target).trim() : "";
+    var aid = accessId != null ? String(accessId).trim() : "";
+    for (var i = 0; i < consultaLastVnoResultRows.length; i++) {
+      var r = consultaLastVnoResultRows[i] || {};
+      if (tgt && String(r.target || "").trim() === tgt) return r;
+      if (aid && String(r.access_id || "").trim() === aid) return r;
+    }
+    return null;
   }
 
   function consultaRowCanFixL1(row) {
@@ -1384,14 +1746,15 @@
     consultaUpdateBulkBar();
   }
 
-  function consultaRunActivateAndSyncPromise(row) {
+  function consultaRunActivateAndSyncPromise(row, actMeta) {
+    actMeta = actMeta || { scope: "inp" };
     var target = (row && row.target) || "";
     var accessId =
       row && row.access_id != null && String(row.access_id) !== ""
         ? String(row.access_id)
         : "";
     if (!target) return Promise.reject(new Error("sin-target"));
-    var payload = consultaMutationPayload(target, accessId);
+    var payload = consultaMutationPayload(target, accessId, actMeta);
     var needActive = consultaRowNeedsActive(row);
     var chain = Promise.resolve();
     if (needActive) {
@@ -1653,42 +2016,89 @@
     });
   }
 
-  function consultaRowActionsCell(row) {
+  function consultaRowActionsCell(row, tableOpts) {
+    tableOpts = tableOpts || {};
+    var actMeta = {
+      scope: tableOpts.consultaScope || "inp",
+      operator: tableOpts.operator || "",
+    };
+    var isVno = actMeta.scope === "vno";
     var al = String((row && row.alignment_state) || "")
       .trim()
       .toLowerCase();
     var syncDisabled = al === "aligned";
+    var opLabel = actMeta.operator || "VNO";
     var html =
       '<td class="altiplano-consulta-act-cell"><div class="altiplano-consulta-act-strip">' +
       consultaActButton(
         "sync",
         row,
         syncDisabled,
-        "Activar (Active) y sincronizar (Aligned)"
+        isVno
+          ? "Activar (Active) y sincronizar en " + opLabel
+          : "Activar (Active) y sincronizar (Aligned)",
+        actMeta
       );
-    if (consultaRowRnEditAllowed(row)) {
+    if (consultaRowTasaHsiEditAllowed(row)) {
       html += consultaActButton(
         "rn",
         row,
+        consultaRowRnButtonDisabled(row, actMeta.scope),
+        consultaRowRnButtonTitle(row, actMeta.scope),
+        actMeta
+      );
+      html += consultaActButton(
+        "tasa-hsi",
+        row,
         !row.target,
-        "Modificar Required Network State (como Modify intent en la GUI)"
+        "Perfiles de ancho de banda (Traffic Descriptor y Shaper)",
+        actMeta
+      );
+    } else if (consultaRowRnEditAllowed(row)) {
+      html += consultaActButton(
+        "rn",
+        row,
+        isVno ? consultaRowRnButtonDisabled(row, actMeta.scope) : !row.target,
+        consultaRowRnButtonTitle(row, actMeta.scope),
+        actMeta
       );
     }
-    if (consultaRowCanFixL1(row)) {
+    if (!isVno && consultaRowCanFixL1(row)) {
       html += consultaActButton(
         "fix",
         row,
         false,
-        "Corregir dependencias L1 (intent faltante en scheduler)"
+        "Corregir dependencias L1 (intent faltante en scheduler)",
+        actMeta
       );
     }
-    html +=
-      consultaActButton("del", row, !row.target, "Borrar intent (cascada VNO + INP)") +
-      "</div></td>";
+    var isTasaComposite =
+      isVno && String((row && row.intent_type) || "").toLowerCase() === "tasa-composite";
+    if (isTasaComposite) {
+      html += consultaActDelMenuCell(
+        row,
+        !row.target,
+        "Borrado o reinyección (tasa-composite)",
+        actMeta
+      );
+    } else {
+      html +=
+        consultaActButton(
+          "del",
+          row,
+          !row.target,
+          isVno
+            ? "Borrar intent en " + opLabel + " (solo esta fila)"
+            : "Borrar intent (cascada VNO + INP)",
+          actMeta
+        );
+    }
+    html += "</div></td>";
     return html;
   }
 
-  function consultaRunActivateAndSync(row, btn) {
+  function consultaRunActivateAndSync(row, btn, actMeta) {
+    actMeta = actMeta || consultaRowActionMeta(btn);
     var target = (row && row.target) || (btn && btn.getAttribute("data-target")) || "";
     var accessId =
       row && row.access_id != null && String(row.access_id) !== ""
@@ -1699,9 +2109,12 @@
     var syncDetail = needActive
       ? "1) Required Network State → Active\n2) Synchronize intent → Aligned"
       : "Synchronize intent (alinear con la red).";
+    var isVno = actMeta.scope === "vno";
     altiplanoConfirm({
       title: "¿Activar y sincronizar?",
-      message: "Intent en Altiplano INP:",
+      message: isVno
+        ? "Intent en " + (actMeta.operator || "VNO") + " (" + (row.intent_type || actMeta.intent_type) + "):"
+        : "Intent en Altiplano INP:",
       items: [target],
       detail: syncDetail,
       confirmLabel: "Sincronizar",
@@ -1709,7 +2122,7 @@
       if (!ok) return;
       consultaSetActBusy(btn, true);
       consultaClearActionError();
-      consultaRunActivateAndSyncPromise(row)
+      consultaRunActivateAndSyncPromise(row, actMeta)
         .then(function (syncOut) {
           if (!syncOut) return;
           if (!syncOut.ok) {
@@ -1846,19 +2259,38 @@
     });
   }
 
-  function consultaMutationPayload(target, accessId) {
-    var p = { device_name: target || "" };
+  function consultaMutationPayload(target, accessId, actMeta) {
+    actMeta = actMeta || {};
+    var p = { device_name: target || "", target: target || "" };
     if (accessId) p.by_id = String(accessId);
+    if (actMeta.scope === "vno") {
+      p.scope = "vno";
+      p.operator = actMeta.operator || consultaLastVnoOperator || "TASA";
+      p.intent_type =
+        actMeta.intent_type ||
+        (actMeta.row && actMeta.row.intent_type) ||
+        "ont-connection";
+    }
     return p;
   }
 
-  function consultaInpApiPost(url, payload) {
-    return fetch(url, {
+  function consultaInpApiPost(url, payload, opts) {
+    opts = opts || {};
+    var init = {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       credentials: "same-origin",
       body: JSON.stringify(payload || {}),
-    })
+    };
+    var abortTimer = null;
+    if (opts.timeoutMs > 0 && typeof AbortController !== "undefined") {
+      var ac = new AbortController();
+      init.signal = ac.signal;
+      abortTimer = setTimeout(function () {
+        ac.abort();
+      }, opts.timeoutMs);
+    }
+    return fetch(url, init)
       .then(parseJsonResponse)
       .then(function (r) {
         if (r.status === 401) {
@@ -1866,6 +2298,15 @@
           return null;
         }
         return r.payload || {};
+      })
+      .catch(function (err) {
+        if (opts.timeoutMs > 0 && err && err.name === "AbortError") {
+          return { ok: false, message: "La operación tardó demasiado (timeout del cliente)." };
+        }
+        throw err;
+      })
+      .finally(function () {
+        if (abortTimer) clearTimeout(abortTimer);
       });
   }
 
@@ -1934,6 +2375,13 @@
     try {
       box.scrollIntoView({ block: "nearest", behavior: "smooth" });
     } catch (_e) {}
+  }
+
+  function consultaShowReinyeccionCompletada(message) {
+    consultaClearActionError();
+    setConsultaBusy(false);
+    consultaClearSuccessHint();
+    consultaToast(message || consultaReinyeccionOkMessage, { variant: "success" });
   }
 
   function consultaRefreshAfterAction(note) {
@@ -2015,13 +2463,333 @@
     var dlg = document.getElementById("consulta-rn-dialog");
     var sel = document.getElementById("consulta-rn-dialog-select");
     if (!dlg || !sel) return;
-    consultaRnDialogCtx = { row: row || {}, btn: btn || null };
+    consultaRnDialogCtx = {
+      row: row || {},
+      btn: btn || null,
+      meta: consultaRowActionMeta(btn),
+    };
     var cur =
       row && row.required_network_state != null
         ? row.required_network_state
         : row && row.network_state;
     consultaPopulateRnDialogSelect(cur);
     if (typeof dlg.showModal === "function") dlg.showModal();
+  }
+
+  function consultaActiveAccessIdResultTabId() {
+    for (var i = 0; i < consultaAccessIdResultTabs.length; i++) {
+      var tabEl = document.getElementById(consultaAccessIdResultTabs[i].tab);
+      if (tabEl && tabEl.classList.contains("is-active")) {
+        return consultaAccessIdResultTabs[i].tab;
+      }
+    }
+    return null;
+  }
+
+  function consultaPatchVnoTasaHsiProfiles(target, downstream, upstream) {
+    var tgt = target != null ? String(target).trim() : "";
+    if (!tgt) return;
+    var ds = downstream != null ? String(downstream).trim() : "";
+    var us = upstream != null ? String(upstream).trim() : "";
+    var patchRow = function (row) {
+      if (!row || (row.target || "").trim() !== tgt) return;
+      if (!row.tasa_hsi || typeof row.tasa_hsi !== "object") row.tasa_hsi = {};
+      if (ds) row.tasa_hsi.downstream_profile = ds;
+      if (us) row.tasa_hsi.upstream_profile = us;
+    };
+    for (var i = 0; i < consultaLastVnoResultRows.length; i++) {
+      patchRow(consultaLastVnoResultRows[i]);
+    }
+    if (
+      consultaLastResultPayload &&
+      consultaLastResultPayload.consulta_layout === "access_id_tabs" &&
+      Array.isArray(consultaLastResultPayload.vno_matches)
+    ) {
+      for (var j = 0; j < consultaLastResultPayload.vno_matches.length; j++) {
+        patchRow(consultaLastResultPayload.vno_matches[j]);
+      }
+      var activeTab = consultaActiveAccessIdResultTabId();
+      renderConsultaResult(consultaLastResultPayload);
+      if (activeTab) activateTabs(consultaAccessIdResultTabs, activeTab);
+    }
+  }
+
+  var consultaTasaHsiSuggestTimers = { upstream: null, downstream: null };
+
+  function consultaTasaHsiLiveFromInputs() {
+    var upEl = document.getElementById("consulta-tasa-hsi-upstream");
+    var dnEl = document.getElementById("consulta-tasa-hsi-downstream");
+    var ctx = consultaTasaHsiDialogCtx || {};
+    var base =
+      ctx.row && ctx.row.tasa_hsi && typeof ctx.row.tasa_hsi === "object"
+        ? Object.assign({}, ctx.row.tasa_hsi)
+        : {};
+    if (upEl && String(upEl.value || "").trim()) {
+      base.upstream_profile = String(upEl.value).trim();
+    }
+    if (dnEl && String(dnEl.value || "").trim()) {
+      base.downstream_profile = String(dnEl.value).trim();
+    }
+    return base;
+  }
+
+  function consultaTasaHsiFieldConfig(kind) {
+    if (kind === "downstream") {
+      return {
+        kind: "downstream",
+        input: "consulta-tasa-hsi-downstream",
+        list: "consulta-tasa-hsi-downstream-suggest",
+      };
+    }
+    return {
+      kind: "upstream",
+      input: "consulta-tasa-hsi-upstream",
+      list: "consulta-tasa-hsi-upstream-suggest",
+    };
+  }
+
+  function consultaHideTasaHsiSuggest(listEl, inputEl) {
+    if (!listEl) return;
+    listEl.hidden = true;
+    listEl.classList.remove("is-open");
+    if (inputEl) inputEl.setAttribute("aria-expanded", "false");
+  }
+
+  function consultaCloseAllTasaHsiSuggests(exceptKind) {
+    ["upstream", "downstream"].forEach(function (k) {
+      if (exceptKind && k === exceptKind) return;
+      var cfg = consultaTasaHsiFieldConfig(k);
+      consultaHideTasaHsiSuggest(
+        document.getElementById(cfg.list),
+        document.getElementById(cfg.input)
+      );
+    });
+  }
+
+  /** Filtra sugerencias por tipo de perfil (Traffic Descriptor = *_UP, Shaper = *_DN / TASA_SH*). */
+  function consultaFilterTasaHsiProfiles(profiles, kind) {
+    return (profiles || []).filter(function (name) {
+      var n = String(name || "").trim().toUpperCase();
+      if (!n) return false;
+      if (kind === "downstream") {
+        return n.indexOf("_DN") >= 0 || n.indexOf("TASA_SH") === 0;
+      }
+      return n.indexOf("_UP") >= 0 || (n.indexOf("TASA_BW") === 0 && n.indexOf("_DN") < 0);
+    });
+  }
+
+  function consultaFillTasaHsiSuggestList(listId, profiles, inputEl, kind) {
+    var ul = document.getElementById(listId);
+    if (!ul) return;
+    ul.innerHTML = "";
+    var q = inputEl ? String(inputEl.value || "").trim().toLowerCase() : "";
+    var items = consultaFilterTasaHsiProfiles(profiles, kind);
+    var cur = inputEl ? String(inputEl.value || "").trim() : "";
+    if (cur && items.indexOf(cur) < 0) {
+      items.unshift(cur);
+    }
+    if (q) {
+      items = items.filter(function (name) {
+        return String(name).toLowerCase().indexOf(q) >= 0;
+      });
+    }
+    if (!items.length) {
+      var empty = document.createElement("li");
+      empty.className = "altiplano-tasa-hsi-suggest__empty";
+      empty.setAttribute("role", "presentation");
+      empty.textContent = q ? "Sin coincidencias para «" + q + "»" : "Sin perfiles disponibles";
+      ul.appendChild(empty);
+    } else {
+      items.slice(0, 100).forEach(function (name) {
+        var li = document.createElement("li");
+        li.className = "altiplano-tasa-hsi-suggest__item";
+        li.setAttribute("role", "option");
+        li.textContent = String(name);
+        li.addEventListener("mousedown", function (ev) {
+          ev.preventDefault();
+          if (inputEl) {
+            inputEl.value = String(name);
+            inputEl.setAttribute("data-value", String(name));
+          }
+          consultaHideTasaHsiSuggest(ul, inputEl);
+        });
+        ul.appendChild(li);
+      });
+    }
+    var open = inputEl && document.activeElement === inputEl;
+    ul.hidden = !open;
+    ul.classList.toggle("is-open", !!open);
+    if (inputEl) inputEl.setAttribute("aria-expanded", open ? "true" : "false");
+  }
+
+  function consultaFetchTasaHsiSuggestions(kind, query, done) {
+    var ctx = consultaTasaHsiDialogCtx;
+    if (!ctx || !ctx.row || !ctx.row.target) {
+      if (done) done([]);
+      return;
+    }
+    consultaInpApiPost("/dashboard/altiplano/tasa-composite-profile-suggestions", {
+      kind: kind,
+      target: ctx.row.target,
+      operator: (ctx.meta && ctx.meta.operator) || consultaLastVnoOperator || "TASA",
+      query: query || "",
+      tasa_hsi: consultaTasaHsiLiveFromInputs(),
+    })
+      .then(function (out) {
+        if (done) done(out && out.ok && out.profiles ? out.profiles : []);
+      })
+      .catch(function () {
+        if (done) done([]);
+      });
+  }
+
+  function consultaPrefetchTasaHsiSuggestions(kind, query, inputEl) {
+    consultaFetchTasaHsiSuggestions(kind, query, function (profiles) {
+      if (inputEl) inputEl._tasaHsiProfiles = profiles || [];
+    });
+  }
+
+  function consultaRefreshTasaHsiSuggest(kind, query) {
+    var cfg = consultaTasaHsiFieldConfig(kind);
+    var inputEl = document.getElementById(cfg.input);
+    var wrap = inputEl && inputEl.closest(".altiplano-tasa-hsi-input-wrap");
+    if (wrap) wrap.classList.add("is-loading");
+    consultaFetchTasaHsiSuggestions(kind, query, function (profiles) {
+      if (inputEl) {
+        inputEl._tasaHsiProfiles = profiles || [];
+      }
+      consultaFillTasaHsiSuggestList(cfg.list, profiles, inputEl, kind);
+      if (wrap) wrap.classList.remove("is-loading");
+    });
+  }
+
+  function consultaWireTasaHsiSuggestInputs() {
+    ["upstream", "downstream"].forEach(function (kind) {
+      var cfg = consultaTasaHsiFieldConfig(kind);
+      var el = document.getElementById(cfg.input);
+      var listEl = document.getElementById(cfg.list);
+      if (!el || el._tasaHsiSuggestWired) return;
+      el._tasaHsiSuggestWired = true;
+      el._tasaHsiProfiles = [];
+      el.addEventListener("input", function () {
+        var q = String(el.value || "").trim();
+        el.setAttribute("data-value", q);
+        consultaCloseAllTasaHsiSuggests(kind);
+        if (el._tasaHsiProfiles && el._tasaHsiProfiles.length) {
+          consultaFillTasaHsiSuggestList(cfg.list, el._tasaHsiProfiles, el, kind);
+        }
+        if (consultaTasaHsiSuggestTimers[kind]) {
+          clearTimeout(consultaTasaHsiSuggestTimers[kind]);
+        }
+        consultaTasaHsiSuggestTimers[kind] = setTimeout(function () {
+          consultaRefreshTasaHsiSuggest(kind, q);
+        }, 280);
+      });
+      el.addEventListener("focus", function () {
+        consultaCloseAllTasaHsiSuggests(kind);
+        var q = String(el.value || "").trim();
+        if (el._tasaHsiProfiles && el._tasaHsiProfiles.length) {
+          consultaFillTasaHsiSuggestList(cfg.list, el._tasaHsiProfiles, el, kind);
+          consultaRefreshTasaHsiSuggest(kind, q);
+        } else {
+          consultaRefreshTasaHsiSuggest(kind, q);
+        }
+      });
+      el.addEventListener("blur", function () {
+        setTimeout(function () {
+          consultaHideTasaHsiSuggest(listEl, el);
+        }, 160);
+      });
+      el.addEventListener("change", function () {
+        el.setAttribute("data-value", String(el.value || "").trim());
+        var other = kind === "upstream" ? "downstream" : "upstream";
+        var otherEl = document.getElementById(consultaTasaHsiFieldConfig(other).input);
+        consultaPrefetchTasaHsiSuggestions(other, "", otherEl);
+      });
+    });
+  }
+
+  function consultaOpenTasaHsiDialog(row, btn) {
+    var dlg = document.getElementById("consulta-tasa-hsi-dialog");
+    var upEl = document.getElementById("consulta-tasa-hsi-upstream");
+    var dnEl = document.getElementById("consulta-tasa-hsi-downstream");
+    var tgtEl = document.getElementById("consulta-tasa-hsi-dialog-target");
+    if (!dlg || !upEl || !dnEl) return;
+    consultaWireTasaHsiSuggestInputs();
+    consultaTasaHsiDialogCtx = {
+      row: row || {},
+      btn: btn || null,
+      meta: consultaRowActionMeta(btn),
+    };
+    var hsi =
+      row && row.tasa_hsi && typeof row.tasa_hsi === "object" ? row.tasa_hsi : {};
+    upEl.value = hsi.upstream_profile != null ? String(hsi.upstream_profile) : "";
+    dnEl.value = hsi.downstream_profile != null ? String(hsi.downstream_profile) : "";
+    upEl.setAttribute("data-value", upEl.value);
+    dnEl.setAttribute("data-value", dnEl.value);
+    if (tgtEl) {
+      tgtEl.textContent = row && row.target ? String(row.target) : "";
+    }
+    consultaCloseAllTasaHsiSuggests(null);
+    consultaPrefetchTasaHsiSuggestions("upstream", upEl.value, upEl);
+    consultaPrefetchTasaHsiSuggestions("downstream", dnEl.value, dnEl);
+    if (typeof dlg.showModal === "function") dlg.showModal();
+  }
+
+  function consultaRunTasaHsiApply() {
+    var dlg = document.getElementById("consulta-tasa-hsi-dialog");
+    var upEl = document.getElementById("consulta-tasa-hsi-upstream");
+    var dnEl = document.getElementById("consulta-tasa-hsi-downstream");
+    var ctx = consultaTasaHsiDialogCtx;
+    if (!ctx || !upEl || !dnEl) return;
+    var row = ctx.row || {};
+    var target = row.target ? String(row.target) : "";
+    var upstream = String(upEl.value || "").trim();
+    var downstream = String(dnEl.value || "").trim();
+    if (!target) return;
+    if (!upstream || !downstream) {
+      altiplanoResultDialog({
+        title: "Perfiles requeridos",
+        message: "Completá Traffic Descriptor Profile y Shaper Profile.",
+        variant: "warning",
+      });
+      return;
+    }
+    if (dlg && typeof dlg.close === "function") dlg.close();
+    var meta = ctx.meta || { scope: "vno", intent_type: "tasa-composite" };
+    consultaTasaHsiDialogCtx = null;
+    var payload = consultaMutationPayload(target, "", meta);
+    payload.tasa_hsi = {
+      upstream_profile: upstream,
+      downstream_profile: downstream,
+    };
+    consultaSetActBusy(ctx.btn, true);
+    consultaClearActionError();
+    consultaInpApiPost("/dashboard/altiplano/actualizar-tasa-composite-profiles", payload)
+      .then(function (out) {
+        if (!out) return;
+        if (!out.ok) {
+          altiplanoInpErrorDialog({
+            title: "No se pudieron modificar los perfiles",
+            message: out.message || "Error al actualizar perfiles HSI.",
+            out: out,
+          });
+          return;
+        }
+        consultaPatchVnoTasaHsiProfiles(target, downstream, upstream);
+        consultaClearSuccessHint();
+        consultaToast(out.message || "Perfiles HSI actualizados.", { variant: "success" });
+      })
+      .catch(function () {
+        altiplanoResultDialog({
+          title: "Error de red",
+          message: "No se pudo contactar al servidor.",
+          variant: "error",
+        });
+      })
+      .finally(function () {
+        consultaSetActBusy(ctx.btn, false);
+      });
   }
 
   function consultaRunRnApply() {
@@ -2054,8 +2822,9 @@
       return;
     }
     if (dlg && typeof dlg.close === "function") dlg.close();
+    var meta = (ctx && ctx.meta) || { scope: "inp" };
     consultaRnDialogCtx = null;
-    var payload = consultaMutationPayload(target, accessId);
+    var payload = consultaMutationPayload(target, accessId, meta);
     payload.required_network_state = newRn;
     consultaSetActBusy(ctx.btn, true);
     consultaClearActionError();
@@ -2085,6 +2854,19 @@
   }
 
   function handleConsultaRowAction(ev) {
+    var menuTrigger = ev.target.closest("[data-consulta-act-menu-trigger]");
+    if (menuTrigger && !menuTrigger.disabled) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      var menu = menuTrigger.closest(".altiplano-consulta-act-menu");
+      var wasOpen = menu && menu.classList.contains("is-open");
+      consultaCloseAllActMenus();
+      if (menu && !wasOpen) {
+        menu.classList.add("is-open");
+        menuTrigger.setAttribute("aria-expanded", "true");
+      }
+      return;
+    }
     var bulkBtn = ev.target.closest("[data-consulta-bulk]");
     if (bulkBtn && !bulkBtn.disabled) {
       ev.preventDefault();
@@ -2119,6 +2901,14 @@
       return;
     }
 
+    if (act === "tasa-hsi") {
+      var hsiRow = consultaRowFromActButton(btn);
+      var hsiFull = consultaFindVnoResultRow(target, accessId);
+      if (hsiFull) hsiRow = Object.assign({}, hsiFull, hsiRow);
+      consultaOpenTasaHsiDialog(hsiRow, btn);
+      return;
+    }
+
     if (act === "rn") {
       var rnRow = consultaRowFromActButton(btn);
       var rnFull = consultaFindResultRow(target, accessId);
@@ -2128,18 +2918,95 @@
     }
 
     if (!target) return;
-    var payload = consultaMutationPayload(target, accessId);
+    var actMeta = consultaRowActionMeta(btn);
+    var rowFromBtn = consultaRowFromActButton(btn);
+    var payload = consultaMutationPayload(target, accessId, actMeta);
 
     if (act === "sync") {
-      consultaRunActivateAndSync(consultaRowFromActButton(btn), btn);
+      consultaRunActivateAndSync(rowFromBtn, btn, actMeta);
+      return;
+    }
+
+    if (act === "reinyeccion") {
+      altiplanoConfirm({
+        title: "¿Reinyectar tasa-composite?",
+        message: "En " + (actMeta.operator || "TASA") + " se borrará y volverá a crear:",
+        items: [target],
+        detail:
+          "1) Eliminar intent tasa-composite\n" +
+          "2) Create Services con los mismos perfiles HSI (downstream / upstream / CVLAN)",
+        variant: "danger",
+        confirmLabel: "Reinyectar",
+      }).then(function (ok) {
+        if (!ok) return;
+        consultaCloseAllActMenus();
+        var menuWrap = btn.closest(".altiplano-consulta-act-menu");
+        var menuTrigger =
+          menuWrap && menuWrap.querySelector("[data-consulta-act-menu-trigger]");
+        if (consultaHint) {
+          consultaHint.classList.remove("altiplano-consulta-inline-msg--success");
+          consultaHint.textContent = "";
+        }
+        setConsultaBusy(
+          true,
+          "Reinyectando tasa-composite: eliminando, recreando y verificando en TASA…"
+        );
+        consultaSetActBusy(menuTrigger, true);
+        consultaSetActBusy(btn, true);
+        var payload = consultaMutationPayload(target, accessId, actMeta);
+        if (rowFromBtn.tasa_hsi && typeof rowFromBtn.tasa_hsi === "object") {
+          payload.tasa_hsi = rowFromBtn.tasa_hsi;
+        }
+        var reinyeccionOk = false;
+        var reinyeccionMessage = consultaReinyeccionOkMessage;
+        consultaInpApiPost(
+          "/dashboard/altiplano/reinyectar-tasa-composite",
+          payload,
+          { timeoutMs: 360000 }
+        )
+          .then(function (out) {
+            if (!out) return;
+            if (!out.ok) {
+              altiplanoInpErrorDialog({
+                title: "Reinyección fallida",
+                message: out.message || "No se pudo reinyectar el servicio.",
+                out: out,
+              });
+              return;
+            }
+            reinyeccionOk = true;
+            if (out && out.message) reinyeccionMessage = String(out.message);
+          })
+          .catch(function (err) {
+            if (err && err.name === "AbortError") return;
+            altiplanoResultDialog({
+              title: "Error de red",
+              message: "No se pudo contactar al servidor.",
+              variant: "error",
+            });
+          })
+          .finally(function () {
+            consultaSetActBusy(menuTrigger, false);
+            consultaSetActBusy(btn, false);
+            if (reinyeccionOk) {
+              consultaShowReinyeccionCompletada(reinyeccionMessage);
+            } else {
+              setConsultaBusy(false);
+            }
+          });
+      });
       return;
     }
 
     if (act === "del") {
+      consultaCloseAllActMenus();
+      var isVnoDel = actMeta.scope === "vno";
       altiplanoConfirm({
-        title: "¿Borrar en cascada este intent?",
-        message: "1) VNO (TASA u otro): servicios + ONT\n2) INP: ONT Connection",
-        items: [target],
+        title: isVnoDel ? "¿Borrar en VNO?" : "¿Borrar en cascada este intent?",
+        message: isVnoDel
+          ? "Se eliminará solo este intent en " + (actMeta.operator || "VNO") + ":"
+          : "1) VNO (TASA u otro): servicios + ONT\n2) INP: ONT Connection",
+        items: [target + (rowFromBtn.intent_type ? " (" + rowFromBtn.intent_type + ")" : "")],
         detail: "Esta acción no se puede deshacer.",
         variant: "danger",
         confirmLabel: "Borrar",
@@ -2175,6 +3042,11 @@
 
   function setConsultaBusy(busy, message) {
     var on = !!busy;
+    var consultaShell =
+      consultaOut && consultaOut.closest
+        ? consultaOut.closest(".altiplano-consulta-shell")
+        : null;
+    if (consultaShell) consultaShell.classList.toggle("altiplano-consulta-shell--busy", on);
     if (consultaOut) consultaOut.classList.toggle("altiplano-consulta-result--busy", on);
     var overlay = document.getElementById("consulta-busy-overlay");
     if (overlay) {
@@ -2233,22 +3105,160 @@
     }
   }
 
-  function renderConsultaResult(payload) {
-    var body = document.getElementById("consulta-result-body");
-    if (!body) return;
-    consultaLastCreatePrefill = null;
-    if (!payload || typeof payload !== "object") {
-      body.innerHTML = '<p class="muted">Sin datos.</p>';
-      return;
+  function consultaTargetHead(row) {
+    var tgt = row && row.target != null ? String(row.target) : "";
+    var loc =
+      row && row.location_slice_pon != null ? String(row.location_slice_pon) : tgt;
+    var ix = loc.indexOf("#");
+    return ix >= 0 ? loc.slice(0, ix) : loc;
+  }
+
+  function consultaSortVnoRows(rows) {
+    var order = { "ont-connection": 0, ont: 1, "tasa-composite": 2 };
+    return (rows || []).slice().sort(function (a, b) {
+      var oa = order[String((a && a.intent_type) || "").toLowerCase()];
+      var ob = order[String((b && b.intent_type) || "").toLowerCase()];
+      if (oa == null) oa = 9;
+      if (ob == null) ob = 9;
+      if (oa !== ob) return oa - ob;
+      var ta = a && a.target != null ? String(a.target) : "";
+      var tb = b && b.target != null ? String(b.target) : "";
+      return ta.localeCompare(tb);
+    });
+  }
+
+  function consultaRowDeviceLabel(row, deviceField) {
+    if (deviceField && row && row[deviceField] != null) {
+      var v = String(row[deviceField]).trim();
+      if (v) return v;
     }
+    var head = consultaTargetHead(row);
+    return head || "—";
+  }
+
+  function renderConsultaIntentsTable(rows, options) {
+    options = options || {};
+    var multiSelect = !!options.multiSelect;
+    var showActions = options.showActions !== false;
+    var showAccessIdColumn = options.showAccessIdColumn !== false;
+    var deviceField = options.deviceField || null;
+    var deviceColLabel = options.deviceColLabel || "Device name";
+    var targetColLabel =
+      options.targetColLabel || "Location Name#Slice Owner Name#PON Type";
+    if (!rows || !rows.length) {
+      return (
+        '<p class="muted">' +
+        escHtml(options.emptyMessage || "Sin intents para este criterio.") +
+        "</p>"
+      );
+    }
+    var html = "";
+    if (multiSelect) {
+      html +=
+        '<div id="consulta-bulk-bar" class="altiplano-consulta-bulk-bar" role="toolbar" aria-label="Acciones sobre intents seleccionados">' +
+        '<span id="consulta-bulk-count" class="altiplano-consulta-bulk-count muted">Ningún intent seleccionado</span>' +
+        '<button type="button" id="btn-consulta-bulk-sync" class="btn btn-primary btn-sm" data-consulta-bulk="sync" disabled>Sincronizar seleccionados</button>' +
+        '<button type="button" id="btn-consulta-bulk-fix" class="btn btn-ghost btn-sm altiplano-consulta-bulk-fix" data-consulta-bulk="fix" disabled>Corregir dependencias</button>' +
+        '<button type="button" id="btn-consulta-bulk-del" class="btn btn-ghost btn-sm altiplano-consulta-bulk-del" data-consulta-bulk="del" disabled>Eliminar seleccionados</button>' +
+        "</div>";
+    }
+    html += '<div class="altiplano-consulta-table-wrap"><table class="altiplano-consulta-table altiplano-consulta-table--wide">';
+    html += "<thead><tr>";
+    if (multiSelect) {
+      html +=
+        '<th class="altiplano-consulta-sel-cell">' +
+        '<input type="checkbox" id="consulta-select-all" aria-label="Seleccionar todos los intents" title="Seleccionar todos">' +
+        "</th>";
+    }
+    html +=
+      '<th class="altiplano-consulta-th-long">' +
+      escHtml(deviceColLabel) +
+      "</th>" +
+      '<th class="altiplano-consulta-th-long">' +
+      escHtml(targetColLabel) +
+      "</th>" +
+      '<th class="altiplano-consulta-td-center">Intent type</th>' +
+      '<th class="altiplano-consulta-td-center">Required Network State</th>' +
+      '<th class="altiplano-consulta-td-center">Alignment State</th>';
+    if (showAccessIdColumn) {
+      html += '<th class="altiplano-consulta-td-center">Access ID</th>';
+    }
+    if (showActions) {
+      html += '<th class="altiplano-consulta-act-cell">Acciones</th>';
+    }
+    html += "</tr></thead><tbody>";
+    for (var i = 0; i < rows.length; i++) {
+      var row = rows[i] || {};
+      var tgt = row.target != null ? String(row.target) : "";
+      var loc = row.location_slice_pon != null ? String(row.location_slice_pon) : tgt;
+      var rn =
+        row.network_state != null
+          ? String(row.network_state)
+          : row.required_network_state != null
+            ? String(row.required_network_state)
+            : "—";
+      var al = row.alignment_state != null ? String(row.alignment_state) : "—";
+      var aid = row.access_id != null ? String(row.access_id) : "—";
+      var itype = row.intent_type != null ? String(row.intent_type) : "ont-connection";
+      html += "<tr>";
+      if (multiSelect) {
+        html += consultaRowSelectCell(row);
+      }
+      html +=
+        '<td><code class="inline-code">' +
+        escHtml(consultaRowDeviceLabel(row, deviceField)) +
+        "</code></td>";
+      html += '<td><code class="inline-code">' + escHtml(loc || "—") + "</code></td>";
+      html +=
+        '<td class="altiplano-consulta-td-center"><code class="inline-code">' +
+        escHtml(itype) +
+        "</code></td>";
+      html += '<td class="altiplano-consulta-td-center">' + escHtml(rn) + "</td>";
+      html += '<td class="altiplano-consulta-td-center">' + escHtml(al);
+      if (row.error_detail) {
+        html +=
+          '<p class="muted altiplano-consulta-row-detail">' +
+          escHtml(String(row.error_detail)) +
+          "</p>";
+      }
+      html += "</td>";
+      if (showAccessIdColumn) {
+        html +=
+          '<td class="altiplano-consulta-td-center"><code class="inline-code">' +
+          escHtml(aid) +
+          "</code></td>";
+      }
+      if (showActions) {
+        html += consultaRowActionsCell(row, {
+          consultaScope: options.consultaScope || "inp",
+          operator: options.operator || "",
+        });
+      }
+      html += "</tr>";
+    }
+    html += "</tbody></table></div>";
+    return html;
+  }
+
+  var consultaAccessIdResultTabs = [
+    { tab: "consulta-res-tab-inp", panel: "consulta-res-panel-inp" },
+    { tab: "consulta-res-tab-vno", panel: "consulta-res-panel-vno" },
+  ];
+
+  function consultaBindAccessIdResultTabs() {
+    consultaAccessIdResultTabs.forEach(function (item) {
+      var tabEl = document.getElementById(item.tab);
+      if (!tabEl || tabEl._consultaTabBound) return;
+      tabEl._consultaTabBound = true;
+      tabEl.addEventListener("click", function () {
+        activateTabs(consultaAccessIdResultTabs, item.tab);
+      });
+    });
+  }
+
+  function renderConsultaResultMeta(payload, rows, multiSelect) {
     var ok = payload.ok === true;
     var msg = payload.message ? String(payload.message) : ok ? "Consulta OK" : "Error";
-    var rows = payload.matches || [];
-    consultaLastResultRows = rows.slice();
-    if (payload.suggest_create && payload.create_prefill) {
-      consultaLastCreatePrefill = payload.create_prefill;
-    }
-    var multiSelect = consultaShouldShowMultiSelect(rows);
     var html = "";
     html +=
       "<p><strong>" +
@@ -2297,62 +3307,142 @@
       html +=
         '<p class="muted altiplano-consulta-multi-aid">Varios intents <code class="inline-code">ont-connection</code> comparten este Access ID en Altiplano INP (como en la GUI).</p>';
     }
-    if (rows.length) {
-      if (multiSelect) {
-        html +=
-          '<div id="consulta-bulk-bar" class="altiplano-consulta-bulk-bar" role="toolbar" aria-label="Acciones sobre intents seleccionados">' +
-          '<span id="consulta-bulk-count" class="altiplano-consulta-bulk-count muted">Ningún intent seleccionado</span>' +
-          '<button type="button" id="btn-consulta-bulk-sync" class="btn btn-primary btn-sm" data-consulta-bulk="sync" disabled>Sincronizar seleccionados</button>' +
-          '<button type="button" id="btn-consulta-bulk-fix" class="btn btn-ghost btn-sm altiplano-consulta-bulk-fix" data-consulta-bulk="fix" disabled>Corregir dependencias</button>' +
-          '<button type="button" id="btn-consulta-bulk-del" class="btn btn-ghost btn-sm altiplano-consulta-bulk-del" data-consulta-bulk="del" disabled>Eliminar seleccionados</button>' +
-          "</div>";
-      }
-      html += '<div class="altiplano-consulta-table-wrap"><table class="altiplano-consulta-table altiplano-consulta-table--wide">';
-      html += "<thead><tr>";
-      if (multiSelect) {
-        html +=
-          '<th class="altiplano-consulta-sel-cell">' +
-          '<input type="checkbox" id="consulta-select-all" aria-label="Seleccionar todos los intents" title="Seleccionar todos">' +
-          "</th>";
-      }
+    return html;
+  }
+
+  function renderConsultaResult(payload) {
+    var body = document.getElementById("consulta-result-body");
+    if (!body) return;
+    consultaLastResultPayload =
+      payload && typeof payload === "object"
+        ? JSON.parse(JSON.stringify(payload))
+        : null;
+    consultaLastCreatePrefill = null;
+    if (!payload || typeof payload !== "object") {
+      body.innerHTML = '<p class="muted">Sin datos.</p>';
+      return;
+    }
+    var ok = payload.ok === true;
+    var msg = payload.message ? String(payload.message) : ok ? "Consulta OK" : "Error";
+    var rows = payload.matches || [];
+    consultaLastResultRows = rows.slice();
+    if (payload.suggest_create && payload.create_prefill) {
+      consultaLastCreatePrefill = payload.create_prefill;
+    }
+    var multiSelect = consultaShouldShowMultiSelect(rows);
+    var accessIdTabs = payload.consulta_layout === "access_id_tabs";
+    var html = renderConsultaResultMeta(payload, rows, multiSelect);
+
+    if (accessIdTabs) {
+      var opRes = payload.operator_resolution || {};
+      var vnoLabel = opRes.operator ? String(opRes.operator) : "VNO";
+      var vnoRows = payload.vno_matches || [];
+      var searched = opRes.searched_device_prefixes || [];
       html +=
-        '<th class="altiplano-consulta-th-long">Location Name#Slice Owner Name#PON Type</th>' +
-        "<th>Required Network State</th>" +
-        "<th>Alignment State</th>" +
-        "<th>Access ID</th>" +
-        '<th class="altiplano-consulta-act-cell">Acciones</th>' +
-        "</tr></thead><tbody>";
-      for (var i = 0; i < rows.length; i++) {
-        var row = rows[i] || {};
-        var tgt = row.target != null ? String(row.target) : "";
-        var loc = row.location_slice_pon != null ? String(row.location_slice_pon) : tgt;
-        var rn =
-          row.network_state != null
-            ? String(row.network_state)
-            : row.required_network_state != null
-              ? String(row.required_network_state)
-              : "—";
-        var al = row.alignment_state != null ? String(row.alignment_state) : "—";
-        var aid = row.access_id != null ? String(row.access_id) : "—";
-        html += "<tr>";
-        if (multiSelect) {
-          html += consultaRowSelectCell(row);
+        '<p class="muted altiplano-consulta-inv"><strong>Búsqueda Access ID:</strong> INP por Access ID; ' +
+        "VNO por <code class=\"inline-code\">target</code> exacto del device INP (ont, ont-connection y tasa-composite en TASA)" +
+        (searched.length
+          ? " (<code class=\"inline-code\">" + escHtml(searched.join("</code>, <code class=\"inline-code\">")) + "</code>)."
+          : ".") +
+        "</p>";
+      html +=
+        '<div class="altiplano-consulta-result-tabs-shell">' +
+        '<div class="dash-segment dash-segment--sm" role="tablist" aria-label="Resultado Access ID">' +
+        '<button type="button" id="consulta-res-tab-inp" class="dash-segment__btn is-active" role="tab" aria-selected="true" aria-controls="consulta-res-panel-inp">INP</button>' +
+        '<button type="button" id="consulta-res-tab-vno" class="dash-segment__btn" role="tab" aria-selected="false" aria-controls="consulta-res-panel-vno">VNO' +
+        (vnoLabel ? " (" + escHtml(vnoLabel) + ")" : "") +
+        "</button></div></div>";
+      html += '<div id="consulta-res-panel-inp" role="tabpanel" aria-labelledby="consulta-res-tab-inp">';
+      if (rows.length) {
+        html += renderConsultaIntentsTable(rows, {
+          multiSelect: multiSelect,
+          showActions: true,
+          consultaScope: "inp",
+          deviceField: "inp_device_name",
+          deviceColLabel: "Device name (INP)",
+          targetColLabel: "Location Name#Slice Owner Name#PON Type (INP)",
+        });
+      } else if (ok && payload.no_match && payload.suggest_create) {
+        html += '<div class="altiplano-consulta-no-match">';
+        html += '<p class="altiplano-consulta-no-match-msg">' + escHtml(msg) + "</p>";
+        if (payload.create_prefill) {
+          var hintParts = [];
+          var pf = payload.create_prefill;
+          if (pf.access_id) hintParts.push("Access ID " + pf.access_id);
+          if (pf.sitio) {
+            hintParts.push(
+              "BA_OLTA_" + pf.sitio + (pf.lt && pf.pon && pf.ont ? "-" + pf.lt + "-" + pf.pon + "-" + pf.ont : "")
+            );
+          }
+          if (pf.vno) hintParts.push("VNO " + pf.vno);
+          if (hintParts.length) {
+            html +=
+              '<p class="muted altiplano-consulta-no-match-hint">Precarga: ' +
+              escHtml(hintParts.join(" · ")) +
+              (payload.inventory_resolution ? " (inventario ATC cuando aplica)" : "") +
+              "</p>";
+          }
         }
-        html += '<td><code class="inline-code">' + escHtml(loc || "—") + "</code></td>";
-        html += "<td>" + escHtml(rn) + "</td>";
-        html += "<td>" + escHtml(al);
-        if (row.error_detail) {
-          html +=
-            '<p class="muted altiplano-consulta-row-detail">' +
-            escHtml(String(row.error_detail)) +
-            "</p>";
-        }
-        html += "</td>";
-        html += '<td><code class="inline-code">' + escHtml(aid) + "</code></td>";
-        html += consultaRowActionsCell(row);
-        html += "</tr>";
+        html +=
+          '<button type="button" class="btn btn-primary" id="btn-consulta-create-from-search">Crear ONT Connection</button>';
+        html += "</div>";
+      } else if (ok) {
+        html += '<p class="muted">No se encontraron intents en Altiplano INP.</p>';
       }
-      html += "</tbody></table></div>";
+      html += "</div>";
+      html +=
+        '<div id="consulta-res-panel-vno" role="tabpanel" aria-labelledby="consulta-res-tab-vno" hidden>';
+      if (!opRes.operator) {
+        html +=
+          '<p class="muted">No se pudo determinar el operador (VNO) desde inventario o target INP.</p>';
+      } else if (vnoRows.length) {
+        consultaLastVnoResultRows = vnoRows.slice();
+        consultaLastVnoOperator = vnoLabel || "TASA";
+        html += renderConsultaIntentsTable(consultaSortVnoRows(vnoRows), {
+          multiSelect: false,
+          showActions: true,
+          showAccessIdColumn: false,
+          consultaScope: "vno",
+          operator: consultaLastVnoOperator,
+          deviceColLabel: "Device name (" + vnoLabel + ")",
+          targetColLabel: "Location Name#Slice Owner Name#PON Type (" + vnoLabel + ")",
+          emptyMessage: "Sin intents en " + vnoLabel + ".",
+        });
+      } else {
+        html += '<p class="muted altiplano-consulta-inv"><strong>VNO (' + escHtml(vnoLabel) + "):</strong> ";
+        if (opRes.message) {
+          html += escHtml(String(opRes.message));
+        } else if (!searched.length) {
+          html += "sin device name INP para buscar en el operador.";
+        } else {
+          html +=
+            'sin intent <code class="inline-code">ont-connection</code> para los device INP indicados.';
+        }
+        html += "</p>";
+      }
+      html += "</div>";
+      body.innerHTML = html;
+      consultaBindAccessIdResultTabs();
+      activateTabs(consultaAccessIdResultTabs, "consulta-res-tab-inp");
+      var createBtn = document.getElementById("btn-consulta-create-from-search");
+      if (createBtn) {
+        createBtn.addEventListener("click", function () {
+          consultaGoCreateIntent(consultaLastCreatePrefill);
+        });
+      }
+      if (multiSelect) {
+        consultaBindMultiSelectHandlers();
+      }
+      return;
+    }
+
+    if (rows.length) {
+      html += renderConsultaIntentsTable(rows, {
+        multiSelect: multiSelect,
+        showActions: true,
+        deviceColLabel: "Device name",
+        targetColLabel: "Location Name#Slice Owner Name#PON Type",
+      });
     } else if (ok && payload.no_match && payload.suggest_create) {
       html += '<div class="altiplano-consulta-no-match">';
       html += '<p class="altiplano-consulta-no-match-msg">' + escHtml(msg) + "</p>";
@@ -2644,7 +3734,12 @@
       by_id: byId || "",
       advanced_filters: hasAdv || advancedOnly ? adv : null,
     };
-    var busyMsg = hasAdv || advancedOnly ? consultaAdvancedBusyMessage : consultaBusyDefaultMessage;
+    var busyMsg =
+      hasAdv || advancedOnly
+        ? consultaAdvancedBusyMessage
+        : byId
+          ? "Consultando INP y VNO (operador)…"
+          : consultaBusyDefaultMessage;
     setConsultaBusy(true, busyMsg);
     fetch("/dashboard/altiplano/consultar-intent", {
       method: "POST",
@@ -3301,6 +4396,27 @@
   if (consultaOut) {
     consultaOut.addEventListener("click", handleConsultaRowAction);
   }
+  document.addEventListener("click", function (ev) {
+    if (!ev.target.closest(".altiplano-consulta-act-menu")) {
+      consultaCloseAllActMenus();
+    }
+  });
+  document.addEventListener("keydown", function (ev) {
+    if (ev.key === "Escape") {
+      consultaCloseAllActMenus();
+      consultaHideToast();
+    }
+  });
+  (function consultaWireSuccessToast() {
+    var toastEl = document.getElementById("consulta-success-toast");
+    if (!toastEl) return;
+    var closeBtn = toastEl.querySelector(".altiplano-consulta-toast__close");
+    if (closeBtn) {
+      closeBtn.addEventListener("click", function () {
+        consultaHideToast();
+      });
+    }
+  })();
   (function consultaWireRnDialog() {
     var dlg = document.getElementById("consulta-rn-dialog");
     if (!dlg) return;
@@ -3319,6 +4435,26 @@
     }
     dlg.addEventListener("cancel", function () {
       consultaRnDialogCtx = null;
+    });
+  })();
+  (function consultaWireTasaHsiDialog() {
+    var dlg = document.getElementById("consulta-tasa-hsi-dialog");
+    if (!dlg) return;
+    var cancelBtn = document.getElementById("consulta-tasa-hsi-dialog-cancel");
+    var applyBtn = document.getElementById("consulta-tasa-hsi-dialog-apply");
+    if (cancelBtn) {
+      cancelBtn.addEventListener("click", function () {
+        dlg.close();
+        consultaTasaHsiDialogCtx = null;
+      });
+    }
+    if (applyBtn) {
+      applyBtn.addEventListener("click", function () {
+        consultaRunTasaHsiApply();
+      });
+    }
+    dlg.addEventListener("cancel", function () {
+      consultaTasaHsiDialogCtx = null;
     });
   })();
   var consultaQueryEl = document.getElementById("consulta_query");

@@ -24,19 +24,30 @@
 
   {% include 'partials/nav_dashboard.html' %}
 
-  <div class="panel camino-panel">
+  <div class="panel camino-panel card suite-index-card">
     <div class="camino-panel-inner">
-    <div class="camino-query-row">
-    <div class="row camino-row">
-      <div class="camino-field-wrap">
-        <label class="t" for="q">Valor</label>
-        <input type="text" id="q" placeholder="Access ID · CTO · Rama RATC · LT · sitio" autocomplete="off">
+    <div class="camino-query-row suite-search-surface">
+      <div class="orquestador-panel-head suite-panel-head consulta-panel-head">
+        <p class="suite-search-lead consulta-search-lead orquestador-panel-head__main">
+          Un solo campo: <strong>Access ID</strong>, <strong>CTO</strong> (<code class="inline-code">…-FATC-…</code>),
+          <strong>rama</strong> (<code class="inline-code">…-RATC-…</code>), LT o sitio/región.
+        </p>
       </div>
-      <button type="button" class="btn btn-primary" id="btn">Buscar</button>
-      <button type="button" class="btn btn-ghost" onclick="limpiarBusquedaCamino()">Limpiar</button>
+    <div class="row camino-row suite-query-row consulta-query-row">
+      <div class="camino-field-wrap suite-query-row__field">
+        <div class="field suite-field consulta-field" role="search">
+          <span class="search-icon" aria-hidden="true">⌕</span>
+          <label class="sr-only" for="q">Valor</label>
+          <input type="text" id="q" placeholder="Access ID · CTO · Rama RATC · LT · sitio" autocomplete="off">
+        </div>
+      </div>
+      <div class="suite-search-actions consulta-search-actions">
+        <button type="button" class="btn btn-primary" id="btn">Buscar</button>
+        <button type="button" class="btn btn-ghost" onclick="limpiarBusquedaCamino()">Limpiar</button>
+      </div>
     </div>
     </div>
-    <p class="muted camino-leyenda" role="note">
+    <p class="muted camino-leyenda suite-note empty-state-note" role="note">
       <strong>Buscar</strong> infiere el tipo de valor. En cada resultado, la ruta <strong>Sitio › LT › Rama › CTO › Access ID</strong> cambia mapa y detalle sin reescribir el campo.
     </p>
     </div>

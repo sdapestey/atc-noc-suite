@@ -1,0 +1,763 @@
+/* =============================================================================
+   Suite NOC — superficie de trabajo unificada (referencia: Consulta índice)
+   Aplica en todos los dashboards con .theme-devops
+   ============================================================================= */
+
+.theme-devops {
+  --suite-credit-inset-top: 18px;
+  --suite-credit-inset-right: 18px;
+  --suite-credit-reserve-right: 300px;
+}
+
+.theme-devops:is(.page-altiplano, .page-consulta-index, .page-orquestador-login) {
+  --orquestador-credit-inset-top: var(--suite-credit-inset-top);
+  --orquestador-credit-inset-right: var(--suite-credit-inset-right);
+  --orquestador-credit-reserve-right: var(--suite-credit-reserve-right);
+}
+
+/* Tarjeta contenedora */
+.theme-devops :is(.suite-index-card, .consulta-index-card) {
+  overflow: hidden;
+}
+
+/* Bloque superior (búsqueda / controles) */
+.theme-devops :is(
+    .suite-search-surface,
+    .consulta-search-card,
+    .dashboard-tree-panel > .dashboard-tree-controls,
+    .dashboard-tree-panel > .controls.dashboard-tree-controls,
+    .camino-panel .camino-query-row,
+    .calidad-panel > .calidad-resumen-toolbar,
+    .altiplano-consulta-suite-card > .suite-search-surface,
+    .altiplano-work-card > .suite-search-surface
+  ) {
+  position: relative;
+  padding: 18px 18px 16px;
+  background: linear-gradient(
+    165deg,
+    color-mix(in srgb, var(--canvas-inset) 88%, var(--accent) 12%) 0%,
+    var(--canvas-inset) 42%,
+    var(--canvas-subtle) 100%
+  );
+  border-bottom: 1px solid var(--border-muted);
+  box-sizing: border-box;
+}
+
+html[data-theme="light"] .theme-devops :is(
+    .suite-search-surface,
+    .consulta-search-card,
+    .dashboard-tree-panel > .dashboard-tree-controls,
+    .dashboard-tree-panel > .controls.dashboard-tree-controls,
+    .camino-panel .camino-query-row,
+    .calidad-panel > .calidad-resumen-toolbar,
+    .altiplano-consulta-suite-card > .suite-search-surface,
+    .altiplano-work-card > .suite-search-surface
+  ) {
+  background: linear-gradient(
+    165deg,
+    color-mix(in srgb, var(--canvas-inset) 92%, var(--accent) 8%) 0%,
+    var(--canvas-subtle) 100%
+  );
+}
+
+/* Cabecera + crédito */
+.theme-devops .suite-search-surface .orquestador-credit,
+.theme-devops :is(.suite-search-surface, .consulta-search-card) .orquestador-credit,
+.theme-devops .dashboard-tree-controls .orquestador-credit,
+.theme-devops .camino-query-row .orquestador-credit {
+  position: absolute;
+  top: var(--suite-credit-inset-top);
+  right: var(--suite-credit-inset-right);
+  z-index: 1;
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.35;
+  text-align: right;
+  color: var(--fg-subtle);
+  font-style: italic;
+  white-space: nowrap;
+}
+
+.theme-devops :is(.suite-panel-head, .consulta-panel-head).orquestador-panel-head {
+  margin: 0 0 14px;
+}
+
+.theme-devops :is(.suite-panel-head, .consulta-panel-head).orquestador-panel-head:has(.orquestador-panel-head__main) {
+  padding-right: var(--suite-credit-reserve-right);
+}
+
+.theme-devops :is(.suite-panel-head, .consulta-panel-head) .orquestador-panel-head__main {
+  padding-top: 0;
+  min-width: 0;
+}
+
+.theme-devops :is(.suite-search-lead, .consulta-search-lead) {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--fg-muted);
+  max-width: 52rem;
+}
+
+.theme-devops :is(.suite-search-lead, .consulta-search-lead) strong {
+  color: var(--fg-default);
+  font-weight: 650;
+}
+
+.theme-devops :is(.suite-search-lead, .consulta-search-lead) em {
+  font-style: normal;
+  font-weight: 650;
+  color: var(--accent-emphasis);
+}
+
+/* Fila campo + acciones */
+.theme-devops :is(.suite-query-row, .consulta-query-row) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px 14px;
+}
+
+.theme-devops :is(.suite-query-row, .consulta-query-row).suite-query-row--center,
+.theme-devops .consulta-query-row:not(:has(#consulta-panel-masivo:not([hidden]))) {
+  align-items: center;
+}
+
+.theme-devops :is(.suite-query-row__field, .consulta-query-row__field) {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.theme-devops :is(.suite-search-actions, .consulta-search-actions) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px 12px;
+  padding: 0;
+  background: transparent;
+  flex-shrink: 0;
+}
+
+.theme-devops :is(.suite-search-actions__buttons, .consulta-search-actions__buttons),
+.theme-devops :is(.suite-search-actions__primary, .consulta-search-actions__primary),
+.theme-devops :is(.suite-search-actions__secondary, .consulta-search-actions__secondary) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Campo con ícono (estilo buscador Consulta) */
+.theme-devops :is(.suite-field, .consulta-field).field {
+  min-height: 44px;
+  max-height: none;
+  border-radius: var(--radius-lg);
+  border-color: color-mix(in srgb, var(--border-default) 85%, var(--accent) 15%);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.03) inset,
+    0 0 0 1px rgba(0, 0, 0, 0.12);
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.theme-devops :is(.suite-field, .consulta-field) .search-icon {
+  font-size: 16px;
+  opacity: 0.85;
+  color: var(--fg-subtle);
+}
+
+.theme-devops :is(.suite-field, .consulta-field).field:focus-within .search-icon {
+  color: color-mix(in srgb, var(--fg-subtle) 55%, var(--accent) 45%);
+  opacity: 0.95;
+}
+
+.theme-devops :is(.suite-field, .consulta-field) :is(input, textarea) {
+  font-size: 14px;
+  letter-spacing: 0.01em;
+  min-height: 0;
+  height: auto;
+}
+
+/* Formularios apilados (Consulta) */
+.theme-devops .search:is(.consulta-search-form, .suite-search-form) {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  padding: 0;
+  border-bottom: none;
+}
+
+/* Nota / leyenda con borde punteado */
+.theme-devops :is(.suite-note, .empty-state-note) {
+  margin: 0 0 20px;
+  padding: 16px 18px 18px;
+  border-radius: var(--radius-lg);
+  border: 1px dashed var(--border-default);
+  background: color-mix(in srgb, var(--canvas-inset) 70%, transparent);
+  width: 100%;
+  max-width: none;
+  box-sizing: border-box;
+  line-height: 1.55;
+  color: var(--fg-muted);
+}
+
+.theme-devops :is(.suite-index-card, .consulta-index-card) > :is(.suite-note, .empty-state-note),
+.theme-devops .camino-panel .camino-leyenda {
+  margin: 18px 18px 20px;
+  width: auto;
+}
+
+.theme-devops :is(.suite-note, .empty-state-note) strong {
+  color: var(--fg-default);
+}
+
+/* Paneles árbol (OLT / RAMA) */
+.theme-devops .dashboard-tree-panel {
+  padding: 0;
+  overflow: hidden;
+}
+
+.theme-devops .dashboard-tree-panel.suite-index-card {
+  box-shadow: var(--shadow-md);
+}
+
+.theme-devops .dashboard-tree-panel .suite-search-surface.dashboard-tree-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+}
+
+.theme-devops .dashboard-tree-panel .dashboard-tree-controls .suite-panel-head {
+  width: 100%;
+  flex: 1 1 100%;
+  margin-bottom: 0;
+}
+
+.theme-devops .dashboard-tree-query-row {
+  width: 100%;
+  margin-top: 14px;
+}
+
+.theme-devops .dashboard-tree-panel .dashboard-tree-hint--metrics.suite-note {
+  margin: 0;
+  border-radius: 0;
+  border-left: none;
+  border-right: none;
+  border-top: 1px solid color-mix(in srgb, var(--border-muted) 72%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--border-muted) 72%, transparent);
+  padding: 14px 18px;
+  background: color-mix(in srgb, var(--canvas-subtle) 58%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+/* Variables compartidas: árbol OLT/RAMA y consulta masiva */
+.theme-devops:is(.page-tree-dashboard, .page-consulta-index) {
+  --tree-glass-bg: color-mix(in srgb, var(--canvas-subtle) 68%, transparent);
+  --tree-glass-border: color-mix(in srgb, var(--border-muted) 78%, transparent);
+  --tree-glass-inset: 0 1px 0 color-mix(in srgb, #fff 6%, transparent) inset;
+  --tree-row-accent-bar: var(--accent);
+  --tree-row-accent-bar-w: 4px;
+  --tree-row-accent-gradient: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--accent-muted) 100%, var(--accent) 6%) 0%,
+    color-mix(in srgb, var(--accent-muted) 78%, transparent) 20%,
+    color-mix(in srgb, var(--accent-muted) 32%, transparent) 46%,
+    transparent 84%
+  );
+}
+
+/* RAMA / CTO · OLT / LT — solo árbol (hover extra; acento en variables compartidas arriba) */
+.theme-devops.page-tree-dashboard {
+  --tree-glass-bg-hover: color-mix(in srgb, var(--canvas-subtle) 48%, var(--accent) 52%);
+  --tree-glass-border-hover: color-mix(in srgb, var(--border-muted) 42%, var(--accent) 58%);
+}
+
+.theme-devops .dashboard-tree-body {
+  padding: 16px 18px 20px;
+  min-width: 0;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--canvas-inset) 38%, transparent) 0%,
+    color-mix(in srgb, var(--canvas-subtle) 22%, transparent) 28%,
+    transparent 72%
+  );
+}
+
+.theme-devops .dashboard-tree-body > .principal-block {
+  margin-left: 0;
+  margin-right: 0;
+}
+
+.theme-devops.page-tree-dashboard .principal-block > .card,
+.theme-devops.page-tree-dashboard .principal-block .card.indent1,
+.theme-devops.page-tree-dashboard .principal-block .olt-section.card,
+.theme-devops.page-tree-dashboard [data-rama-card].card,
+.theme-devops.page-tree-dashboard .principal-block > .site-head.card {
+  background: var(--tree-glass-bg);
+  border: 1px solid var(--tree-glass-border);
+  box-shadow: var(--tree-glass-inset);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  transition:
+    background 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.theme-devops.page-tree-dashboard .principal-block > .site-head.card {
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.theme-devops.page-tree-dashboard .principal-block > .site-head.site-head--metrics {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 14px;
+}
+
+.theme-devops.page-tree-dashboard .principal-block > .site-head .site-head__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1 1 8rem;
+}
+
+.theme-devops.page-tree-dashboard .principal-block > .site-head .site-head-meta {
+  color: var(--fg-muted);
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+/* Sitio principal (Moreno, …): degradado al hover o expandido (RAMA + OLT) */
+.theme-devops.page-tree-dashboard .principal-block > .site-head.card:hover,
+.theme-devops.page-tree-dashboard .principal-block > .site-head.card.site-head-accent,
+.theme-devops.page-tree-dashboard .principal-block > .site.node.site-head:hover {
+  background: var(--tree-row-accent-gradient);
+  border-color: color-mix(in srgb, var(--accent-border) 55%, var(--tree-glass-border));
+  box-shadow: inset var(--tree-row-accent-bar-w) 0 0 var(--tree-row-accent-bar);
+}
+
+/* Cabecera OLT (MR01_01 + BA_OLTA_…): solo la barra clickable, no toda la sección */
+.theme-devops.page-tree-dashboard .principal-block .olt-section.card > .node.olt {
+  padding: 10px 12px;
+  margin: 0 0 8px;
+  border-radius: var(--radius);
+  border: 1px solid var(--tree-glass-border);
+  background: color-mix(in srgb, var(--canvas-subtle) 52%, transparent);
+  cursor: pointer;
+  transition:
+    background 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.theme-devops.page-tree-dashboard .principal-block .olt-section.card > .node.olt:hover,
+.theme-devops.page-tree-dashboard .principal-block .olt-section.card.olt-section-accent > .node.olt {
+  background: var(--tree-row-accent-gradient);
+  border-color: color-mix(in srgb, var(--accent-border) 55%, var(--tree-glass-border));
+  box-shadow: inset var(--tree-row-accent-bar-w) 0 0 var(--tree-row-accent-bar);
+}
+
+/* OLT/LT: degradado en la fila <tr>; celdas transparentes */
+.theme-devops.page-tree-dashboard .olt-lt-summary-table tr.ltrow.lt-row-trigger:hover,
+.theme-devops.page-tree-dashboard .olt-lt-summary-table tr.ltrow.olt-lt-row-accent,
+.theme-devops.page-tree-dashboard tr.ltrow.olt-lt-search-hit,
+.theme-devops.page-tree-dashboard tr.ltrow.lt-row-loading {
+  background: var(--tree-row-accent-gradient);
+}
+
+.theme-devops.page-tree-dashboard .olt-lt-summary-table tr.ltrow.lt-row-trigger:hover td,
+.theme-devops.page-tree-dashboard .olt-lt-summary-table tr.ltrow.olt-lt-row-accent td,
+.theme-devops.page-tree-dashboard tr.ltrow.olt-lt-search-hit td,
+.theme-devops.page-tree-dashboard tr.ltrow.lt-row-loading td {
+  background: transparent;
+}
+
+.theme-devops.page-tree-dashboard .olt-lt-summary-table tr.ltrow.lt-row-trigger:hover td:first-child,
+.theme-devops.page-tree-dashboard .olt-lt-summary-table tr.ltrow.olt-lt-row-accent td:first-child,
+.theme-devops.page-tree-dashboard tr.ltrow.olt-lt-search-hit td:first-child,
+.theme-devops.page-tree-dashboard tr.ltrow.lt-row-loading td:first-child {
+  box-shadow: inset var(--tree-row-accent-bar-w) 0 0 var(--tree-row-accent-bar);
+}
+
+/* Inventario LT: filas con data-olt-tree-kind (PON / RAMA / FATC / CTO) */
+.theme-devops.page-tree-dashboard.page-olt td[colspan] .olt-tree-row[data-olt-tree-kind] {
+  border: 1px solid var(--tree-glass-border);
+  background: color-mix(in srgb, var(--canvas-subtle) 52%, transparent);
+  padding: 12px 14px;
+  font-weight: 600;
+  transition:
+    background 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.theme-devops.page-tree-dashboard.page-olt td[colspan] .olt-tree-row[data-olt-tree-kind]:hover,
+.theme-devops.page-tree-dashboard.page-olt td[colspan] .olt-tree-row.olt-pon-row-accent,
+.theme-devops.page-tree-dashboard.page-olt td[colspan] .olt-tree-row.olt-rama-row-accent,
+.theme-devops.page-tree-dashboard.page-olt td[colspan] .olt-tree-row.olt-cto-row-accent {
+  background: var(--tree-row-accent-gradient);
+  border-color: color-mix(in srgb, var(--accent-border) 55%, var(--tree-glass-border));
+  box-shadow: inset var(--tree-row-accent-bar-w) 0 0 var(--tree-row-accent-bar);
+}
+
+.theme-devops.page-tree-dashboard.page-olt td[colspan] .olt-tree-row[data-olt-tree-kind] .rama-row-label {
+  font-weight: 700;
+}
+
+.theme-devops.page-tree-dashboard.page-olt td[colspan] .olt-tree-row .rama-row-kind,
+.theme-devops.page-tree-dashboard [data-rama-card] .rama-row-kind,
+.theme-devops.page-consulta-index .consulta-panel__summary--dash .rama-row-kind,
+.theme-devops.page-consulta-index .consulta-cto-panel__summary .rama-row-kind {
+  border-radius: 8px;
+  padding: 3px 9px;
+}
+
+.theme-devops.page-tree-dashboard [data-rama-card] .rama-row.node,
+.theme-devops.page-tree-dashboard [data-rama-card] .cto-head-row {
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--tree-glass-border);
+  background: color-mix(in srgb, var(--canvas-subtle) 52%, transparent);
+  margin-bottom: 8px;
+  transition:
+    background 0.18s ease,
+    border-color 0.18s ease;
+}
+
+.theme-devops.page-tree-dashboard [data-rama-card] .rama-row.node:hover,
+.theme-devops.page-tree-dashboard [data-rama-card] .rama-row.node.rama-row-accent,
+.theme-devops.page-tree-dashboard [data-rama-card] .rama-row.search-hit-rama,
+.theme-devops.page-tree-dashboard [data-rama-card] .cto-head-row:hover,
+.theme-devops.page-tree-dashboard [data-rama-card] .cto-head-row.cto-row-accent,
+.theme-devops.page-tree-dashboard [data-rama-card] [data-cto-node].search-hit-cto,
+.theme-devops.page-tree-dashboard [data-rama-card] .rama-row.is-target {
+  background: var(--tree-row-accent-gradient);
+  border-color: color-mix(in srgb, var(--accent-border) 55%, var(--tree-glass-border));
+  box-shadow: inset var(--tree-row-accent-bar-w) 0 0 var(--tree-row-accent-bar);
+}
+
+.theme-devops.page-tree-dashboard [data-rama-card].card {
+  padding: 12px 14px;
+}
+
+.theme-devops.page-tree-dashboard .olt-lt-table-shell {
+  background: color-mix(in srgb, var(--canvas-subtle) 45%, transparent);
+  border: 1px solid var(--tree-glass-border);
+  border-radius: var(--radius);
+}
+
+
+html[data-theme="light"] .theme-devops:is(.page-tree-dashboard, .page-consulta-index) {
+  --tree-glass-bg: color-mix(in srgb, var(--canvas-subtle) 86%, transparent);
+  --tree-glass-border: color-mix(in srgb, var(--border-default) 82%, transparent);
+  --tree-glass-inset: 0 1px 0 rgba(255, 255, 255, 0.65) inset;
+  --tree-row-accent-gradient: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--accent-muted) 100%, transparent) 0%,
+    color-mix(in srgb, var(--accent-muted) 62%, transparent) 26%,
+    color-mix(in srgb, var(--accent-muted) 22%, transparent) 52%,
+    transparent 80%
+  );
+}
+
+html[data-theme="light"] .theme-devops.page-tree-dashboard {
+  --tree-glass-bg-hover: color-mix(in srgb, var(--canvas-subtle) 72%, var(--accent) 28%);
+}
+
+html[data-theme="light"] .theme-devops .dashboard-tree-body {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--canvas-inset) 55%, transparent) 0%,
+    color-mix(in srgb, var(--canvas-subtle) 35%, transparent) 32%,
+    transparent 100%
+  );
+}
+
+html[data-theme="light"] .theme-devops .dashboard-tree-panel .dashboard-tree-hint--metrics.suite-note {
+  background: color-mix(in srgb, var(--canvas-subtle) 78%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .theme-devops.page-tree-dashboard .principal-block > .card,
+  .theme-devops.page-tree-dashboard .principal-block .card.indent1,
+  .theme-devops.page-tree-dashboard .principal-block .olt-section.card,
+  .theme-devops.page-tree-dashboard [data-rama-card].card,
+  .theme-devops.page-tree-dashboard .principal-block > .site-head.card,
+  .theme-devops.page-tree-dashboard [data-rama-card] .rama-row.node,
+  .theme-devops.page-tree-dashboard [data-rama-card] .cto-head-row,
+  .theme-devops.page-tree-dashboard .principal-block .olt-section.card > .node.olt,
+  .theme-devops.page-tree-dashboard.page-olt td[colspan] .olt-tree-row[data-olt-tree-kind],
+  .theme-devops.page-tree-dashboard .olt-lt-table-shell,
+  .theme-devops .dashboard-tree-panel .dashboard-tree-hint--metrics.suite-note {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+.theme-devops .dashboard-tree-controls > .toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex: 1 1 auto;
+}
+
+/* Consulta masiva — quicknav resultados (sin blur anidado; el card ya lleva vidrio) */
+.theme-devops.page-consulta-index .consulta-results-head .consulta-quicknav {
+  background: color-mix(in srgb, var(--canvas-subtle) 88%, transparent);
+  border-bottom: 1px solid var(--tree-glass-border);
+}
+
+html[data-theme="light"] .theme-devops.page-consulta-index .consulta-results-head .consulta-quicknav {
+  background: color-mix(in srgb, var(--canvas-subtle) 92%, transparent);
+}
+
+/* Consulta masiva — filas resultado (RAMA / CTO); variables en :is(.page-tree-dashboard, .page-consulta-index) */
+.theme-devops.page-consulta-index .consulta-index-card.card--multi-results > .content {
+  padding-top: 4px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--canvas-inset) 38%, transparent) 0%,
+    color-mix(in srgb, var(--canvas-subtle) 22%, transparent) 28%,
+    transparent 72%
+  );
+}
+
+.theme-devops.page-consulta-index .consulta-section--multi .consulta-panel {
+  border: 1px solid var(--tree-glass-border);
+  border-radius: var(--radius-lg);
+  background: var(--tree-glass-bg);
+  box-shadow: var(--tree-glass-inset);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  overflow: hidden;
+}
+
+.theme-devops.page-consulta-index .consulta-panel:not(.consulta-panel--all-down) > .consulta-panel__summary--dash {
+  background: color-mix(in srgb, var(--canvas-subtle) 52%, transparent);
+  border-bottom: 1px solid var(--tree-glass-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  transition:
+    background 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.theme-devops.page-consulta-index details.consulta-panel[open]:not(.consulta-panel--all-down) > .consulta-panel__summary--dash {
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+}
+
+.theme-devops.page-consulta-index .consulta-panel:not(.consulta-panel--all-down) > .consulta-panel__summary--dash:hover,
+.theme-devops.page-consulta-index details.consulta-panel[open]:not(.consulta-panel--all-down) > .consulta-panel__summary--dash {
+  background: var(--tree-row-accent-gradient);
+  border-color: color-mix(in srgb, var(--accent-border) 55%, var(--tree-glass-border));
+  box-shadow: inset var(--tree-row-accent-bar-w) 0 0 var(--tree-row-accent-bar);
+}
+
+.theme-devops.page-consulta-index .consulta-panel__summary--dash .rama-row-label,
+.theme-devops.page-consulta-index .consulta-panel__summary--dash .consulta-panel__token {
+  font-weight: 700;
+}
+
+.theme-devops.page-consulta-index .consulta-panel__body {
+  background: color-mix(in srgb, var(--canvas-subtle) 32%, transparent);
+}
+
+.theme-devops.page-consulta-index .consulta-section--multi .consulta-cto-panel {
+  border: 1px solid var(--tree-glass-border);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--canvas-subtle) 45%, transparent);
+  box-shadow: var(--tree-glass-inset);
+  overflow: hidden;
+}
+
+.theme-devops.page-consulta-index .consulta-cto-panel > .consulta-cto-panel__summary.consulta-cto-head-row {
+  margin: 0;
+  padding: 12px 14px;
+  border: none;
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--canvas-subtle) 52%, transparent);
+  box-shadow: none;
+  overflow: hidden;
+  transition:
+    background 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.theme-devops.page-consulta-index .consulta-cto-panel[open] > .consulta-cto-panel__summary.consulta-cto-head-row {
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+}
+
+.theme-devops.page-consulta-index .consulta-cto-panel > .consulta-cto-panel__summary.consulta-cto-head-row:hover,
+.theme-devops.page-consulta-index .consulta-cto-panel[open] > .consulta-cto-panel__summary.consulta-cto-head-row {
+  background: var(--tree-row-accent-gradient);
+  box-shadow: inset var(--tree-row-accent-bar-w) 0 0 var(--tree-row-accent-bar);
+}
+
+.theme-devops.page-consulta-index .consulta-cto-panel__body {
+  border-top: 1px solid var(--tree-glass-border);
+  background: color-mix(in srgb, var(--canvas-subtle) 28%, transparent);
+}
+
+html[data-theme="light"] .theme-devops.page-consulta-index .consulta-index-card.card--multi-results > .content {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--canvas-inset) 55%, transparent) 0%,
+    color-mix(in srgb, var(--canvas-subtle) 35%, transparent) 32%,
+    transparent 100%
+  );
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .theme-devops.page-consulta-index .consulta-section--multi .consulta-panel,
+  .theme-devops.page-consulta-index .consulta-section--multi .consulta-cto-panel {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+/* Camino óptico */
+.theme-devops .camino-panel {
+  padding: 0;
+  overflow: hidden;
+}
+
+.theme-devops .camino-panel .camino-panel-inner {
+  padding: 0;
+}
+
+.theme-devops .camino-panel .camino-query-row .camino-row {
+  margin-bottom: 0;
+  align-items: center;
+}
+
+.theme-devops .camino-panel .camino-field-wrap {
+  flex: 1 1 280px;
+  min-width: 0;
+}
+
+.theme-devops .camino-panel .camino-field-wrap .t {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.theme-devops .camino-panel .camino-field-wrap input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border-radius: var(--radius-lg);
+  border: 1px solid color-mix(in srgb, var(--border-default) 85%, var(--accent) 15%);
+  background: var(--canvas-inset);
+  color: var(--fg-default);
+  font-size: 14px;
+}
+
+/* Estadísticas */
+.theme-devops .calidad-panel {
+  padding: 0;
+  overflow: hidden;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.theme-devops .calidad-panel > .calidad-resumen-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px 16px;
+}
+
+.theme-devops .calidad-panel > .calidad-resumen-toolbar .calidad-panel-head {
+  flex: 1 1 100%;
+  width: 100%;
+  margin-bottom: 4px;
+}
+
+.theme-devops .calidad-panel > .calidad-resumen-toolbar .calidad-resumen-lead {
+  margin: 0;
+  flex: 1 1 240px;
+  max-width: 52rem;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.theme-devops .calidad-panel > .calidad-resumen-toolbar .calidad-resumen-toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+/* Histórico potencias */
+.theme-devops.page-historico-potencias .card.suite-index-card,
+.theme-devops.page-historico-potencias .card:has(> .search) {
+  overflow: hidden;
+  padding: 0;
+}
+
+.theme-devops.page-historico-potencias .card > .search {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  padding: 0;
+  border: none;
+  margin: 0;
+}
+
+.theme-devops.page-historico-potencias .suite-search-surface--historico {
+  padding-bottom: 14px;
+}
+
+.theme-devops.page-historico-potencias .suite-search-surface--historico .search {
+  padding: 0 0 4px;
+  border: none;
+  background: transparent;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.theme-devops.page-historico-potencias .suite-search-surface--historico .field {
+  flex: 1 1 280px;
+}
+
+/* Orquestador — tarjetas de trabajo */
+.theme-devops .altiplano-work-card,
+.theme-devops .altiplano-consulta-suite-card {
+  overflow: hidden;
+  box-shadow: var(--shadow-md);
+  border-radius: var(--radius-lg);
+}
+
+.theme-devops .altiplano-consulta-suite-card .altiplano-consulta-panel--result,
+.theme-devops .altiplano-consulta-suite-card > .panel.altiplano-result {
+  margin: 0;
+  border-radius: 0;
+  box-shadow: none;
+  border-top: 1px solid var(--border-muted);
+}
+
+.theme-devops .altiplano-consulta-suite-card .altiplano-consulta-panel-inner {
+  padding: 14px 18px 16px;
+}
+
+@media (max-width: 720px) {
+  .theme-devops :is(.suite-panel-head, .consulta-panel-head).orquestador-panel-head:has(.orquestador-panel-head__main) {
+    padding-right: 18px;
+    padding-top: 1.6em;
+  }
+}

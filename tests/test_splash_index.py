@@ -13,6 +13,8 @@ def test_index_includes_splash_partial(client):
     assert "splash.css" in html
     assert "Consultando" in html
     assert "NOC Wiki" in html
+    assert "suite-index-card" in html
+    assert "noc-suite-surface.css" in html
     assert "global-tabs-row" in html
     assert "global-tab--wiki" in html
     assert 'target="_blank"' in html

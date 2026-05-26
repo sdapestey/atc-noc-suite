@@ -41,6 +41,7 @@ TASA_SERVICES_API_ID = "configure-create-services"
 TASA_ONT_PLUS_SERVICES_API_ID = "configure-create-ont-plus-services"
 TASA_DELETE_SERVICES_API_ID = "unconfigure-delete-services"
 TASA_DELETE_ONT_API_ID = "unconfigure-delete-ont"
+TASA_MODIFY_PROFILES_API_ID = "modify-modify-profiles"
 _TASA_ONT_SERVICES_REPLACE_IDS = frozenset({TASA_ONT_API_ID, TASA_SERVICES_API_ID})
 
 

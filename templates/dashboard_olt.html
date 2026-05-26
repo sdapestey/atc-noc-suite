@@ -25,13 +25,21 @@
 
   {% include 'partials/nav_dashboard.html' %}
 
-  <div class="panel dashboard-tree-panel">
-    <div class="controls dashboard-tree-controls">
-      <div class="field" role="search">
-        <span class="search-icon" aria-hidden="true">⌕</span>
-        <input type="search" id="bus-olt" placeholder="Buscar sitio, OLT, LT, código (ej. MR01, Moreno, BA_OLTA)…" autocomplete="off" aria-label="Filtrar árbol OLT">
+  <div class="panel dashboard-tree-panel card suite-index-card">
+    <div class="suite-search-surface dashboard-tree-controls">
+      <div class="orquestador-panel-head suite-panel-head consulta-panel-head">
+        <p class="suite-search-lead consulta-search-lead orquestador-panel-head__main">
+          Filtrá el árbol por sitio, OLT, LT o código; expandí un <strong>LT</strong> para inventario y consultá potencias por CTO.
+        </p>
       </div>
-      <div class="toolbar-actions" role="toolbar" aria-label="Exportar y copiar">
+      <div class="suite-query-row consulta-query-row dashboard-tree-query-row">
+        <div class="suite-query-row__field">
+          <div class="field suite-field consulta-field" role="search">
+            <span class="search-icon" aria-hidden="true">⌕</span>
+            <input type="search" id="bus-olt" placeholder="Buscar sitio, OLT, LT, código (ej. MR01, Moreno, BA_OLTA)…" autocomplete="off" aria-label="Filtrar árbol OLT">
+          </div>
+        </div>
+        <div class="toolbar-actions suite-search-actions" role="toolbar" aria-label="Exportar y copiar">
         <div class="olt-export-operator-field">
           <label for="olt-export-operador" class="olt-export-operator-label">Operador</label>
           <select id="olt-export-operador" class="olt-export-operador-select" title="Filtra copiar / CSV por operador (solo filas IN SERVICE); ‘Todos’ incluye todos los operadores de la selección">
@@ -41,9 +49,10 @@
         <button type="button" class="btn" onclick="copiarPonesSeleccionados()" title="Copiar filas IN SERVICE (TSV): solo Access ID en estado IN SERVICE">Copiar PON seleccionados</button>
         <button type="button" class="btn" onclick="exportarPonesSeleccionadosCsv()" title="CSV local UTF-8: solo Access ID en estado IN SERVICE">Exportar PON seleccionados CSV</button>
         <button type="button" class="btn btn-ghost" onclick="colapsarTodoOlt()" title="Colapsar sitios, limpiar búsqueda, operador y desmarcar PON">Colapsar todo</button>
+        </div>
       </div>
     </div>
-    <div class="controls-hint dashboard-tree-hint dashboard-tree-hint--metrics">
+    <div class="controls-hint dashboard-tree-hint dashboard-tree-hint--metrics suite-note">
       <div class="dashboard-tree-hint__text">
         <strong class="hint-kicker">NOC</strong>
         Marcá PON (o “Seleccionar todos los PON de este LT”) y usá copiar / exportar CSV (solo Access ID <strong>IN SERVICE</strong>; descarga local UTF‑8).
@@ -53,6 +62,7 @@
       </div>
     </div>
 
+    <div class="dashboard-tree-body">
 {% for bloque in olts %}
 {% set pid = 'p' ~ loop.index0 %}
 <div class="principal-block"
@@ -120,6 +130,7 @@
   {% endfor %}
 </div>
 {% endfor %}
+    </div>
 
   </div>
 

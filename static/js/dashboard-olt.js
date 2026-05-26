@@ -598,8 +598,61 @@ async function restoreOltDashboardState() {
   if (_oltStateStore) _oltStateStore.restoreScroll(stateSaved.scrollY);
 }
 
+const _OLT_TREE_ACCENT_CLASSES = ["olt-pon-row-accent", "olt-rama-row-accent", "olt-cto-row-accent"];
+
+function _setTreeRowExpanded(el, accentClass, isOpen) {
+  if (!el) return;
+  if (accentClass) el.classList.toggle(accentClass, !!isOpen);
+  el.setAttribute("aria-expanded", isOpen ? "true" : "false");
+}
+
+function _syncSiteHeadAccent(nodeId, isOpen) {
+  const arrow = document.getElementById("arrow-" + nodeId);
+  const head = arrow ? arrow.closest(".site-head.card") : null;
+  _setTreeRowExpanded(head, "site-head-accent", isOpen);
+}
+
+function _syncLtRowAccent(uid, isOpen) {
+  const row = document.getElementById("lt-row-" + uid);
+  if (!row || !row.classList.contains("ltrow")) return;
+  _setTreeRowExpanded(row, "olt-lt-row-accent", isOpen);
+}
+
+function _syncOltSectionAccent(nodeId, isOpen) {
+  const section = document.querySelector('.olt-section[data-node-id="' + nodeId + '"]');
+  if (!section) return;
+  section.classList.toggle("olt-section-accent", !!isOpen);
+  _setTreeRowExpanded(section.querySelector(":scope > .node.olt"), null, isOpen);
+}
+
+function _oltTreeAccentClassForKind(kindAttr) {
+  const k = (kindAttr || "").trim();
+  const u = k.toUpperCase();
+  if (u === "PON") return "olt-pon-row-accent";
+  if (u === "CTO") return "olt-cto-row-accent";
+  if (u === "RAMA" || u === "FATC") return "olt-rama-row-accent";
+  if (k === "Rama") return "olt-rama-row-accent";
+  return null;
+}
+
+function _syncOltTreeRowAccent(nodeId, isOpen) {
+  const row = document.querySelector('.olt-tree-row[data-node-id="' + nodeId + '"]');
+  if (!row) return;
+  row.classList.remove(..._OLT_TREE_ACCENT_CLASSES);
+  const accent = isOpen ? _oltTreeAccentClassForKind(row.getAttribute("data-olt-tree-kind")) : null;
+  _setTreeRowExpanded(row, accent, isOpen);
+}
+
+function _syncTreeNodeAccentVisual(nodeId, isOpen) {
+  _syncSiteHeadAccent(nodeId, isOpen);
+  _syncOltSectionAccent(nodeId, isOpen);
+  _syncLtRowAccent(nodeId, isOpen);
+  _syncOltTreeRowAccent(nodeId, isOpen);
+}
+
 function closeNode(id, skipSave) {
   state[id] = false;
+  _syncTreeNodeAccentVisual(id, false);
   const arrow = document.getElementById("arrow-" + id);
   if (arrow) {
     arrow.textContent = "▶";
@@ -622,6 +675,7 @@ function toggleNode(id, autoPotencias) {
     return;
   }
   state[id] = true;
+  _syncTreeNodeAccentVisual(id, true);
   const arrow = document.getElementById("arrow-" + id);
   if (arrow) {
     arrow.textContent = "▼";
@@ -675,6 +729,7 @@ function ensureNodeOpen(id, autoPotencias) {
   }
   if (!state[id]) {
     state[id] = true;
+    _syncTreeNodeAccentVisual(id, true);
     const arrow = document.getElementById("arrow-" + id);
     if (arrow) {
       arrow.textContent = "▼";
@@ -1347,11 +1402,17 @@ function enfocarFilaLtCoincidente(raw) {
 
   bestTr.classList.add("olt-lt-search-hit");
   window.requestAnimationFrame(() => {
-    bestTr.scrollIntoView({ block: "center", behavior: "smooth" });
-    try {
-      bestTr.focus({ preventScroll: true });
-    } catch (_) {
-      /* ignore */
+    const inp = document.getElementById("bus-olt");
+    const typingInSearch =
+      inp && (document.activeElement === inp || inp.closest(".field")?.contains(document.activeElement));
+    bestTr.scrollIntoView({ block: "center", behavior: typingInSearch ? "nearest" : "smooth" });
+    /* No mover foco al <tr> mientras se escribe: tabindex en la fila robaba el input */
+    if (!typingInSearch) {
+      try {
+        bestTr.focus({ preventScroll: true });
+      } catch (_) {
+        /* ignore */
+      }
     }
   });
 }

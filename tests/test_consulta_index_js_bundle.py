@@ -1,6 +1,14 @@
 from pathlib import Path
 
 
+def test_consulta_index_renders_lucas_credit(client):
+    r = client.get("/")
+    assert r.status_code == 200
+    html = r.get_data(as_text=True)
+    assert "orquestador-credit" in html
+    assert "Desarrollo e implementación por Lucas Gimenez" in html
+
+
 def test_consulta_index_uses_external_js_bundle():
     html = Path("templates/index.html").read_text(encoding="utf-8")
     js = Path("static/js/consulta-index.js").read_text(encoding="utf-8")
@@ -13,6 +21,8 @@ def test_consulta_index_uses_external_js_bundle():
     assert "clearUrlInd" in js
     assert "clearUrlMas" in js
     assert "potenciasParallelMax" in html
+    assert "partials/orquestador_credit.html" in html
+    assert "consulta-panel-head" in html
     assert "_consultaPotenciasParallelMax" in js
     assert "_setConsultaDownPollCountdown" not in js
     assert "_CONSULTA_DOWN_POLL_COUNTDOWN_SEC" not in js

@@ -6,6 +6,7 @@ def _minimal_ramas():
         {
             "PRINCIPAL": "SitioTest",
             "SEARCH_TEXT": "sitiottest r1",
+            "TOTALES": {"RAMAS": 1, "CTO": 1, "ONT": 1},
             "RAMAS": [
                 {
                     "RAMA": "R1-RATC",
@@ -52,6 +53,13 @@ def test_dashboard_rama_includes_cto_selection_and_no_expand_all(client, monkeyp
     assert "leaflet" in html.lower()
     assert "dashboard-tree-panel" in html
     assert "dashboard-metric-pill" in html
+    assert "site-head--metrics" in html
+    assert "site-head-meta" in html
+    assert "1 RAMAs ·" in html
+    site_chunk = html[html.find('data-principal-name="SitioTest"'):]
+    site_chunk = site_chunk[: site_chunk.find("</div>", 400)]
+    assert "site-head-meta" in site_chunk
+    assert "dashboard-metric-pill" not in site_chunk
     assert ">12<" in html or "12" in html
     assert "CTO" in html
     assert "34" in html

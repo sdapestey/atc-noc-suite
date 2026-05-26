@@ -75,6 +75,11 @@ def _compute_dashboard_ramas():
             "PRINCIPAL": principal,
             "SEARCH_TEXT": " ".join(map(str, words)).lower(),
             "RAMAS": group,
+            "TOTALES": {
+                "RAMAS": len(group),
+                "CTO": sum(int(r["CTO_COUNT"] or 0) for r in group),
+                "ONT": sum(int(r["ONT_COUNT"] or 0) for r in group),
+            },
         })
 
     totales = {
