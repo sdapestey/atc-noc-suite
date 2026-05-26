@@ -5,13 +5,16 @@ invoca servicios y devuelve templates o JSON según corresponda.
 """
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
+import logging
 import re
 import unicodedata
 from uuid import uuid4
 
-from config import get_consulta_potencias_batch_workers
+from config import Config, get_consulta_potencias_batch_workers
 
 from flask import Response, current_app, g, jsonify, redirect, render_template, request, session, url_for
+
+logger = logging.getLogger(__name__)
 from urllib.parse import quote_plus
 
 from altiplano import (
@@ -931,15 +934,23 @@ def register(app):
         if not tokens:
             return jsonify({"error": "values requerido (lista de tokens)"}), 400
 
-        max_workers = min(len(tokens), get_consulta_potencias_batch_workers())
+        configured = get_consulta_potencias_batch_workers()
+        # Cada RAMA/CTO usa al menos una conexión breve del pool; no superar DB_POOL_MAX.
+        pool_budget = max(1, int(Config.DB_POOL_MAX) - 2)
+        max_workers = max(1, min(len(tokens), configured, pool_budget))
         items: dict[str, object] = {}
 
         def _fetch_one(tok: str):
-            return tok, _potencias_payload_for_valor(tok)
+            try:
+                payload = _potencias_payload_for_valor(tok)
+                return tok, payload if payload is not None else []
+            except Exception:
+                logger.exception("potencias batch: fallo en token %r", tok)
+                return tok, []
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             for tok, payload in executor.map(_fetch_one, tokens):
-                items[tok] = payload if payload is not None else []
+                items[tok] = payload
 
         return jsonify({"items": items})
 

@@ -1868,9 +1868,15 @@ function _consultaCargarPotenciasEntries(entries) {
           })
         );
       })
-      .catch((err) => {
+      .catch(() => {
         releaseEntriesBtns();
-        throw err;
+        toast("Error al cargar potencias (consulta masiva). Reintentá con Consultar RX.");
+        return applyEntries((e) =>
+          cargarPotenciasSeccion(e.token, e.root, e.root, {
+            ...potOpts,
+            prefetchedData: [],
+          })
+        );
       });
   }
 
