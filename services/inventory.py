@@ -1038,19 +1038,20 @@ def consultar_cto_estructura(cto):
     return out
 
 
-def _potencias_desde_grupos_cto_paralelo(rows) -> list[dict]:
+def _potencias_desde_grupos_cto_paralelo(rows, *, carga_masiva: bool = False) -> list[dict]:
     """Agrupa filas por CTO y consulta Altiplano en paralelo (varios CTO por RAMA)."""
     if not rows:
         return []
     grupos = [list(g) for _, g in groupby(rows, key=lambda r: r[2])]
     if len(grupos) <= 1:
-        return _potencias_desde_filas_ont_cto(grupos[0]) if grupos else []
+        return _potencias_desde_filas_ont_cto(grupos[0], carga_masiva=carga_masiva) if grupos else []
 
-    max_workers = min(len(grupos), get_altiplano_power_cto_workers())
+    max_workers = min(len(grupos), get_altiplano_power_cto_workers(carga_masiva=carga_masiva))
     resultado: list[dict] = []
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = [
-            executor.submit(_potencias_desde_filas_ont_cto, grp) for grp in grupos
+            executor.submit(_potencias_desde_filas_ont_cto, grp, carga_masiva=carga_masiva)
+            for grp in grupos
         ]
         for fut in as_completed(futures):
             try:
@@ -1060,7 +1061,7 @@ def _potencias_desde_grupos_cto_paralelo(rows) -> list[dict]:
     return resultado
 
 
-def _potencias_desde_filas_ont_cto(rows):
+def _potencias_desde_filas_ont_cto(rows, *, carga_masiva: bool = False):
     """Filas con la misma forma que `onts_por_cto` / `onts_por_rama`."""
     if not rows:
         return []
@@ -1074,7 +1075,7 @@ def _potencias_desde_filas_ont_cto(rows):
             if r[0] is not None and r[4] and not _sin_potencias_por_status(r[1])
         ]
         if onts:
-            potencias = obtener_potencias_por_cto(ne, onts)
+            potencias = obtener_potencias_por_cto(ne, onts, carga_masiva=carga_masiva)
     out = []
     for idx, r in enumerate(rows):
         aid_key = _aid_clave_fila(r[0], idx, cto_ref)
@@ -1089,7 +1090,7 @@ def _potencias_desde_filas_ont_cto(rows):
     return out
 
 
-def consultar_cto_potencias(cto):
+def consultar_cto_potencias(cto, *, carga_masiva: bool = False):
     """Devuelve TX/RX de todas las ONT de una CTO.
 
     Args:
@@ -1105,7 +1106,7 @@ def consultar_cto_potencias(cto):
         cur.execute(QUERIES["onts_por_cto"], (cto,))
         rows = cur.fetchall()
 
-    return _potencias_desde_filas_ont_cto(rows)
+    return _potencias_desde_filas_ont_cto(rows, carga_masiva=carga_masiva)
 
 
 def consultar_cto_potencias_cached(cto):
@@ -1306,11 +1307,12 @@ def consultar_rama_estructura(rama):
     return data
 
 
-def consultar_rama_potencias(rama):
+def consultar_rama_potencias(rama, *, carga_masiva: bool = False):
     """Devuelve TX/RX de todas las ONT de una rama.
 
     Args:
         rama: Identificador RATC.
+        carga_masiva: Si True, limita paralelismo Altiplano (consulta masiva / ``/potencias/batch``).
 
     Returns:
         Lista de registros `{AID, TX, RX}` consolidada por CTO.
@@ -1325,7 +1327,7 @@ def consultar_rama_potencias(rama):
     if not rows:
         return []
 
-    return _potencias_desde_grupos_cto_paralelo(rows)
+    return _potencias_desde_grupos_cto_paralelo(rows, carga_masiva=carga_masiva)
 
 
 def _ont_key_desde_fila_inventario(row) -> str:

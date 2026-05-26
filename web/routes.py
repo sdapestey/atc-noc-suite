@@ -875,7 +875,7 @@ def register(app):
             count_consulta_in_service_ont_rows=count_consulta_in_service_ont_rows,
         )
 
-    def _potencias_payload_for_valor(valor: str):
+    def _potencias_payload_for_valor(valor: str, *, carga_masiva: bool = False):
         valor = (valor or "").strip()
         if not valor:
             return None
@@ -885,10 +885,12 @@ def register(app):
             return consultar_access_id_potencias(valor)
 
         if "FATC" in valor_upper:
+            if carga_masiva:
+                return consultar_cto_potencias(valor, carga_masiva=True)
             return consultar_cto_potencias_cached(valor)
 
         if "RATC" in valor_upper:
-            return consultar_rama_potencias(valor)
+            return consultar_rama_potencias(valor, carga_masiva=carga_masiva)
 
         if _is_alias_identifier(valor_upper):
             resolved = consultar_access_id_desde_alias(valor)
@@ -942,7 +944,7 @@ def register(app):
 
         def _fetch_one(tok: str):
             try:
-                payload = _potencias_payload_for_valor(tok)
+                payload = _potencias_payload_for_valor(tok, carga_masiva=True)
                 return tok, payload if payload is not None else []
             except Exception:
                 logger.exception("potencias batch: fallo en token %r", tok)

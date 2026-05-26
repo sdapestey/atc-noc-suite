@@ -98,11 +98,21 @@ function consultaSetBtnConsultando(btn, loading, defaultLabel) {
   btn.textContent = btn.dataset.consultaBtnLabel || label;
 }
 
+function _consultaMarkPotenciasLoadedIfMasivo(root) {
+  if (!root || !root.classList.contains("consulta-section--multi")) return;
+  if (window.ConsultaMasivoUi && window.ConsultaMasivoUi.markPotenciasLoaded) {
+    window.ConsultaMasivoUi.markPotenciasLoaded(root);
+  }
+}
+
 function consultaRecargarPotenciasDesdeBtn(btn) {
   const sec = btn && btn.closest ? btn.closest(".consulta-section") : null;
   if (!sec) return;
   const tok = sec.getAttribute("data-query-token") || "";
   if (!tok) return;
+  if (window.ConsultaMasivoUi && window.ConsultaMasivoUi.clearPotenciasLoaded) {
+    window.ConsultaMasivoUi.clearPotenciasLoaded(sec);
+  }
   cargarPotenciasSeccion(tok, sec);
 }
 
@@ -1364,6 +1374,7 @@ function cargarPotenciasSeccion(valor, root, scopeEl, opts) {
     if (_consultaEsPotenciasTokenPrincipal(root, valor) && root.querySelector(".consulta-semaforo-pending")) {
       _consultaSemaforoSetCounts(root, 0, 0, 0);
     }
+    _consultaMarkPotenciasLoadedIfMasivo(root);
     return Promise.resolve();
   }
 
@@ -1510,16 +1521,20 @@ function cargarPotenciasSeccion(valor, root, scopeEl, opts) {
       }
       toast("Error al cargar potencias");
     });
+  const finalizePotencias = () => {
+    _consultaMarkPotenciasLoadedIfMasivo(root);
+    if (!skipBtnLoading) _consultaReleaseSectionPotenciaBtnsLoading(root);
+  };
   if (inflightKey) {
     _consultaPotenciasInflight.set(inflightKey, fetchPromise);
     fetchPromise.finally(() => {
       if (_consultaPotenciasInflight.get(inflightKey) === fetchPromise) {
         _consultaPotenciasInflight.delete(inflightKey);
       }
-      if (!skipBtnLoading) _consultaReleaseSectionPotenciaBtnsLoading(root);
+      finalizePotencias();
     });
-  } else if (!skipBtnLoading) {
-    fetchPromise.finally(() => _consultaReleaseSectionPotenciaBtnsLoading(root));
+  } else {
+    fetchPromise.finally(finalizePotencias);
   }
   return fetchPromise;
 }
@@ -1924,12 +1939,9 @@ window.addEventListener("load", () => {
     /* Sin búsqueda o sin filas útiles: dejar Copiar deshabilitado como en la página inicial. */
   } else if (consultaMasivo && window.ConsultaMasivoUi) {
     if (btnCopiar) btnCopiar.disabled = false;
-    window.ConsultaMasivoUi.initPager({ skipPotencias: true });
-    const visibleEntries = _consultaPotenciaEntriesVisible();
-    if (visibleEntries.length) {
-      _consultaCargarPotenciasEntries(visibleEntries)
-        .then(afterPotencias)
-        .catch(afterPotencias);
+    const preload = window.ConsultaMasivoUi.initPager();
+    if (preload && preload.then) {
+      preload.then(afterPotencias).catch(afterPotencias);
     } else {
       afterPotencias();
     }

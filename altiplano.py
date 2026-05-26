@@ -13,7 +13,7 @@ import urllib3
 from urllib.parse import quote, urlencode
 
 from config import (
-    get_altiplano_power_workers,
+    get_altiplano_power_workers as _config_altiplano_power_workers,
     get_altiplano_credentials,
     get_altiplano_inp_intent_metadata_yang_version,
     get_altiplano_inp_intent_probe_http_timeout_s,
@@ -6183,46 +6183,60 @@ def _http_get_altiplano_json(
         "Accept": accept,
     }
 
-    def _get(bearer: str):
-        headers["Authorization"] = f"Bearer {bearer}"
+    retryable = {429, 500, 502, 503, 504}
+    bearer = token
+
+    def _get(current_bearer: str):
+        headers["Authorization"] = f"Bearer {current_bearer}"
         return requests.get(url, headers=headers, verify=False, timeout=60)
 
-    try:
-        res = _get(token)
-    except requests.RequestException:
-        logger.warning(
-            "Altiplano potencias (%s): error de red access_id=%s NE=%s",
-            log_label,
-            access_id,
-            ne,
-        )
-        return None
-
-    if res.status_code in (401, 403):
-        token_new = _obtener_token(
-            auth_url, username=username, password=password, force_refresh=True
-        )
-        if not token_new:
-            logger.warning(
-                "Altiplano potencias (%s): sin token tras HTTP %s access_id=%s NE=%s",
-                log_label,
-                res.status_code,
-                access_id,
-                ne,
-            )
-            return None
+    for attempt in range(3):
         try:
-            res = _get(token_new)
+            res = _get(bearer)
         except requests.RequestException:
+            if attempt < 2:
+                time.sleep(0.4 * (attempt + 1))
+                continue
             logger.warning(
-                "Altiplano potencias (%s): error de red tras refrescar token access_id=%s NE=%s",
+                "Altiplano potencias (%s): error de red access_id=%s NE=%s",
                 log_label,
                 access_id,
                 ne,
             )
             return None
 
-    if res.status_code != 200:
+        if res.status_code in (401, 403):
+            token_new = _obtener_token(
+                auth_url, username=username, password=password, force_refresh=True
+            )
+            if not token_new:
+                logger.warning(
+                    "Altiplano potencias (%s): sin token tras HTTP %s access_id=%s NE=%s",
+                    log_label,
+                    res.status_code,
+                    access_id,
+                    ne,
+                )
+                return None
+            bearer = token_new
+            try:
+                res = _get(bearer)
+            except requests.RequestException:
+                logger.warning(
+                    "Altiplano potencias (%s): error de red tras refrescar token access_id=%s NE=%s",
+                    log_label,
+                    access_id,
+                    ne,
+                )
+                return None
+
+        if res.status_code == 200:
+            return _json_loads_altiplano_http_response(res)
+
+        if res.status_code in retryable and attempt < 2:
+            time.sleep(0.5 * (attempt + 1))
+            continue
+
         msg = (
             "Altiplano potencias (%s): HTTP %s access_id=%s NE=%s",
             log_label,
@@ -6230,14 +6244,13 @@ def _http_get_altiplano_json(
             access_id,
             ne,
         )
-        # 404 habitual si la ONT no está en ese VNO (p. ej. prueba TASA e INP).
         if res.status_code == 404:
             logger.debug(*msg)
         else:
             logger.warning(*msg)
         return None
 
-    return _json_loads_altiplano_http_response(res)
+    return None
 
 
 def _fetch_ont_telemetry_live(
@@ -6644,7 +6657,7 @@ def obtener_sn_ont(
     return str(sn).strip().upper() if sn else None
 
 
-def obtener_potencias_por_cto(NE, onts_cto):
+def obtener_potencias_por_cto(NE, onts_cto, *, carga_masiva: bool = False):
     """
     Obtiene TX/RX de Altiplano para ONTs de una CTO.
 
@@ -6684,14 +6697,22 @@ def obtener_potencias_por_cto(NE, onts_cto):
             return access_id, None
         return access_id, (float(tx), float(rx))
 
-    max_workers = min(len(tasks), get_altiplano_power_workers())
+    max_workers = min(len(tasks), _config_altiplano_power_workers(carga_masiva=carga_masiva))
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = [
             executor.submit(_fetch_one, access_id, object_name_raw, operator_id, vno, auth_url)
             for access_id, object_name_raw, operator_id, vno, auth_url in tasks
         ]
         for fut in as_completed(futures):
-            aid, power = fut.result()
+            try:
+                aid, power = fut.result()
+            except Exception:
+                logger.exception(
+                    "Altiplano potencias por CTO: fallo ONT NE=%s (carga_masiva=%s)",
+                    NE,
+                    carga_masiva,
+                )
+                continue
             if power is not None:
                 resultados[aid] = power
 

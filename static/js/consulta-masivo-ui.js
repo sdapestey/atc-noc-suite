@@ -7,8 +7,16 @@
   var pageSize = 10;
   var currentPage = 0;
   var potenciasScheduled = new WeakSet();
+  /** RAMA/CTO ya consultados (no repetir /potencias al paginar). */
+  var potenciasLoaded = new WeakSet();
   /** Mostrar paginador solo si hay más de 10 RAMAs (11+). */
   var PAGER_SHOW_ABOVE = 10;
+  /** RAMAs por request ``/potencias/batch`` en la precarga en segundo plano. */
+  var POTENCIAS_PRELOAD_CHUNK = 10;
+  /** Lotes ``/potencias/batch`` en paralelo (1 = sin saturar Altiplano). */
+  var POTENCIAS_PRELOAD_BATCH_WORKERS = 1;
+  var preloadGeneration = 0;
+  var preloadPromise = null;
 
   function potenciasParallelMax() {
     var cfg = window.__CONSULTA_INDEX_CFG__ || {};
@@ -76,20 +84,32 @@
       var onPage = i >= start && i < end;
       sec.classList.toggle("consulta-section--page-hidden", !onPage);
       sec.hidden = !onPage;
+      if (onPage && sectionPotenciasAlreadyLoaded(sec)) {
+        evalRamaAllDown(sec);
+      }
     });
     updatePagerUi();
-    if (!opts.skipPotencias) schedulePotenciasForVisible();
   }
 
   function sectionPotenciasAlreadyLoaded(sec) {
-    if (typeof window._consultaSectionPotenciasPendientes === "function") {
-      return !window._consultaSectionPotenciasPendientes(sec);
-    }
-    return potenciasScheduled.has(sec);
+    if (potenciasLoaded.has(sec)) return true;
+    return false;
   }
 
   function markPotenciasScheduled(sec) {
     if (sec) potenciasScheduled.add(sec);
+  }
+
+  function markPotenciasLoaded(sec) {
+    if (!sec) return;
+    potenciasLoaded.add(sec);
+    potenciasScheduled.add(sec);
+  }
+
+  function clearPotenciasLoaded(sec) {
+    if (!sec) return;
+    potenciasLoaded.delete(sec);
+    potenciasScheduled.delete(sec);
   }
 
   function setPage(p, opts) {
@@ -245,6 +265,7 @@
   }
 
   function schedulePotenciasForVisible() {
+    if (preloadPromise) return;
     if (typeof window.cargarPotenciasSeccion !== "function") return;
     var entries = potenciaEntriesForVisible();
     if (!entries.length) return;
@@ -270,10 +291,103 @@
       var token = (sec.getAttribute("data-query-token") || "").trim();
       if (!token) return;
       if (sectionPotenciasAlreadyLoaded(sec)) return;
+      entries.push({ token: token, root: sec });
+    });
+    return entries;
+  }
+
+  function potenciaEntriesForAllPending() {
+    if (typeof window.cargarPotenciasSeccion !== "function") return [];
+    var entries = [];
+    sections().forEach(function (sec) {
+      var token = (sec.getAttribute("data-query-token") || "").trim();
+      if (!token) return;
+      if (sectionPotenciasAlreadyLoaded(sec)) return;
       markPotenciasScheduled(sec);
       entries.push({ token: token, root: sec });
     });
     return entries;
+  }
+
+  function cancelBackgroundPotenciasPreload() {
+    preloadGeneration += 1;
+    preloadPromise = null;
+  }
+
+  function buildPreloadChunks(ordered) {
+    var chunks = [];
+    for (var i = 0; i < ordered.length; i += POTENCIAS_PRELOAD_CHUNK) {
+      chunks.push(ordered.slice(i, i + POTENCIAS_PRELOAD_CHUNK));
+    }
+    return chunks;
+  }
+
+  function preloadBatchWorkers() {
+    var cfg = window.__CONSULTA_INDEX_CFG__ || {};
+    var fromCfg = parseInt(cfg.potenciasPreloadBatchWorkers, 10);
+    var parallel = Number.isFinite(fromCfg) && fromCfg > 0
+      ? fromCfg
+      : POTENCIAS_PRELOAD_BATCH_WORKERS;
+    return Math.max(1, Math.min(parallel, 2));
+  }
+
+  /**
+   * Precarga TX/RX de todas las RAMAs (todas las páginas), en lotes vía /potencias/batch.
+   * La página visible va primero; varios lotes en paralelo (sin esperar a paginar).
+   */
+  function startBackgroundPotenciasPreload() {
+    if (typeof window._consultaCargarPotenciasEntries !== "function") {
+      return Promise.resolve();
+    }
+    if (preloadPromise) return preloadPromise;
+
+    var gen = preloadGeneration;
+    var all = potenciaEntriesForAllPending();
+    if (!all.length) return Promise.resolve();
+
+    var visible = potenciaEntriesForVisible();
+    var visibleRoots = new WeakSet();
+    visible.forEach(function (e) {
+      visibleRoots.add(e.root);
+    });
+    var priority = [];
+    var rest = [];
+    all.forEach(function (e) {
+      if (visibleRoots.has(e.root)) priority.push(e);
+      else rest.push(e);
+    });
+    var ordered = priority.concat(rest);
+    var chunks = buildPreloadChunks(ordered);
+    if (!chunks.length) return Promise.resolve();
+
+    var jobs = chunks.map(function (chunk) {
+      return function () {
+        if (gen !== preloadGeneration) return Promise.resolve();
+        return window._consultaCargarPotenciasEntries(chunk).then(function () {
+          chunk.forEach(function (e) {
+            evalRamaAllDown(e.root);
+          });
+          updateRamaSummary();
+        });
+      };
+    });
+
+    var runQueue =
+      typeof window.consultaPotenciasCola === "function"
+        ? window.consultaPotenciasCola(jobs, preloadBatchWorkers())
+        : jobs.reduce(function (chain, job) {
+            return chain.then(job);
+          }, Promise.resolve());
+
+    preloadPromise = runQueue
+      .then(function () {
+        if (gen === preloadGeneration) updateRamaSummary();
+      })
+      .catch(function () {})
+      .finally(function () {
+        if (gen === preloadGeneration) preloadPromise = null;
+      });
+    return preloadPromise;
   }
 
   function potenciaJobFnsForVisible() {
@@ -316,16 +430,18 @@
   function initPager(opts) {
     opts = opts || {};
     var sel = sizeSelect();
-    if (!sel) return;
-    pageSize = parseInt(sel.value, 10) || 10;
+    pageSize = sel ? parseInt(sel.value, 10) || 10 : 10;
     currentPage = 0;
     sections().forEach(function (sec, i) {
       sec.setAttribute("data-masivo-index", String(i));
     });
-    applyPage({ skipPotencias: Boolean(opts.skipPotencias) });
+    var preloadRun = startBackgroundPotenciasPreload();
+    applyPage();
     bindQuicknav();
     bindPanelExpandCtos();
     updateRamaSummary();
+
+    if (!sel) return preloadRun;
 
     if (sel.dataset.consultaPagerBound !== "1") {
       sel.dataset.consultaPagerBound = "1";
@@ -349,6 +465,7 @@
         setPage(currentPage + 1);
       });
     }
+    return preloadRun;
   }
 
   window.ConsultaMasivoUi = {
@@ -356,6 +473,10 @@
     evalRamaAllDown: evalRamaAllDown,
     updateRamaSummary: updateRamaSummary,
     markPotenciasScheduled: markPotenciasScheduled,
+    markPotenciasLoaded: markPotenciasLoaded,
+    clearPotenciasLoaded: clearPotenciasLoaded,
+    startBackgroundPotenciasPreload: startBackgroundPotenciasPreload,
+    cancelBackgroundPotenciasPreload: cancelBackgroundPotenciasPreload,
     potenciaJobFnsForVisible: potenciaJobFnsForVisible,
     goToSectionIndex: goToSectionIndex,
     expandRamaSection: expandRamaSection,

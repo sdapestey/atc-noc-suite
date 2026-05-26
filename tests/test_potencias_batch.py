@@ -6,7 +6,7 @@ import config
 def test_potencias_batch_parallel_tokens(client, monkeypatch):
     calls = []
 
-    def fake_rama(rama):
+    def fake_rama(rama, *, carga_masiva=False):
         calls.append(rama)
         return [{"AID": rama, "TX": 1.0, "RX": -20.0}]
 
@@ -66,15 +66,34 @@ def test_potencias_batch_caps_workers_to_db_pool(client, monkeypatch):
     assert seen_workers == [1]  # min(4 tokens, 16 cfg, 3 pool - 2 reserve)
 
 
+def test_potencias_batch_uses_carga_masiva_throttle(client, monkeypatch):
+    import web.routes as routes
+
+    seen = []
+
+    def fake_rama(rama, *, carga_masiva=False):
+        seen.append(carga_masiva)
+        return [{"AID": rama, "TX": 1.0, "RX": -20.0}]
+
+    monkeypatch.setattr(routes, "consultar_rama_potencias", fake_rama)
+
+    r = client.post(
+        "/potencias/batch",
+        json={"values": ["ES01-RATC-0-000388", "ES01-RATC-0-000389"]},
+    )
+    assert r.status_code == 200
+    assert seen == [True, True]
+
+
 def test_potencias_batch_partial_failure_still_200(client, monkeypatch):
     import web.routes as routes
 
-    def fake_payload(tok):
+    def fake_rama(tok, *, carga_masiva=False):
         if tok.endswith("-FAIL"):
             raise RuntimeError("simulated")
         return [{"AID": tok, "TX": 1.0, "RX": -21.0}]
 
-    monkeypatch.setattr(routes, "consultar_rama_potencias", fake_payload)
+    monkeypatch.setattr(routes, "consultar_rama_potencias", fake_rama)
 
     r = client.post(
         "/potencias/batch",

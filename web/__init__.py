@@ -8,6 +8,7 @@ from config import (
     Config,
     get_consulta_altiplano_ui_cache_seconds,
     get_consulta_potencias_parallel_max,
+    get_consulta_potencias_preload_batch_workers,
     get_noc_wiki_url,
 )
 from db import close_pool
@@ -80,6 +81,7 @@ def create_app() -> Flask:
             "noc_wiki_url": get_noc_wiki_url(),
             "consulta_altiplano_ui_cache_seconds": get_consulta_altiplano_ui_cache_seconds(),
             "consulta_potencias_parallel_max": get_consulta_potencias_parallel_max(),
+            "consulta_potencias_preload_batch_workers": get_consulta_potencias_preload_batch_workers(),
         }
 
     from . import routes

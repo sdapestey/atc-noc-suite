@@ -127,9 +127,13 @@ window.__CONSULTA_INDEX_CFG__ = {
   clearUrlMas: {{ url_for("index", modo="masivo") | tojson }},
   altiplanoAuthCacheSeconds: {{ consulta_altiplano_ui_cache_seconds | tojson }},
   potenciasParallelMax: {{ consulta_potencias_parallel_max | tojson }},
+  potenciasPreloadBatchWorkers: {{ consulta_potencias_preload_batch_workers | tojson }},
 };
 </script>
-<script defer src="{{ url_for('static', filename='js/consulta-index.js') }}?v=pon19"></script>
+{% if consulta_row_counts %}
+<script defer src="{{ url_for('static', filename='js/consulta-masivo-ui.js') }}?v=5"></script>
+{% endif %}
+<script defer src="{{ url_for('static', filename='js/consulta-index.js') }}?v=pon23"></script>
 </head>
 
 <body class="theme-devops page-consulta-index">
@@ -878,7 +882,6 @@ window.__CONSULTA_INDEX_CFG__ = {
 
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 {% if consulta_row_counts %}
-<script src="{{ url_for('static', filename='js/consulta-masivo-ui.js') }}"></script>
 <script src="{{ url_for('static', filename='js/consulta-panel-anim.js') }}"></script>
 {% endif %}
 </body>

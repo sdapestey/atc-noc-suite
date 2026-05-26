@@ -356,16 +356,25 @@ def get_consulta_potencias_parallel_max() -> int:
 
 def get_consulta_potencias_batch_workers() -> int:
     """RAMAs/CTOs en paralelo dentro de ``POST /potencias/batch``."""
-    return _int_env_at_least("CONSULTA_POTENCIAS_BATCH_WORKERS", 16, 1)
+    return _int_env_at_least("CONSULTA_POTENCIAS_BATCH_WORKERS", 4, 1)
 
 
-def get_altiplano_power_cto_workers() -> int:
+def get_consulta_potencias_preload_batch_workers() -> int:
+    """Lotes ``/potencias/batch`` simultáneos en precarga masiva (navegador)."""
+    return _int_env_at_least("CONSULTA_POTENCIAS_PRELOAD_BATCH_WORKERS", 1, 1)
+
+
+def get_altiplano_power_cto_workers(*, carga_masiva: bool = False) -> int:
     """CTOs en paralelo al consultar una RAMA (cada CTO sigue paralelizando ONTs)."""
+    if carga_masiva:
+        return _int_env_at_least("ALTIPLANO_POWER_CTO_WORKERS_MASIVO", 2, 1)
     return _int_env_at_least("ALTIPLANO_POWER_CTO_WORKERS", 8, 1)
 
 
-def get_altiplano_power_workers() -> int:
+def get_altiplano_power_workers(*, carga_masiva: bool = False) -> int:
     """ONT en paralelo por CTO contra Altiplano."""
+    if carga_masiva:
+        return _int_env_at_least("ALTIPLANO_POWER_WORKERS_MASIVO", 8, 1)
     return _int_env_at_least("ALTIPLANO_POWER_WORKERS", 24, 1)
 
 

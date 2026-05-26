@@ -37,4 +37,7 @@ def test_consulta_index_uses_external_js_bundle():
     assert "_consultaAcquireSectionPotenciaBtnsLoading" in js
     assert "skipBtnLoading" in js
     assert "releaseEntriesBtns" in js
+    masivo_ui = Path("static/js/consulta-masivo-ui.js").read_text(encoding="utf-8")
+    assert "markPotenciasLoaded" in masivo_ui
+    assert "startBackgroundPotenciasPreload" in masivo_ui
     assert "window.togglePonAdminDesdeUIBtn = togglePonAdminDesdeUIBtn" in js
