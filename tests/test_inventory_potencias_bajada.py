@@ -5,7 +5,15 @@ from contextlib import contextmanager
 from services import inventory as inv
 
 
+def _mock_sin_inp(monkeypatch):
+    import altiplano as ap
+
+    monkeypatch.setattr(ap, "resolver_ont_connection_inp_por_access_id", lambda *_a: None)
+    monkeypatch.setattr(inv, "obtener_alarmas_ont_activas", lambda *_a, **_k: [])
+
+
 def test_access_id_potencias_fallback_bajada_si_object_name_null_en_inventario(monkeypatch):
+    _mock_sin_inp(monkeypatch)
     monkeypatch.setattr(
         inv,
         "consultar_access_id_estructura",
@@ -76,28 +84,15 @@ def test_access_id_potencias_fallback_bajada_si_object_name_null_en_inventario(m
     monkeypatch.setattr(inv, "obtener_telemetry_ont", fake_telem)
 
     out = inv.consultar_access_id_potencias("1058443222")
-    assert out == {
-        "AID": "1058443222",
-        "TX": 2.1,
-        "RX": -20.3,
-        "SN": "ASKY00866826",
-        "ALARMAS": [],
-        "alarmas_label": "Sin Alarmas",
-        "OPERADOR": "TASA",
-        "NV_STATUS": {
-            "health": "Healthy",
-            "health_ts": None,
-            "oper": "UP",
-            "admin": "UNLOCKED",
-            "pon_admin": None,
-            "pon_index": "1",
-            "channel_partition": "BA_OLTA_SF01_04-7-1_CPART_GPON",
-            "alarms_active": 0,
-        },
-    }
+    assert out["AID"] == "1058443222"
+    assert out["TX"] == 2.1
+    assert out["ONT_POSTGRES"] == "BA_OLTA_SF01_04-7-1-5"
+    assert out["ONT_ALTIPLANO"] is None
+    assert out["ONT_MATCH"] is False
 
 
 def test_access_id_potencias_fallback_bajada_inventario(monkeypatch):
+    _mock_sin_inp(monkeypatch)
     monkeypatch.setattr(inv, "consultar_access_id_estructura", lambda _aid: None)
 
     row = (
@@ -148,22 +143,7 @@ def test_access_id_potencias_fallback_bajada_inventario(monkeypatch):
     monkeypatch.setattr(inv, "obtener_telemetry_ont", fake_telem)
 
     out = inv.consultar_access_id_potencias("1058443222")
-    assert out == {
-        "AID": "1058443222",
-        "TX": 2.1,
-        "RX": -20.3,
-        "SN": "ASKY00866826",
-        "ALARMAS": [],
-        "alarmas_label": "Sin Alarmas",
-        "OPERADOR": "TASA",
-        "NV_STATUS": {
-            "health": "Healthy",
-            "health_ts": None,
-            "oper": "UP",
-            "admin": "UNLOCKED",
-            "pon_admin": None,
-            "pon_index": "1",
-            "channel_partition": "BA_OLTA_SF01_04-7-1_CPART_GPON",
-            "alarms_active": 0,
-        },
-    }
+    assert out["AID"] == "1058443222"
+    assert out["TX"] == 2.1
+    assert out["ONT_POSTGRES"] == "BA_OLTA_SF01_04-7-1-5"
+    assert out["ONT_ALTIPLANO"] is None

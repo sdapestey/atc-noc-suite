@@ -1651,6 +1651,97 @@ def buscar_ont_connection_inp_via_gui_access_id_search(
     return matches
 
 
+def _pick_best_inp_ont_connection_match(matches: list[dict]) -> dict | None:
+    """Elige un intent ont-connection cuando la búsqueda por Access ID devuelve varios."""
+    rows = [r for r in (matches or []) if isinstance(r, dict)]
+    if not rows:
+        return None
+    if len(rows) == 1:
+        return rows[0]
+
+    def _score(row: dict) -> int:
+        rn = str(row.get("required_network_state") or "").strip().lower()
+        al = str(row.get("alignment_state") or "").strip().lower()
+        score = 0
+        if rn == "active":
+            score += 100
+        elif rn:
+            score += 20
+        if al in ("aligned", "aligned-not-active"):
+            score += 50
+        elif al:
+            score += 10
+        return score
+
+    return max(rows, key=_score)
+
+
+def resolver_ont_connection_inp_por_access_id(access_id: str) -> dict | None:
+    """
+    Device name y operador actuales en INP para un Access ID (``ibn:search-intents``).
+
+    Usado en consulta individual para no depender del ``object_name`` de Postgres cuando
+    hubo cambio de CTO / reubicación en Altiplano.
+
+    Returns:
+        Dict con ``object_name`` (prefijo location, formato Altiplano), ``object_name_ui``,
+        ``operator_id``, ``target`` completo, o ``None`` si no hay match o credenciales INP.
+    """
+    aid = (access_id or "").strip()
+    if not aid:
+        return None
+
+    host, port, base_url = get_altiplano_nbi_target("INP")
+    if not host or not port or not base_url:
+        return None
+
+    user, pwd = get_altiplano_operator_credentials("INP")
+    if not user or not pwd:
+        return None
+
+    auth_url = f"https://{host}:{port}/{base_url}/rest/auth/login"
+    base_rest = f"https://{host}:{port}/{base_url}/rest/restconf/data"
+    token = _obtener_token(auth_url, username=user, password=pwd)
+    if not token:
+        return None
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/yang-data+json",
+    }
+    matches = buscar_ont_connection_inp_via_gui_access_id_search(
+        base_rest,
+        headers,
+        aid,
+        access_id_match_mode="exact",
+        timeout_s=float(get_altiplano_inp_search_http_timeout_s()),
+    )
+    row = _pick_best_inp_ont_connection_match(matches)
+    if not row:
+        return None
+
+    tgt = (row.get("target") or row.get("location_slice_pon") or "").strip()
+    head = _target_head(tgt)
+    if not head:
+        return None
+
+    vno_s = _vno_from_ont_connection_target(tgt)
+    op_id: int | None = None
+    if vno_s and vno_s.isdigit():
+        try:
+            op_id = int(vno_s)
+        except ValueError:
+            op_id = None
+
+    return {
+        "object_name": head,
+        "object_name_ui": head,
+        "operator_id": op_id,
+        "target": tgt or None,
+        "inp_device_name": head,
+    }
+
+
 def _operator_intent_types_for_vno_consult(operator: str) -> list[tuple[str, str]]:
     """``(intent-type, version)`` a consultar en VNO por device (GUI operador)."""
     op = (operator or "").strip().upper()

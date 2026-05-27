@@ -41,7 +41,11 @@ def _access_lookup_token_ok(aid: str) -> bool:
 
 
 # Inventario CM: sin lectura Altiplano para estos estados de puerto FAT.
-_SIN_POTENCIAS_STATUS = frozenset({"FREE", "RESERVED"})
+# Nota: ``RESERVED`` puede tener PON asignada; para consultas puntuales por
+# Access ID se permiten potencias/alarmas incluso en ese estado. El set global
+# se mantiene solo para FREE y los callers que necesiten tratar RESERVED como
+# "sin lectura" deben manejarlo de forma explícita.
+_SIN_POTENCIAS_STATUS = frozenset({"FREE"})
 
 _PARTIDO_DISPLAY_MAP = {
     "BA SAFE": "BA San Fernando",
@@ -905,6 +909,55 @@ def cambiar_pon_admin_access_id(
     )
 
 
+def _ont_normalize_for_compare(name: str) -> str:
+    """Forma canónica para comparar ONT Postgres vs Altiplano."""
+    from altiplano import normalizar_object_name
+
+    s = normalizar_object_name((name or "").strip())
+    if ":1-1" in s:
+        s = s.replace(":1-1", "")
+    return s.strip()
+
+
+def _ont_postgres_para_compare(
+    aid_canon: str, cto: str | None, base: dict | None, obj_pg: str | None = None
+) -> str:
+    """Device name según inventario ATC (Postgres / bajada)."""
+    if obj_pg and str(obj_pg).strip():
+        return _ont_normalize_for_compare(str(obj_pg))
+    obj, _op = _resolver_object_name_operator_potencias(aid_canon, cto)
+    if obj:
+        return _ont_normalize_for_compare(str(obj))
+    if base:
+        ont = str(base.get("ONT") or "").strip()
+        if ont and ont not in ("—", "-"):
+            return ont
+    return ""
+
+
+def _ont_altiplano_para_compare(inp_hit: dict | None) -> str:
+    if not inp_hit:
+        return ""
+    return (
+        inp_hit.get("object_name_ui") or inp_hit.get("object_name") or ""
+    ).strip()
+
+
+def _ont_compare_payload(ont_pg: str, ont_alt: str) -> dict:
+    """Campos ``ONT_POSTGRES`` / ``ONT_ALTIPLANO`` / ``ONT_MATCH`` para la UI de consulta."""
+    pg = (ont_pg or "").strip()
+    alt = (ont_alt or "").strip()
+    pg_n = _ont_normalize_for_compare(pg) if pg else ""
+    alt_n = _ont_normalize_for_compare(alt) if alt else ""
+    match = bool(pg_n and alt_n and pg_n == alt_n)
+    return {
+        "ONT_POSTGRES": pg or None,
+        "ONT_ALTIPLANO": alt or None,
+        "ONT_MATCH": match,
+        "ONT": alt or pg or None,
+    }
+
+
 def consultar_access_id_potencias(access_id):
     """Consulta TX/RX y SN (Expected Serial Number en Altiplano) de un Access ID puntual.
 
@@ -921,24 +974,52 @@ def consultar_access_id_potencias(access_id):
     """
     aid_in = str(access_id or "").strip()
     base = consultar_access_id_estructura(access_id)
+    base_sn = ""
     if base:
         aid_canon = str(base["AID"]).strip()
-        if _sin_potencias_por_status(base.get("Status")):
-            return {
-                "AID": aid_canon,
-                "TX": None,
-                "RX": None,
-                "SN": None,
-                "ALARMAS": [],
-                "alarmas_label": None,
-                "NV_STATUS": None,
-            }
+        base_sn = (str(base.get("SN")).strip() if base.get("SN") else "") or ""
+        status = str(base.get("Status") or "").strip().upper()
         cto = base.get("CTO")
     else:
         aid_canon = aid_in
         cto = None
+        status = ""
 
-    obj, op_id = _resolver_object_name_operator_potencias(aid_canon, cto)
+    obj_pg, op_id_pg = _resolver_object_name_operator_potencias(aid_canon, cto)
+    inp_hit = None
+    try:
+        from altiplano import resolver_ont_connection_inp_por_access_id
+
+        inp_hit = resolver_ont_connection_inp_por_access_id(aid_canon)
+    except Exception:
+        logger.exception("consultar_access_id_potencias: resolver INP por Access ID")
+
+    ont_pg = _ont_postgres_para_compare(aid_canon, cto, base, obj_pg)
+    ont_alt = _ont_altiplano_para_compare(inp_hit)
+    ont_fields = _ont_compare_payload(ont_pg, ont_alt)
+
+    # Puertos FREE no tienen PON en Altiplano → no se consulta ni telemetry ni alarmas.
+    # Para RESERVED se permite lectura completa (potencias, SN y alarmas).
+    if status == "FREE":
+        return {
+            "AID": aid_canon,
+            "TX": None,
+            "RX": None,
+            "SN": None,
+            "ALARMAS": [],
+            "alarmas_label": None,
+            "NV_STATUS": None,
+            **ont_fields,
+        }
+
+    obj, op_id = obj_pg, op_id_pg
+    if inp_hit:
+        obj_inp = (inp_hit.get("object_name") or "").strip()
+        if obj_inp:
+            obj = obj_inp
+        op_inp = inp_hit.get("operator_id")
+        if op_inp is not None:
+            op_id = op_inp
     if not obj or op_id is None:
         return {
             "AID": aid_canon or access_id,
@@ -948,6 +1029,7 @@ def consultar_access_id_potencias(access_id):
             "ALARMAS": [],
             "alarmas_label": None,
             "NV_STATUS": None,
+            **ont_fields,
         }
 
     telem = obtener_telemetry_ont(aid_canon, obj, op_id)
@@ -957,7 +1039,10 @@ def consultar_access_id_potencias(access_id):
         "AID": aid_canon,
         "TX": tx,
         "RX": rx,
-        "SN": telem.get("sn"),
+        # Preferimos SN en vivo desde Altiplano y, si no está disponible,
+        # caemos al SN de inventario (base) para no perder visibilidad.
+        "SN": telem.get("sn") or base_sn or None,
+        **ont_fields,
     }
     out["ALARMAS"] = obtener_alarmas_ont_activas(aid_canon, obj, op_id)
     if out["ALARMAS"]:

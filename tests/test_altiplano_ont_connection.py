@@ -1144,6 +1144,35 @@ def test_buscar_ont_connection_gui_access_id_returns_multiple(monkeypatch):
     assert "BA_OLTA_ES01_01-9-4-18#1001#gpon" in targets
 
 
+def test_resolver_ont_connection_inp_por_access_id_prefiere_active(monkeypatch):
+    import altiplano as ap
+
+    rows = [
+        {
+            "target": "BA_OLTA_SM02_05-3-1-6#1001#gpon",
+            "required-network-state": "suspend",
+        },
+        {
+            "target": "BA_OLTA_SM02_05-5-3-12#1001#gpon",
+            "required-network-state": "active",
+        },
+    ]
+
+    def fake_gui(*_a, **_kw):
+        return [ap._match_entry_to_result_dict(r) for r in rows]
+
+    monkeypatch.setattr(ap, "get_altiplano_nbi_target", lambda _op: ("h", "1", "inp-altiplano-ac"))
+    monkeypatch.setattr(ap, "get_altiplano_operator_credentials", lambda _op: ("u", "p"))
+    monkeypatch.setattr(ap, "_obtener_token", lambda *_a, **_k: "tok")
+    monkeypatch.setattr(ap, "buscar_ont_connection_inp_via_gui_access_id_search", fake_gui)
+
+    out = ap.resolver_ont_connection_inp_por_access_id("1059164760")
+    assert out is not None
+    assert out["object_name"] == "BA_OLTA_SM02_05-5-3-12"
+    assert out["operator_id"] == 1001
+    assert out["target"] == "BA_OLTA_SM02_05-5-3-12#1001#gpon"
+
+
 def test_parse_l1_scheduler_missing_ont_connection():
     import altiplano as ap
 

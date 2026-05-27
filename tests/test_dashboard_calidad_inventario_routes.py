@@ -16,11 +16,11 @@ def test_dashboard_estadisticas_get_renders(client):
     assert 'aria-selected="true" data-tab="altas-bajas"' in html
     assert 'aria-selected="false" data-tab="inventario"' in html
     assert (
-        'id="panel-inventario" class="panel calidad-panel calidad-panel--inventario" '
+        'id="panel-inventario" class="panel calidad-panel calidad-panel--inventario card suite-index-card" '
         'role="tabpanel" aria-labelledby="tab-inventario" hidden'
     ) in html
     assert (
-        'id="panel-altas-bajas" class="panel calidad-panel calidad-panel--altas-bajas" '
+        'id="panel-altas-bajas" class="panel calidad-panel calidad-panel--altas-bajas card suite-index-card" '
         'role="tabpanel" aria-labelledby="tab-altas-bajas">'
     ) in html
     assert "dashboard-estadisticas-shared.js" in html
@@ -150,7 +150,7 @@ def test_dashboard_estadisticas_altas_bajas_json_success(client, monkeypatch):
     monkeypatch.setattr(
         routes,
         "dashboard_calidad_inventario_estadisticas",
-        lambda days=90, granularity="day", operador="": {
+        lambda days=90, granularity="day", operador="", fecha=None: {
             "source": "postgres",
             "days": days,
             "granularity": granularity,

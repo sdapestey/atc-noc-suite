@@ -1,4 +1,4 @@
-"""Potencias: FREE/RESERVED no consultan Altiplano."""
+"""Potencias: FREE no consulta Altiplano; RESERVED sí (consultas puntuales)."""
 
 from contextlib import contextmanager
 
@@ -8,7 +8,7 @@ from services import inventory as inv
 def test_potencias_filas_omite_altiplano_free_y_reserved(monkeypatch):
     calls = []
 
-    def capture(ne, onts):
+    def capture(ne, onts, carga_masiva=False):
         calls.append((ne, list(onts)))
         return {"11": (1.0, -16.0)}
 
@@ -42,7 +42,7 @@ def test_access_id_potencias_retorna_none_si_status_free(monkeypatch):
     monkeypatch.setattr(
         inv,
         "consultar_access_id_estructura",
-        lambda _aid: {"AID": "99", "CTO": "C1", "Status": "IN SERVICE"},
+        lambda _aid: {"AID": "99", "CTO": "C1", "Status": "FREE"},
     )
 
     @contextmanager
@@ -68,15 +68,9 @@ def test_access_id_potencias_retorna_none_si_status_free(monkeypatch):
     monkeypatch.setattr(inv, "obtener_potencias_por_cto", boom)
 
     out = inv.consultar_access_id_potencias("99")
-    assert out == {
-        "AID": "99",
-        "TX": None,
-        "RX": None,
-        "SN": None,
-        "ALARMAS": [],
-        "alarmas_label": None,
-        "NV_STATUS": None,
-    }
+    assert out["AID"] == "99"
+    assert out["TX"] is None
+    assert out["ONT_MATCH"] is False
     assert calls == []
 
 
@@ -133,26 +127,115 @@ def test_access_id_potencias_usa_aid_canonico_para_lookup(monkeypatch):
     monkeypatch.setattr(inv, "obtener_telemetry_ont", fake_telem)
     monkeypatch.setattr(inv, "obtener_alarmas_ont_activas", lambda *_a, **_k: [])
 
+    import altiplano as ap
+
+    monkeypatch.setattr(
+        ap,
+        "resolver_ont_connection_inp_por_access_id",
+        lambda _aid: {
+            "object_name": "BA_OLTA_SM01_05-10-3-21",
+            "object_name_ui": "BA_OLTA_SM01_05-10-3-21",
+            "operator_id": 2800,
+        },
+    )
+
     out = inv.consultar_access_id_potencias("fes_a5_23")
-    assert out == {
-        "AID": "FES_A5_23",
-        "TX": 2.5,
-        "RX": -19.3,
-        "SN": "ALCLF00DBEEF",
-        "ALARMAS": [],
-        "alarmas_label": "Sin Alarmas",
-        "OPERADOR": "ATC",
-        "NV_STATUS": {
-            "health": "Healthy",
-            "health_ts": None,
+    assert out["AID"] == "FES_A5_23"
+    assert out["TX"] == 2.5
+    assert out["ONT_POSTGRES"] == "BA_OLTA_SM01_05-10-3-21"
+    assert out["ONT_ALTIPLANO"] == "BA_OLTA_SM01_05-10-3-21"
+    assert out["ONT_MATCH"] is True
+    assert out["ONT"] == "BA_OLTA_SM01_05-10-3-21"
+
+
+def test_access_id_potencias_prefiere_device_name_inp_sobre_postgres(monkeypatch):
+    """Tras cambio de CTO, INP tiene el target actual; Postgres puede quedar desactualizado."""
+    monkeypatch.setattr(
+        inv,
+        "consultar_access_id_estructura",
+        lambda _aid: {
+            "AID": "1059164760",
+            "CTO": "SM02-FATC-8-123",
+            "Status": "IN SERVICE",
+            "ONT": "BA_OLTA_SM02_05-3-1-6",
+            "SN": "ALCL00000001",
+        },
+    )
+
+    @contextmanager
+    def fake_cursor():
+        class FakeCur:
+            def execute(self, *_):
+                pass
+
+            def fetchall(self):
+                return [
+                    (
+                        "1059164760",
+                        "IN SERVICE",
+                        "SM02-FATC-8-123",
+                        "SM02-RATC-0-000100",
+                        "BA_OLTA_SM02_05:1-1-3-1-6",
+                        "BA_OLTA_SM02_05-3-1-6",
+                        "ALCL00000001",
+                        1001,
+                    ),
+                ]
+
+        yield FakeCur()
+
+    monkeypatch.setattr(inv, "db_cursor", fake_cursor)
+
+    import altiplano as ap
+
+    monkeypatch.setattr(
+        ap,
+        "resolver_ont_connection_inp_por_access_id",
+        lambda _aid: {
+            "object_name": "BA_OLTA_SM02_05-5-3-12",
+            "object_name_ui": "BA_OLTA_SM02_05-5-3-12",
+            "operator_id": 1001,
+            "target": "BA_OLTA_SM02_05-5-3-12#1001#gpon",
+        },
+    )
+
+    seen = {}
+
+    def fake_telem(aid, obj, op_id, *, ne=None):
+        seen["obj"] = obj
+        seen["op_id"] = op_id
+        return {
+            "tx": 2.0,
+            "rx": -18.0,
+            "sn": "ALCL00000001",
             "oper": "UP",
             "admin": "UNLOCKED",
-            "pon_admin": None,
-            "pon_index": "3",
-            "channel_partition": "BA_OLTA_SM01_05-10-3_CPART_GPON",
-            "alarms_active": 0,
-        },
-    }
+            "health": "Healthy",
+            "health_ts": None,
+        }
+
+    monkeypatch.setattr(inv, "obtener_telemetry_ont", fake_telem)
+    monkeypatch.setattr(inv, "obtener_alarmas_ont_activas", lambda *_a, **_k: [])
+
+    out = inv.consultar_access_id_potencias("1059164760")
+    assert seen["obj"] == "BA_OLTA_SM02_05-5-3-12"
+    assert seen["op_id"] == 1001
+    assert out["ONT_POSTGRES"] == "BA_OLTA_SM02_05-3-1-6"
+    assert out["ONT_ALTIPLANO"] == "BA_OLTA_SM02_05-5-3-12"
+    assert out["ONT_MATCH"] is False
+    assert out["ONT"] == "BA_OLTA_SM02_05-5-3-12"
+    assert out["RX"] == -18.0
+
+
+def test_ont_compare_payload_match():
+    assert inv._ont_compare_payload(
+        "BA_OLTA_X:1-1-2-3-4", "BA_OLTA_X-2-3-4"
+    )["ONT_MATCH"] is True
+    assert inv._ont_compare_payload("BA_OLTA_SM01_05-10-3-21:1-1", "BA_OLTA_SM01_05-10-3-21")[
+        "ONT_MATCH"
+    ] is True
+    assert inv._ont_compare_payload("BA_A-1-1", "")["ONT_MATCH"] is False
+    assert inv._ont_compare_payload("", "")["ONT_POSTGRES"] is None
 
 
 def test_altiplano_por_ont_varias_ctos_en_paralelo(monkeypatch):

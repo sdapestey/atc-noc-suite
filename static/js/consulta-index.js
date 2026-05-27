@@ -776,6 +776,50 @@ function _consultaSectionOnt(pre) {
   return byPrefix ? String(byPrefix.getAttribute("data-nv-ont") || "").trim() : "";
 }
 
+/** Actualiza filas ONT Postgres / Altiplano (una sola si coinciden). */
+function _applyConsultaOntCompareRows(root, pfx, data) {
+  if (!root || !pfx || !data) return;
+  const dash = "—";
+  const pgRaw = data.ONT_POSTGRES != null ? String(data.ONT_POSTGRES).trim() : "";
+  const altRaw = data.ONT_ALTIPLANO != null ? String(data.ONT_ALTIPLANO).trim() : "";
+  const match = data.ONT_MATCH === true;
+  const pgShow = pgRaw || dash;
+  const altShow = altRaw || dash;
+  const ontTarget = (data.ONT != null ? String(data.ONT).trim() : "") || altRaw || pgRaw;
+
+  const singleRow = document.getElementById(pfx + "ont-single-row");
+  const pgRow = document.getElementById(pfx + "ont-postgres-row");
+  const altRow = document.getElementById(pfx + "ont-altiplano-row");
+  const singleVal = document.getElementById(pfx + "ont-value");
+  const pgVal = document.getElementById(pfx + "ont-postgres-value");
+  const altVal = document.getElementById(pfx + "ont-altiplano-value");
+
+  if (match && pgRaw) {
+    if (singleRow) singleRow.hidden = false;
+    if (pgRow) pgRow.hidden = true;
+    if (altRow) altRow.hidden = true;
+    if (singleVal) singleVal.innerText = pgRaw;
+  } else {
+    if (singleRow) singleRow.hidden = true;
+    if (pgRow) pgRow.hidden = false;
+    if (altRow) altRow.hidden = false;
+    if (pgVal) pgVal.innerText = pgShow;
+    if (altVal) {
+      altVal.innerText = altShow;
+      altVal.classList.remove("consulta-potencia-loading");
+      altVal.removeAttribute("aria-busy");
+      altVal.removeAttribute("aria-label");
+    }
+  }
+
+  if (ontTarget) {
+    root.setAttribute("data-nv-ont", ontTarget);
+    root.querySelectorAll("[data-ont-target]").forEach((btn) => {
+      btn.setAttribute("data-ont-target", ontTarget);
+    });
+  }
+}
+
 /** ONT con nombre Altiplano suficiente para operar la partición PON. */
 function _consultaOntOperable(ont) {
   const o = String(ont || "").trim();
@@ -916,44 +960,11 @@ function _applyNvOperDetalle(pre, data) {
   operSlot.hidden = !chip;
 }
 
-function _applyNvAdminDetalle(pre, nvObj) {
+function _applyNvAdminDetalle(pre, _nvObj) {
   const adminSlot = _nvAdminEl(pre);
   if (!adminSlot) return;
-  const hasAdmin = Boolean(nvObj && nvObj.admin);
-  if (!hasAdmin) {
-    adminSlot.innerHTML = "";
-    adminSlot.hidden = true;
-    return;
-  }
-  const adminRaw = String(nvObj.admin || "").trim().toUpperCase();
-  const admin = _nvAdminLabel(nvObj.admin);
-  const adminCls = _nvAdminClass(adminRaw);
-  const canToggleAdmin =
-    adminRaw === "LOCKED" || adminRaw === "UNLOCKED";
-  const adminEditBtn = canToggleAdmin
-    ? '<button type="button" class="consulta-nv-admin-edit" title="' +
-      (adminRaw === "UNLOCKED"
-        ? "Bloquear ONT (apagar)"
-        : "Desbloquear ONT (encender)") +
-      '" aria-label="' +
-      (adminRaw === "UNLOCKED" ? "Bloquear ONT" : "Desbloquear ONT") +
-      '" data-admin="' +
-      _escHtmlAlarmas(adminRaw) +
-      '" onclick="toggleOntAdminDesdeUIBtn(this)">✎</button>'
-    : "";
-  adminSlot.hidden = false;
-  adminSlot.innerHTML =
-    '<div class="consulta-nv-status__chip consulta-nv-status__chip--admin">' +
-    '<span class="consulta-nv-status__icon consulta-nv-status__icon--' +
-    adminCls +
-    '" aria-hidden="true">' +
-    _nvAdminIcon(adminRaw) +
-    "</span>" +
-    '<span class="consulta-nv-status__text">' +
-    _escHtmlAlarmas(admin) +
-    "</span>" +
-    adminEditBtn +
-    "</div>";
+  adminSlot.innerHTML = "";
+  adminSlot.hidden = true;
 }
 
 function _consultaShowNvStatusBar(pre, visible) {
@@ -976,10 +987,9 @@ function _applyNvStatusDetalle(pre, data) {
   const canTogglePon = _consultaOntOperable(ont);
   const nv = data && data.NV_STATUS;
   const nvObj = nv && typeof nv === "object" ? nv : {};
-  const hasAdmin = Boolean(nvObj.admin);
   const nvResolved = _consultaOperNvResolved(pre, nvObj);
   const operEff = _nvOperEffective(data, nvResolved);
-  if (!canTogglePon && !operEff && !hasAdmin) {
+  if (!canTogglePon && !operEff) {
     _consultaShowNvStatusBar(pre, false);
     return;
   }
@@ -1204,7 +1214,36 @@ function toggleOntAdminDesdeUIBtn(btn) {
 }
 
 function _applyAlarmasDetalle(pre, data, root) {
-  const el = _potCell(pre, "alarmas");
+  const _ensureAlarmasDetalleCell = () => {
+    let el = _potCell(pre, "alarmas");
+    if (el) return el;
+    const rx = _potCell(pre, "rx");
+    const tx = _potCell(pre, "tx");
+    const ref = rx || tx;
+    if (!ref) return null;
+    const refTr = ref.closest("tr");
+    if (!refTr || !refTr.parentNode) return null;
+
+    const newTr = document.createElement("tr");
+    newTr.id = pre + "-alarmas-row";
+
+    const th = document.createElement("th");
+    th.textContent = "Alarmas";
+
+    const td = document.createElement("td");
+    td.id = pre + "-alarmas";
+    td.className = "consulta-alarmas-cell consulta-potencia-loading";
+    td.setAttribute("aria-busy", "true");
+    td.setAttribute("aria-label", "Cargando");
+    td.innerHTML = _CONSULTA_POT_SPINNER_HTML;
+
+    newTr.appendChild(th);
+    newTr.appendChild(td);
+    refTr.parentNode.insertBefore(newTr, refTr.nextSibling);
+    return td;
+  };
+
+  const el = _ensureAlarmasDetalleCell();
   if (!el) return;
   const pollPending =
     root && _consultaDetallePollShouldContinue(pre, root, root);
@@ -1251,7 +1290,9 @@ function _potCell(pre, suffix) {
 function _filaSaltaPotencias(tr) {
   if (!tr) return false;
   const st = (tr.getAttribute("data-fat-status") || "").trim().toUpperCase();
-  return st === "FREE" || st === "RESERVED";
+  // FREE: sin PON en Altiplano → no se consulta ni potencias ni alarmas.
+  // RESERVED: se permite lectura completa, igual que IN SERVICE.
+  return st === "FREE";
 }
 
 function _parseRxDbmJs(rx) {
@@ -1353,7 +1394,7 @@ function cargarPotenciasSeccion(valor, root, scopeEl, opts) {
   }
 
   const detSt = (root.getAttribute("data-detalle-fat-status") || "").trim().toUpperCase();
-  if (detSt === "FREE" || detSt === "RESERVED") {
+  if (detSt === "FREE") {
     const tx = _potCell(pre, "tx");
     const rx = _potCell(pre, "rx");
     if (tx) {
@@ -1439,6 +1480,12 @@ function cargarPotenciasSeccion(valor, root, scopeEl, opts) {
         if (snEl && data.SN) {
           const snLive = String(data.SN).trim();
           if (snLive) snEl.innerText = snLive;
+        }
+        if (
+          Object.prototype.hasOwnProperty.call(data, "ONT_POSTGRES") ||
+          Object.prototype.hasOwnProperty.call(data, "ONT_ALTIPLANO")
+        ) {
+          _applyConsultaOntCompareRows(root, pfx, data);
         }
         const opEl = document.getElementById(pfx + "operador-value");
         if (opEl && data.OPERADOR) {
