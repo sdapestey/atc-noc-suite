@@ -255,8 +255,6 @@ def dashboard_camino_optico_lt(lt: str):
     ramas_list = payload["resumen"].get("ramas") or []
     r0 = ramas_list[0] if ramas_list else None
     sitio_q = _sitio_valor_para_consulta(olt, r0)
-    principal, _, _ = principal_y_sitio_desde_olt(olt or "")
-    pasos_eq = _pasos_equipo_desde_contexto(principal)
     payload_lt_nav = {"tipo": "lt", "lt": payload["lt"], "sitio": "", "rama": ""}
     jerarquia_nav = _jerarquia_nav_armar(
         "lt",
@@ -266,7 +264,7 @@ def dashboard_camino_optico_lt(lt: str):
         ramas_vals=[],
         cto_val=None,
         access_val=None,
-        pasos_equipo=pasos_eq,
+        pasos_equipo=_paso_equipo_focal_desde_olt(olt),
     )
     return {
         "tipo": "lt",
@@ -629,6 +627,16 @@ def _equipo_nav_steps_mismo_sitio(principal: str | None) -> list[dict]:
 def _pasos_equipo_desde_contexto(sitio_principal: str | None) -> list[dict] | None:
     steps = _equipo_nav_steps_mismo_sitio(sitio_principal)
     return steps if steps else None
+
+
+def _paso_equipo_focal_desde_olt(olt_logico: str | None) -> list[dict] | None:
+    """Paso Equipo único para una OLT concreta (sin listar otros equipos del sitio)."""
+    olt = (olt_logico or "").strip()
+    if not olt:
+        return None
+    _, sitio_codigo, _ = principal_y_sitio_desde_olt(olt)
+    p = _nav_paso("equipo", olt, "Equipo", titulo=sitio_codigo or None)
+    return [p] if p else None
 
 
 def _principal_desde_sitio_q_rama(sitio_q: str, olt_hint: str | None) -> str | None:
@@ -994,9 +1002,7 @@ def dashboard_camino_optico_rama(rama):
         ramas_vals=[rama],
         cto_val=None,
         access_val=None,
-        pasos_equipo=_pasos_equipo_desde_contexto(
-            _principal_desde_sitio_q_rama(sitio_q, olt_hint)
-        ),
+        pasos_equipo=_paso_equipo_focal_desde_olt(olt_hint),
     )
 
     return {

@@ -1472,6 +1472,7 @@ function cargarPotenciasSeccion(valor, root, scopeEl, opts) {
         const rx = _potCell(pre, "rx");
         if (tx) _applyPotenciaDbmCelda(tx, data.TX, true);
         if (rx) _applyPotenciaDbmCelda(rx, data.RX, true);
+        _updateDetalleVisualStatus(pre, data, root);
         _applyAlarmasDetalle(pre, data, root);
         _consultaArmNvRefresh(pre);
         _applyNvStatusDetalle(pre, data);
@@ -1520,6 +1521,7 @@ function cargarPotenciasSeccion(valor, root, scopeEl, opts) {
           const tieneAid = _filaTieneAidReal(tr);
           if (tx) _applyPotenciaDbmCelda(tx, r.TX, tieneAid);
           if (rx) _applyPotenciaDbmCelda(rx, r.RX, tieneAid);
+          _updateRowVisualStatus(tr, r.RX);
           _consultaFilaApplySemaforoHighlight(tr, r.RX);
         });
         scope.querySelectorAll("tr[data-aid]").forEach((tr) => {
@@ -1861,6 +1863,40 @@ function copiarTodo() {
   document.body.removeChild(ta);
 
   toast("Datos copiados");
+}
+
+function _updateDetalleVisualStatus(pre, data, root) {
+  if (!root || !data || typeof data !== "object") return;
+  const orig = (root.getAttribute("data-detalle-fat-status") || "").trim().toUpperCase();
+  if (!orig) return;
+  const cellId = (pre ? pre + "-" : "") + "status-value";
+  const el = document.getElementById(cellId);
+  if (!el) return;
+  let next = orig;
+  if (
+    orig === "RESERVED" &&
+    typeof window !== "undefined" &&
+    window.NocPower &&
+    window.NocPower.hasPowerValue(window.NocPower.parseRxDbm(data.RX))
+  ) {
+    next = "IN SERVICE";
+  }
+  el.textContent = next;
+}
+
+function _updateRowVisualStatus(tr, rx) {
+  if (!tr) return;
+  const orig = _normFatStatus(tr.getAttribute("data-fat-status") || "");
+  if (orig !== "RESERVED") return;
+  if (
+    typeof window === "undefined" ||
+    !window.NocPower ||
+    !window.NocPower.hasPowerValue(window.NocPower.parseRxDbm(rx))
+  ) {
+    return;
+  }
+  const statusCell = tr.querySelector("td[data-status-cell]");
+  if (statusCell) statusCell.textContent = "IN SERVICE";
 }
 
 function _consultaPotenciaEntriesVisible() {

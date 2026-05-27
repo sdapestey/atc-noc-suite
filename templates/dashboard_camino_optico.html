@@ -6,6 +6,12 @@
 {% include 'partials/noc_head.html' %}
 {% include 'partials/head_leaflet.html' %}
 <script src="{{ url_for('static', filename='js/noc-tools.js') }}"></script>
+<style>
+  /* Evita el borde/foco blanco al hacer click en trazados del mapa. */
+  .page-camino .leaflet-interactive:focus {
+    outline: none;
+  }
+</style>
 </head>
 <body class="theme-devops page-camino">
 <div class="container">
@@ -689,36 +695,52 @@
     ltOverlayLayers = {};
   }
 
-  function pathStyleOverlay(feature) {
-    var t = feature && feature.geometry && feature.geometry.type;
-    if (t === "Point" || t === "MultiPoint") {
-      return {
-        radius: 5,
-        fillColor: "#6366f1",
-        color: "#fff",
-        weight: 1,
-        opacity: 1,
-        fillOpacity: 0.9,
-      };
+  var LT_OVERLAY_PALETTE = [
+    { line: "#3b82f6", point: "#818cf8", hover: "#93c5fd" },
+    { line: "#22c55e", point: "#4ade80", hover: "#86efac" },
+    { line: "#f59e0b", point: "#fbbf24", hover: "#fcd34d" },
+    { line: "#ef4444", point: "#f87171", hover: "#fca5a5" },
+    { line: "#a855f7", point: "#c084fc", hover: "#d8b4fe" },
+    { line: "#06b6d4", point: "#22d3ee", hover: "#67e8f9" },
+    { line: "#84cc16", point: "#a3e635", hover: "#bef264" },
+    { line: "#ec4899", point: "#f472b6", hover: "#f9a8d4" },
+    { line: "#f97316", point: "#fb923c", hover: "#fdba74" },
+    { line: "#14b8a6", point: "#2dd4bf", hover: "#5eead4" },
+  ];
+
+  function _ltOverlayColorPack(ltKey) {
+    var s = String(ltKey || "");
+    var h = 0;
+    for (var i = 0; i < s.length; i++) {
+      h = ((h << 5) - h + s.charCodeAt(i)) | 0;
     }
-    return {
-      color: "#3b82f6",
-      weight: 5,
-      opacity: 0.92,
-      lineCap: "round",
-      lineJoin: "round",
-      dashArray: "10 6",
-    };
+    var idx = Math.abs(h) % LT_OVERLAY_PALETTE.length;
+    return LT_OVERLAY_PALETTE[idx];
   }
 
-  var ctoMarkerOptsOverlay = {
-    radius: 8,
-    fillColor: "#818cf8",
-    color: "#e0e7ff",
-    weight: 2,
-    opacity: 1,
-    fillOpacity: 0.9,
-  };
+  function pathStyleOverlayFactory(colors) {
+    return function (feature) {
+      var t = feature && feature.geometry && feature.geometry.type;
+      if (t === "Point" || t === "MultiPoint") {
+        return {
+          radius: 5,
+          fillColor: colors.point,
+          color: "#fff",
+          weight: 1,
+          opacity: 1,
+          fillOpacity: 0.9,
+        };
+      }
+      return {
+        color: colors.line,
+        weight: 5,
+        opacity: 0.92,
+        lineCap: "round",
+        lineJoin: "round",
+        dashArray: "10 6",
+      };
+    };
+  }
 
   function refitMapAllLayers() {
     if (!gisMap) return;
@@ -790,26 +812,37 @@
     var gj = payload.gis && payload.gis.ok ? payload.gis.geojson : null;
     var markers = payload.cto_markers || [];
     var map = gisMap || ensureMap();
+    var colorPack = _ltOverlayColorPack(ltKey);
+    var overlayStyle = pathStyleOverlayFactory(colorPack);
+    var ctoMarkerOptsOverlay = {
+      radius: 8,
+      fillColor: colorPack.point,
+      color: "#e0e7ff",
+      weight: 2,
+      opacity: 1,
+      fillOpacity: 0.9,
+    };
     var pathLayer = null;
     if (gj && gj.features && gj.features.length) {
       try {
         pathLayer = L.geoJSON(gj, {
-          style: pathStyleOverlay,
+          style: overlayStyle,
           filter: function (feature) {
             return !!(feature && feature.geometry && caminoCiOpFeatEsTrazado(feature));
           },
           pointToLayer: function (feature, latlng) {
-            return L.circleMarker(latlng, pathStyleOverlay(feature));
+            return L.circleMarker(latlng, overlayStyle(feature));
           },
         });
         pathLayer.addTo(map);
-        attachCaminoPathHover(pathLayer, pathStyleOverlay, "#c4b5fd");
+        attachCaminoPathHover(pathLayer, overlayStyle, colorPack.hover);
       } catch (_e) {}
     }
     var mLayer = L.layerGroup();
     markers.forEach(function (m) {
       if (m.lat == null || m.lon == null) return;
       var ll = normalizeCtoLatLon(m.lat, m.lon);
+      var coordText = caminoCoordTextFromLatLon(m.lat, m.lon);
       var cm = L.circleMarker([ll.lat, ll.lon], ctoMarkerOptsOverlay);
       var addrRaw = m.direccion_postal && String(m.direccion_postal).trim();
       var addrBlock = "";
@@ -828,10 +861,19 @@
         esc(String(m.cto)) +
         "</strong></div>" +
         addrBlock +
+        (coordText
+          ? '<div class="camino-popup-cto__coords mono" title="Latitud, Longitud">' +
+            esc(coordText) +
+            "</div>"
+          : "") +
         '<div class="camino-popup-cto__ont">' +
         esc(String(m.onts)) +
-        " ONT</div></div>";
-      wireCaminoCtoMarker(cm, pop, ctoMarkerOptsOverlay);
+        " ONT</div>" +
+        (coordText
+          ? '<div class="camino-popup-cto__copy muted">Click en el punto para copiar coordenadas</div>'
+          : "") +
+        "</div>";
+      wireCaminoCtoMarker(cm, pop, ctoMarkerOptsOverlay, coordText);
       cm.addTo(mLayer);
     });
     mLayer.addTo(map);
@@ -1112,6 +1154,57 @@
     return { lat: la, lon: lo };
   }
 
+  function formatCaminoCoord(n) {
+    var v = Number(n);
+    if (!isFinite(v)) return "";
+    return v.toFixed(6);
+  }
+
+  function caminoCoordTextFromLatLon(lat, lon) {
+    var ll = normalizeCtoLatLon(lat, lon);
+    var latTxt = formatCaminoCoord(ll.lat);
+    var lonTxt = formatCaminoCoord(ll.lon);
+    if (!latTxt || !lonTxt) return "";
+    return latTxt + ", " + lonTxt;
+  }
+
+  function copyCaminoText(text) {
+    if (!text) return Promise.reject(new Error("Texto vacío"));
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(text);
+    }
+    return new Promise(function(resolve, reject){
+      try {
+        var ta = document.createElement("textarea");
+        ta.value = text;
+        ta.setAttribute("readonly", "readonly");
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        ta.style.pointerEvents = "none";
+        document.body.appendChild(ta);
+        ta.select();
+        var ok = document.execCommand("copy");
+        document.body.removeChild(ta);
+        if (ok) resolve();
+        else reject(new Error("No se pudo copiar"));
+      } catch (e) {
+        reject(e);
+      }
+    });
+  }
+
+  var _caminoToastTid = null;
+  function caminoToast(msg) {
+    var el = document.getElementById("toast-camino");
+    if (!el) return;
+    el.textContent = msg || "";
+    el.classList.add("show");
+    if (_caminoToastTid) clearTimeout(_caminoToastTid);
+    _caminoToastTid = setTimeout(function () {
+      el.classList.remove("show");
+    }, 1600);
+  }
+
   var ctoMarkerOpts = {
     radius: 10,
     fillColor: "#f97316",
@@ -1144,7 +1237,7 @@
     };
   }
 
-  function wireCaminoCtoMarker(cm, popHtml, styleBase) {
+  function wireCaminoCtoMarker(cm, popHtml, styleBase, coordText) {
     var base = {};
     for (var k in styleBase) {
       if (Object.prototype.hasOwnProperty.call(styleBase, k)) {
@@ -1153,7 +1246,8 @@
     }
     cm._caminoCtoBaseOpts = base;
     cm._caminoCtoHoverOpts = caminoCtoMarkerHoverStyle(base);
-    cm.bindPopup(popHtml);
+    // Usamos tooltip para el hover; evitamos bindPopup para que el click no abra
+    // una segunda ventana.
     cm.bindTooltip(popHtml, {
       direction: "top",
       opacity: 0.96,
@@ -1168,6 +1262,16 @@
     });
     cm.on("mouseout", function () {
       cm.setStyle(cm._caminoCtoBaseOpts);
+    });
+    cm.on("click", function () {
+      if (!coordText) return;
+      copyCaminoText(coordText)
+        .then(function () {
+          caminoToast("Coordenadas copiadas");
+        })
+        .catch(function () {
+          caminoToast("No se pudo copiar");
+        });
     });
   }
 
@@ -1450,6 +1554,7 @@
       markers.forEach(function(m){
         if (m.lat == null || m.lon == null) return;
         var ll = normalizeCtoLatLon(m.lat, m.lon);
+        var coordText = caminoCoordTextFromLatLon(m.lat, m.lon);
         var focal = !!m.focal;
         var opts = focal ? ctoMarkerFocalOpts : ctoMarkerOpts;
         var cm = L.circleMarker([ll.lat, ll.lon], opts);
@@ -1470,10 +1575,19 @@
           esc(m.cto) +
           "</strong></div>" +
           addrBlock +
+          (coordText
+            ? '<div class="camino-popup-cto__coords mono" title="Latitud, Longitud">' +
+              esc(coordText) +
+              "</div>"
+            : "") +
           '<div class="camino-popup-cto__ont">' +
           esc(String(m.onts)) +
-          " ONT</div></div>";
-        wireCaminoCtoMarker(cm, pop, opts);
+          " ONT</div>" +
+          (coordText
+            ? '<div class="camino-popup-cto__copy muted">Click en el punto para copiar coordenadas</div>'
+            : "") +
+          "</div>";
+        wireCaminoCtoMarker(cm, pop, opts, coordText);
         cm.addTo(gisCtoLayer);
       });
       gisCtoLayer.addTo(map);
@@ -1576,5 +1690,7 @@ window.addEventListener("load", function () {
   }
 });
 </script>
+
+<div id="toast-camino" class="toast" role="status" aria-live="polite"></div>
 </body>
 </html>

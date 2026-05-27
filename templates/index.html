@@ -581,7 +581,7 @@ window.__CONSULTA_INDEX_CFG__ = {
         <table class="table-kv">
           <tr><th>AID</th><td id="{{ sec }}-aid-value" class="mono">{{ c.resultado.AID }}</td></tr>
           <tr><th>Operador</th><td id="{{ sec }}-operador-value">{{ c.resultado.OPERADOR }}</td></tr>
-          <tr><th>Status</th><td>{{ c.resultado.Status }}</td></tr>
+          <tr><th>Status</th><td id="{{ sec }}-status-value">{{ c.resultado.Status }}</td></tr>
           <tr><th>CTO</th><td class="mono">{{ c.resultado.CTO }}</td></tr>
           <tr><th>RAMA</th><td class="mono">{{ c.resultado.RAMA or "—" }}</td></tr>
           <tr id="{{ sec }}-ont-single-row" hidden><th>ONT</th><td id="{{ sec }}-ont-value" class="mono">{{ c.resultado.ONT or "—" }}</td></tr>
@@ -635,7 +635,7 @@ window.__CONSULTA_INDEX_CFG__ = {
             <td>{{ r.PRINCIPAL }}</td>
             <td class="mono">{{ r.RAMA or "—" }}</td>
             <td class="mono">{{ r.ONT }}</td>
-            <td>{{ st }}</td>
+            <td data-status-cell="1">{{ st }}</td>
             {{ index_potencias_cells(sec, r.AID, st) }}
           </tr>
           {% endfor %}
@@ -731,7 +731,7 @@ window.__CONSULTA_INDEX_CFG__ = {
               <td>{% if st == 'FREE' %}-{% else %}{{ r.OPERADOR }}{% endif %}</td>
               <td>{{ r.PRINCIPAL or "—" }}</td>
               <td class="mono">{{ r.ONT }}</td>
-              <td>{{ st }}</td>
+              <td data-status-cell="1">{{ st }}</td>
               {{ index_potencias_cells(sec, r.AID, st) }}
             </tr>
             {% endfor %}
