@@ -4,7 +4,6 @@ from collections import defaultdict
 from typing import Any
 from datetime import date, datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from itertools import groupby
 
 from config import get_altiplano_power_cto_workers
 from db import db_cursor
@@ -1127,7 +1126,10 @@ def _potencias_desde_grupos_cto_paralelo(rows, *, carga_masiva: bool = False) ->
     """Agrupa filas por CTO y consulta Altiplano en paralelo (varios CTO por RAMA)."""
     if not rows:
         return []
-    grupos = [list(g) for _, g in groupby(rows, key=lambda r: r[2])]
+    por_cto: dict[str, list] = defaultdict(list)
+    for row in rows:
+        por_cto[str(row[2])].append(row)
+    grupos = list(por_cto.values())
     if len(grupos) <= 1:
         return _potencias_desde_filas_ont_cto(grupos[0], carga_masiva=carga_masiva) if grupos else []
 
@@ -1465,7 +1467,10 @@ def _altiplano_potencias_grupos_cto_paralelo(rows) -> list[dict]:
     """Varias CTO en la misma RAMA: consulta Altiplano en paralelo (como `consultar_rama_potencias`)."""
     if not rows:
         return []
-    grupos = [list(g) for _, g in groupby(rows, key=lambda r: r[2])]
+    por_cto: dict[str, list] = defaultdict(list)
+    for row in rows:
+        por_cto[str(row[2])].append(row)
+    grupos = list(por_cto.values())
     if len(grupos) <= 1:
         return _altiplano_potencias_por_ont_desde_filas_cto(grupos[0]) if grupos else []
 

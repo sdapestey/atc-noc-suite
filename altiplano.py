@@ -6524,28 +6524,43 @@ def _ont_gpon_interface_suffix(object_name_raw: str) -> str:
     return f"v1~{onu}_GPON"
 
 
+def _ont_gpon_interface_suffixes(object_name_raw: str) -> list[str]:
+    """Sufijos GPON válidos en alarmas (compat ``v1`` y ``v2``)."""
+    onu = normalizar_object_name(str(object_name_raw or "").strip())
+    if not onu:
+        return []
+    return [f"v1~{onu}_GPON", f"v2~{onu}_GPON"]
+
+
 def _alarm_resource_raw_paths(ne: str, object_name_raw: str) -> list[str]:
     """Rutas ``alarmResource.raw`` usadas por Network Views (HAR / AC INP)."""
     ne_val = str(ne or "").strip()
-    gpon = _ont_gpon_interface_suffix(object_name_raw)
-    if not ne_val or not gpon:
+    gpon_list = _ont_gpon_interface_suffixes(object_name_raw)
+    if not ne_val or not gpon_list:
         return []
     prefix = (
         f"/anv:device-manager/anv-device-holders:device={ne_val}/"
         "device-specific-data"
     )
     onu_key = normalizar_object_name(str(object_name_raw or "").strip())
-    paths = [
-        f"{prefix}/ietf-interfaces:interfaces/interface={gpon}",
-        f"{prefix}/bbf-fiber-onu-emulated-mount:onus/onu={gpon}",
-        f"{prefix}/bbf-fiber-onu-emulated-mount:onus/onu={gpon}/root/"
-        "ietf-hardware-mounted:hardware/component=ANIPORT",
-        f"{prefix}/bbf-fiber-onu-emulated-mount:onus/onu={gpon}/root/"
-        "ietf-hardware-mounted:hardware/component=CHASSIS",
-    ]
+    paths: list[str] = []
+    for gpon in gpon_list:
+        paths.extend(
+            [
+                f"{prefix}/ietf-interfaces:interfaces/interface={gpon}",
+                f"{prefix}/bbf-fiber-onu-emulated-mount:onus/onu={gpon}",
+                f"{prefix}/bbf-fiber-onu-emulated-mount:onus/onu={gpon}/root/"
+                "ietf-hardware-mounted:hardware/component=ANIPORT",
+                f"{prefix}/bbf-fiber-onu-emulated-mount:onus/onu={gpon}/root/"
+                "ietf-hardware-mounted:hardware/component=CHASSIS",
+            ]
+        )
     if onu_key:
         paths.append(
             f"{prefix}/bbf-fiber-onu-emulated-mount:onus/onu=v1~{onu_key}_GPON"
+        )
+        paths.append(
+            f"{prefix}/bbf-fiber-onu-emulated-mount:onus/onu=v2~{onu_key}_GPON"
         )
     return paths
 
@@ -6555,9 +6570,9 @@ def _build_alarmas_activas_search_query(ne: str, object_name_raw: str) -> dict |
     if not paths:
         return None
     should: list[dict] = [{"match": {"alarmResource.raw": p}} for p in paths]
-    gpon = _ont_gpon_interface_suffix(object_name_raw)
+    gpon_list = _ont_gpon_interface_suffixes(object_name_raw)
     onu_key = normalizar_object_name(str(object_name_raw or "").strip())
-    if gpon:
+    for gpon in gpon_list:
         should.append({"wildcard": {"alarmResource.raw": f"*{gpon}*"}})
     if onu_key:
         should.append({"wildcard": {"alarmResourceUiName": f"*{onu_key}_GPON*"}})

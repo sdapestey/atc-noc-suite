@@ -870,7 +870,7 @@
         esc(String(m.onts)) +
         " ONT</div>" +
         (coordText
-          ? '<div class="camino-popup-cto__copy muted">Click en el punto para copiar coordenadas</div>'
+          ? '<div class="camino-popup-cto__copy muted">Click en la CTO para copiar coordenadas</div>'
           : "") +
         "</div>";
       wireCaminoCtoMarker(cm, pop, ctoMarkerOptsOverlay, coordText);
@@ -1267,7 +1267,7 @@
       if (!coordText) return;
       copyCaminoText(coordText)
         .then(function () {
-          caminoToast("Coordenadas copiadas");
+          caminoToast("Coordenadas copiadas al portapapeles");
         })
         .catch(function () {
           caminoToast("No se pudo copiar");

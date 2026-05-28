@@ -48,10 +48,11 @@ function aplicarFiltrosConsulta() {
   const st = _normFatStatus(_activeFatStatus);
   document.querySelectorAll("tr[data-operador]").forEach(row => {
     const rop = row.dataset.operador || "";
+    const canonOp = _canonicalOperadorConsulta(rop);
     const rst = _normFatStatus(row.dataset.fatStatus);
     const opOk =
       op === "ALL" ||
-      (_canonicalOperadorConsulta(rop) && _canonicalOperadorConsulta(rop) === op);
+      (canonOp && canonOp === op);
     const stOk = st === "ALL" || rst === st;
     row.style.display = opOk && stOk ? "" : "none";
   });

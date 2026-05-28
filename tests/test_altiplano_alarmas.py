@@ -33,6 +33,23 @@ def test_build_alarmas_activas_search_query_incluye_interface_y_onu():
     assert any("wildcard" in s for s in should_all)
 
 
+def test_build_alarmas_activas_search_query_incluye_variantes_v2():
+    import altiplano
+
+    q = altiplano._build_alarmas_activas_search_query(
+        "BA_OLTA_SF01_01.LT8", "BA_OLTA_SF01_01-8-12-1"
+    )
+    assert q is not None
+    should_paths = q["query"]["bool"]["must"][1]["bool"]["should"]
+    wild_raw = [
+        s["wildcard"]["alarmResource.raw"]
+        for s in should_paths
+        if "wildcard" in s and "alarmResource.raw" in s["wildcard"]
+    ]
+    assert any("v1~BA_OLTA_SF01_01-8-12-1_GPON" in p for p in wild_raw)
+    assert any("v2~BA_OLTA_SF01_01-8-12-1_GPON" in p for p in wild_raw)
+
+
 def test_parse_alarmas_activas_search_body():
     import altiplano
 
