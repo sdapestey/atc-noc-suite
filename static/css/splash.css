@@ -37,6 +37,12 @@
   transition: opacity 0.55s ease;
 }
 
+/* Foco programático (splash.js): sin outline; en Linux GTK Chrome pinta un borde azul a pantalla completa */
+.noc-splash:focus,
+.noc-splash:focus-visible {
+  outline: none;
+}
+
 html[data-theme="light"] .noc-splash {
   color: var(--fg-default);
   background-color: #e8edf5;
