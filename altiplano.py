@@ -5344,20 +5344,86 @@ def _sn_valor_legible(val) -> str | None:
     return s.upper()
 
 
+def _sn_expected_from_ema_entity_body(body: object) -> str | None:
+    """Solo ``expected-serial-number`` en EMA (Network Views → General)."""
+    if not isinstance(body, dict):
+        return None
+    ea = body.get("extraAttributes")
+    if not isinstance(ea, dict):
+        return None
+    return _sn_valor_legible(ea.get("expected-serial-number"))
+
+
 def _sn_from_ema_entity_body(body: object) -> str | None:
     """Expected Serial Number (General en Network Views); fallback a detectado/legacy."""
+    sn = _sn_expected_from_ema_entity_body(body)
+    if sn:
+        return sn
     if not isinstance(body, dict):
         return None
     ea = body.get("extraAttributes")
     if not isinstance(ea, dict):
         return None
     for key in (
-        "expected-serial-number",
         "detected-serial-number",
         "serialNumber",
         "serial-number",
     ):
         sn = _sn_valor_legible(ea.get(key))
+        if sn:
+            return sn
+    return None
+
+
+def _sn_expected_from_ont_intent_body(body: object) -> str | None:
+    """``expected-serial-number`` del intent ``ont`` (RESTCONF ibn:ibn)."""
+    if not isinstance(body, dict):
+        return None
+    intent = body.get("ibn:intent")
+    if not isinstance(intent, dict):
+        return None
+    isd = intent.get("intent-specific-data")
+    if not isinstance(isd, dict):
+        return None
+    ont_block = isd.get("ont:ont")
+    if not isinstance(ont_block, dict):
+        return None
+    return _sn_valor_legible(ont_block.get("expected-serial-number"))
+
+
+def _fetch_expected_sn_ont_intent_restconf(
+    access_id: str,
+    object_name_raw: str,
+    operator_id,
+    *,
+    ne: str,
+) -> str | None:
+    """
+    Expected Serial desde intent ``ont`` cuando EMA devuelve ``Undefined`` o vacío.
+
+    Misma fuente que la GUI al editar SN (``GET …/intent=<device>,ont``).
+    """
+    ont_target = normalizar_object_name(str(object_name_raw or "").strip())
+    if not ont_target:
+        return None
+    intent_key = quote(ont_target, safe="")
+    for vno, auth_url, user, pwd in _power_auth_contexts(operator_id):
+        base_host = auth_url.split("/")[2]
+        url = (
+            f"https://{base_host}/{vno}-altiplano-ac/rest/restconf/data/"
+            f"ibn:ibn/intent={intent_key},ont"
+        )
+        body = _http_get_altiplano_json(
+            url,
+            auth_url,
+            access_id=str(access_id or "").strip(),
+            ne=str(ne or "").strip(),
+            log_label=f"ONT intent expected SN ({vno})",
+            accept="application/yang-data+json",
+            username=user,
+            password=pwd,
+        )
+        sn = _sn_expected_from_ont_intent_body(body)
         if sn:
             return sn
     return None
@@ -6418,7 +6484,7 @@ def _fetch_ont_telemetry_live(
 
         if ema_body:
             if out["sn"] is None:
-                out["sn"] = _sn_from_ema_entity_body(ema_body)
+                out["sn"] = _sn_expected_from_ema_entity_body(ema_body)
             if out["tx"] is None or out["rx"] is None:
                 pair = _potencias_from_ema_entity_body(ema_body)
                 if pair is not None:
@@ -6512,6 +6578,11 @@ def _fetch_ont_telemetry_live(
         out["pon_index"] = pon_info["pon_index"]
     if pon_info.get("channel_partition"):
         out["channel_partition"] = pon_info["channel_partition"]
+
+    if out["sn"] is None:
+        out["sn"] = _fetch_expected_sn_ont_intent_restconf(
+            access_id, object_name_raw, operator_id, ne=ne
+        )
 
     return out
 

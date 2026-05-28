@@ -1038,8 +1038,7 @@ def consultar_access_id_potencias(access_id):
         "AID": aid_canon,
         "TX": tx,
         "RX": rx,
-        # Preferimos SN en vivo desde Altiplano y, si no está disponible,
-        # caemos al SN de inventario (base) para no perder visibilidad.
+        # SN: Expected Serial de Altiplano (EMA o intent ``ont``); inventario solo si no hay lectura.
         "SN": telem.get("sn") or base_sn or None,
         **ont_fields,
     }
