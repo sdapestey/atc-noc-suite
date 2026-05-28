@@ -96,6 +96,7 @@ from services import (
 from services.inp_borrado_cascade import borrar_inp_con_cascada_vno
 from services.tasa_postman_catalog import build_tasa_vno_wizard_context
 from services.tasa_postman_execute import execute_tasa_postman_api
+from services.ftth_toolbox import enviar_cto_ftth_toolbox
 from services.camino_gis import consultar_cto_coordenadas_desde_sfat
 from services.inventory import resolver_target_ont_connection_por_access_id, _access_lookup_token_ok
 
@@ -1310,6 +1311,32 @@ def register(app):
                 "cabecera",
             )
         ):
+            return jsonify(out), 400
+        return jsonify(out), 502
+
+    @app.route("/dashboard/altiplano/vno/cambiar-cto", methods=["POST"])
+    def dash_altiplano_cambiar_cto():
+        """Envía CTO vía Web ToolBox FTTH Norte (SendFTTH, aliado ATC)."""
+        if not _orquestador_session_token():
+            return jsonify({"ok": False, "message": "Sesión requerida"}), 401
+        data = request.get_json(silent=True) or {}
+        cto_id = (data.get("cto_id") or data.get("ctoid") or "").strip()
+        access_id = (data.get("access_id") or data.get("accessid") or "").strip()
+        if not cto_id or not access_id:
+            return (
+                jsonify(
+                    {
+                        "ok": False,
+                        "message": "CTO ID en NFC y Access ID son obligatorios",
+                    }
+                ),
+                400,
+            )
+        out = enviar_cto_ftth_toolbox(cto_id=cto_id, access_id=access_id)
+        if out.get("ok"):
+            return jsonify(out), 200
+        msg = (out.get("message") or "").lower()
+        if "requerido" in msg or "no configurad" in msg or "credenciales" in msg:
             return jsonify(out), 400
         return jsonify(out), 502
 

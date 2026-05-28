@@ -546,7 +546,6 @@
         <button id="alt-vno-tab-iplan" class="dash-segment__btn" type="button" role="tab" aria-selected="false" aria-controls="alt-vno-panel-iplan">IPLAN</button>
         <button id="alt-vno-tab-metrotel" class="dash-segment__btn" type="button" role="tab" aria-selected="false" aria-controls="alt-vno-panel-metrotel">METROTEL</button>
         <button id="alt-vno-tab-sion" class="dash-segment__btn" type="button" role="tab" aria-selected="false" aria-controls="alt-vno-panel-sion">SION</button>
-        <button id="alt-vno-tab-cambio-cto" class="dash-segment__btn dash-segment__btn--warn" type="button" role="tab" aria-selected="false" aria-controls="alt-vno-panel-cambio-cto">CAMBIO DE CTO</button>
       </div>
     </div>
 
@@ -635,6 +634,75 @@
         </div>
         <script type="application/json" id="tasa-postman-apis-json">{{ tasa_postman_apis | tojson }}</script>
       </div>
+
+      <section
+        id="alt-vno-ftth-cto-section"
+        class="altiplano-tasa-ftth-cto altiplano-consulta-shell card suite-index-card consulta-index-card"
+        aria-labelledby="alt-vno-ftth-cto-heading"
+      >
+        <div class="suite-search-surface consulta-search-card altiplano-consulta-panel--search">
+          <div class="orquestador-panel-head suite-panel-head consulta-panel-head orquestador-panel-head--solo-lead">
+            <p id="alt-vno-ftth-cto-heading" class="suite-search-lead consulta-search-lead orquestador-panel-head__main">
+              <strong>Cambio de CTO</strong> — <em>Web ToolBox FTTH</em> (proceso Enviar CTO).
+              Completá <strong>CTO ID en NFC</strong> y <strong>Access ID</strong>; la operación se ejecuta en segundo plano vía ToolBox.
+            </p>
+          </div>
+          <form id="ftth-cto-form" class="search consulta-search-form" novalidate aria-labelledby="alt-vno-ftth-cto-heading">
+            <input type="hidden" id="ftth-cto-tipo" name="tipo" value="cto">
+            <input type="hidden" id="ftth-cto-ally-id" name="ally_id" value="8">
+            <div class="suite-query-row consulta-query-row">
+              <div class="suite-query-row__field altiplano-consulta-grid">
+                <div class="field suite-field consulta-field altiplano-field">
+                  <span class="search-icon" aria-hidden="true">⌕</span>
+                  <label class="sr-only" for="ftth-cto-id">CTO ID en NFC</label>
+                  <input
+                    id="ftth-cto-id"
+                    type="text"
+                    name="cto_id"
+                    placeholder="CTO ID en NFC — ej. 04F5A422505D80"
+                    autocomplete="off"
+                    spellcheck="false"
+                    required
+                  >
+                </div>
+                <div class="field suite-field consulta-field altiplano-field">
+                  <span class="search-icon" aria-hidden="true">⌕</span>
+                  <label class="sr-only" for="ftth-cto-access-id">Access ID</label>
+                  <input
+                    id="ftth-cto-access-id"
+                    type="text"
+                    name="access_id"
+                    inputmode="numeric"
+                    placeholder="Access ID — ej. 1059355238"
+                    autocomplete="off"
+                    spellcheck="false"
+                    required
+                  >
+                </div>
+              </div>
+              <div class="suite-search-actions consulta-search-actions altiplano-consulta-actions">
+                <button type="submit" id="btn-ftth-cto-enviar" class="btn btn-primary">Enviar CTO</button>
+                <button type="button" id="btn-ftth-cto-clear" class="btn btn-ghost">Limpiar</button>
+              </div>
+            </div>
+          </form>
+        </div>
+        <div
+          id="ftth-cto-result"
+          class="panel altiplano-result altiplano-consulta-panel--result"
+          aria-live="polite"
+        >
+          <div id="ftth-cto-result-body">
+            <p class="muted">Ingresá CTO ID y Access ID, luego confirmá el envío.</p>
+          </div>
+        </div>
+        <div id="ftth-cto-busy-overlay" class="altiplano-consulta-result-busy" hidden aria-hidden="true">
+          <span class="altiplano-consulta-loading altiplano-consulta-loading--overlay" role="status">
+            <span class="altiplano-consulta-loading__spinner" aria-hidden="true"></span>
+            <span class="altiplano-consulta-loading__text">Procesando…</span>
+          </span>
+        </div>
+      </section>
     </div>
     <div id="alt-vno-panel-directv" class="panel altiplano-result card suite-index-card" role="tabpanel" aria-labelledby="alt-vno-tab-directv" hidden>
       <div class="suite-search-surface altiplano-work-surface">
@@ -669,15 +737,6 @@
       <div class="suite-search-surface altiplano-work-surface">
         <div class="orquestador-panel-head suite-panel-head consulta-panel-head">
           <p class="suite-search-lead consulta-search-lead orquestador-panel-head__main"><strong>SION</strong> — próximamente.</p>
-          {% include 'partials/orquestador_credit.html' %}
-        </div>
-      </div>
-      <div class="altiplano-panel-inner"><p class="muted suite-note empty-state-note">Esta sección estará disponible en una próxima versión.</p></div>
-    </div>
-    <div id="alt-vno-panel-cambio-cto" class="panel altiplano-result card suite-index-card" role="tabpanel" aria-labelledby="alt-vno-tab-cambio-cto" hidden>
-      <div class="suite-search-surface altiplano-work-surface">
-        <div class="orquestador-panel-head suite-panel-head consulta-panel-head">
-          <p class="suite-search-lead consulta-search-lead orquestador-panel-head__main"><strong>Cambio de CTO</strong> — próximamente.</p>
           {% include 'partials/orquestador_credit.html' %}
         </div>
       </div>
@@ -752,7 +811,6 @@
     { tab: "alt-vno-tab-iplan", panel: "alt-vno-panel-iplan" },
     { tab: "alt-vno-tab-metrotel", panel: "alt-vno-panel-metrotel" },
     { tab: "alt-vno-tab-sion", panel: "alt-vno-panel-sion" },
-    { tab: "alt-vno-tab-cambio-cto", panel: "alt-vno-panel-cambio-cto" },
   ];
 
   function getValue(id) {
@@ -4016,9 +4074,9 @@
     "4010": "alt-vno-tab-metrotel",
     "962": "alt-vno-tab-sion",
     "963": "alt-vno-tab-sion",
-    "2800": "alt-vno-tab-cambio-cto",
-    "2805": "alt-vno-tab-cambio-cto",
-    "2806": "alt-vno-tab-cambio-cto",
+    "2800": "alt-vno-tab-tasa",
+    "2805": "alt-vno-tab-tasa",
+    "2806": "alt-vno-tab-tasa",
   };
 
   function getVnoSelectLabel() {
@@ -4487,6 +4545,180 @@
     });
   }
   setBorradoLotePreview();
+
+  (function wireFtthCambioCto() {
+    var form = document.getElementById("ftth-cto-form");
+    var btnClear = document.getElementById("btn-ftth-cto-clear");
+    var btnSend = document.getElementById("btn-ftth-cto-enviar");
+    var resultPanel = document.getElementById("ftth-cto-result");
+    var resultBody = document.getElementById("ftth-cto-result-body");
+    var ftthShell = document.getElementById("alt-vno-ftth-cto-section");
+    var ftthBusyOverlay = document.getElementById("ftth-cto-busy-overlay");
+    if (!form || !btnSend) return;
+
+    function getFtthCtoValue(id) {
+      var el = document.getElementById(id);
+      return el ? String(el.value || "").trim() : "";
+    }
+
+    function setFtthCtoOverlayMessage(message) {
+      if (!ftthBusyOverlay) return;
+      var textEl = ftthBusyOverlay.querySelector(".altiplano-consulta-loading__text");
+      if (textEl) textEl.textContent = message != null ? String(message) : "Procesando…";
+    }
+
+    function setFtthCtoBusy(busy, message) {
+      var on = !!busy;
+      if (ftthShell) ftthShell.classList.toggle("altiplano-consulta-shell--busy", on);
+      if (resultPanel) resultPanel.classList.toggle("altiplano-consulta-result--busy", on);
+      if (ftthBusyOverlay) {
+        ftthBusyOverlay.hidden = !on;
+        ftthBusyOverlay.style.display = on ? "flex" : "none";
+        ftthBusyOverlay.setAttribute("aria-hidden", on ? "false" : "true");
+      }
+      if (on && message != null) setFtthCtoOverlayMessage(message);
+      else if (!on) setFtthCtoOverlayMessage("Procesando…");
+      btnSend.disabled = on;
+      if (btnClear) btnClear.disabled = on;
+    }
+
+    function renderFtthCtoResult(ok, payload) {
+      if (!resultBody) return;
+      var msg = (payload && payload.message) || (ok ? "OK" : "Error");
+      var code =
+        payload && payload.toolbox_code != null && String(payload.toolbox_code) !== ""
+          ? String(payload.toolbox_code)
+          : "";
+      var html =
+        "<p><strong>" + (ok ? "Éxito" : "Error") + ":</strong> " + escHtml(msg) + "</p>";
+      if (code) {
+        html +=
+          '<p class="muted">Código ToolBox: <code class="inline-code">' +
+          escHtml(code) +
+          "</code></p>";
+      }
+      if (payload && payload.toolbox_raw_response) {
+        var raw =
+          typeof payload.toolbox_raw_response === "string"
+            ? payload.toolbox_raw_response
+            : JSON.stringify(payload.toolbox_raw_response, null, 2);
+        if (raw && raw !== "null") {
+          html +=
+            '<pre class="altiplano-result-pre">' + escHtml(String(raw).slice(0, 4000)) + "</pre>";
+        }
+      }
+      resultBody.innerHTML = html;
+      if (resultPanel) {
+        resultPanel.classList.toggle("ftth-cto-result--ok", !!ok);
+        resultPanel.classList.toggle("ftth-cto-result--err", !ok);
+      }
+    }
+
+    function showFtthCtoFinishedDialog(ok, payload) {
+      var msg = (payload && payload.message) || (ok ? "CTO enviado correctamente." : "No se pudo completar el envío.");
+      var code =
+        payload && payload.toolbox_code != null && String(payload.toolbox_code) !== ""
+          ? String(payload.toolbox_code)
+          : "";
+      var detail = code ? "Código ToolBox: " + code : "";
+      if (ok) {
+        consultaToast(msg, { variant: "success" });
+        return altiplanoResultDialog({
+          title: "CTO enviado",
+          message: msg,
+          okLabel: "Cerrar",
+        });
+      }
+      return altiplanoResultDialog({
+        title: "Error al enviar CTO",
+        message: msg,
+        detail: detail,
+        variant: "error",
+        okLabel: "Cerrar",
+      });
+    }
+
+    function runFtthCambioCto(ctoId, accessId) {
+      setFtthCtoBusy(true, "Procesando…");
+      if (resultBody) {
+        if (resultPanel) {
+          resultPanel.classList.remove("ftth-cto-result--ok", "ftth-cto-result--err");
+        }
+        resultBody.innerHTML = '<p class="muted">Procesando envío en ToolBox FTTH Norte…</p>';
+      }
+      fetch("/dashboard/altiplano/vno/cambiar-cto", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ cto_id: ctoId, access_id: accessId }),
+      })
+        .then(parseJsonResponse)
+        .then(function (pack) {
+          if (pack.status === 401) {
+            window.location.reload();
+            return;
+          }
+          var j = pack.payload || {};
+          var ok = !!(pack.okHttp && j.ok);
+          renderFtthCtoResult(ok, j);
+          return showFtthCtoFinishedDialog(ok, j);
+        })
+        .catch(function (err) {
+          var fail = {
+            message: err && err.message ? err.message : "Error de red al enviar CTO",
+          };
+          renderFtthCtoResult(false, fail);
+          return showFtthCtoFinishedDialog(false, fail);
+        })
+        .finally(function () {
+          setFtthCtoBusy(false);
+        });
+    }
+
+    form.addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var ctoId = getFtthCtoValue("ftth-cto-id");
+      var accessId = getFtthCtoValue("ftth-cto-access-id");
+      if (!ctoId || !accessId) {
+        renderFtthCtoResult(false, {
+          message: "Completá CTO ID en NFC y Access ID antes de enviar.",
+        });
+        altiplanoResultDialog({
+          title: "Datos incompletos",
+          message: "Completá CTO ID en NFC y Access ID antes de enviar.",
+          variant: "warning",
+          okLabel: "Entendido",
+        });
+        return;
+      }
+      altiplanoConfirm({
+        title: "¿Enviar cambio de CTO?",
+        message: "Se enviará la solicitud al mantenedor Web ToolBox FTTH Norte.",
+        items: ["CTO ID: " + ctoId, "Access ID: " + accessId],
+        confirmLabel: "Enviar CTO",
+      }).then(function (ok) {
+        if (!ok) return;
+        runFtthCambioCto(ctoId, accessId);
+      });
+    });
+
+    if (btnClear) {
+      btnClear.addEventListener("click", function () {
+        var ctoEl = document.getElementById("ftth-cto-id");
+        var aidEl = document.getElementById("ftth-cto-access-id");
+        if (ctoEl) ctoEl.value = "";
+        if (aidEl) aidEl.value = "";
+        if (resultBody) {
+          resultBody.innerHTML =
+            '<p class="muted">Ingresá CTO ID y Access ID, luego confirmá el envío.</p>';
+        }
+        if (resultPanel) {
+          resultPanel.classList.remove("ftth-cto-result--ok", "ftth-cto-result--err");
+        }
+      });
+    }
+  })();
+
   if (btnLogout) {
     btnLogout.addEventListener("click", function () {
       btnLogout.disabled = true;

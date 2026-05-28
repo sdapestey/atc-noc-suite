@@ -404,6 +404,75 @@ def _dict_detalle_desde_bajada_inventario_row(row, aid: str) -> dict:
     }
 
 
+def _live_altiplano_device_y_expected_sn(
+    aid: str,
+    *,
+    object_name_pg: str | None = None,
+    operator_id_pg: int | None = None,
+) -> tuple[str | None, str | None, int | None]:
+    """
+    Device name (INP ``search-intents``) y Expected Serial en vivo.
+
+    Returns:
+        ``(object_name, sn, operator_id)``; cada campo puede ser ``None`` si Altiplano no responde.
+    """
+    aid_s = (aid or "").strip()
+    if not aid_s:
+        return None, None, None
+    try:
+        from altiplano import (
+            _fetch_expected_sn_live,
+            _ne_from_object_name_raw,
+            resolver_ont_connection_inp_por_access_id,
+        )
+
+        inp_hit = resolver_ont_connection_inp_por_access_id(aid_s)
+        op_id = operator_id_pg
+        if inp_hit:
+            obj = (
+                inp_hit.get("object_name_ui") or inp_hit.get("object_name") or ""
+            ).strip()
+            op_inp = inp_hit.get("operator_id")
+            if op_inp is not None:
+                op_id = op_inp
+            if not obj:
+                return None, None, op_id
+            ne = _ne_from_object_name_raw(obj)
+            sn = _fetch_expected_sn_live(aid_s, obj, op_id, ne=ne) if ne else None
+            return obj, sn, op_id
+
+        obj_pg = (str(object_name_pg).strip() if object_name_pg else "") or ""
+        if not obj_pg:
+            return None, None, op_id
+        ne = _ne_from_object_name_raw(obj_pg)
+        sn = _fetch_expected_sn_live(aid_s, obj_pg, op_id, ne=ne) if ne else None
+        return None, sn, op_id
+    except Exception:
+        logger.exception("_live_altiplano_device_y_expected_sn aid=%s", aid_s)
+        return None, None, operator_id_pg
+
+
+def _priorizar_altiplano_en_detalle(det: dict) -> dict:
+    """ONT y SN en vivo (Altiplano); si no hay lectura, conserva valores Postgres del detalle."""
+    if not det:
+        return det
+    st = str(det.get("Status") or "").strip().upper()
+    if st in _SIN_POTENCIAS_STATUS:
+        return det
+    aid = str(det.get("AID") or "").strip()
+    if not aid:
+        return det
+    obj_pg = str(det.get("ONT") or "").strip()
+    if obj_pg in ("", "—"):
+        obj_pg = ""
+    obj_live, sn_live, _op = _live_altiplano_device_y_expected_sn(aid, object_name_pg=obj_pg or None)
+    if obj_live:
+        det["ONT"] = obj_live
+    if sn_live:
+        det["SN"] = sn_live
+    return det
+
+
 def _enrich_detalle_con_inventario_activo(det: dict, aid: str) -> dict:
     """Completa operador/ONT/SN desde inventario FAT cuando aux.bajada_inventario viene incompleto."""
     try:
@@ -452,7 +521,8 @@ def consultar_access_id_detalle_desde_bajada_inventario(access_id: str) -> dict 
         return None
 
     det = _dict_detalle_desde_bajada_inventario_row(row, aid)
-    return _enrich_detalle_con_inventario_activo(det, det["AID"])
+    det = _enrich_detalle_con_inventario_activo(det, det["AID"])
+    return _priorizar_altiplano_en_detalle(det)
 
 
 def _dict_baja_desde_bajas_aux_row(row, has_cm: bool, aid: str, fuente_baja: str) -> dict:
@@ -961,15 +1031,15 @@ def consultar_access_id_potencias(access_id):
     """Consulta TX/RX y SN (Expected Serial Number en Altiplano) de un Access ID puntual.
 
     Flujo:
-    1) Resuelve AID (inventario activo o solo aux.bajada_inventario).
-    2) Obtiene ``object_name`` (inventario o bajada si en activo viene NULL).
-    3) Consulta Altiplano (RESTCONF + API EMA / AC INP como la GUI).
+    1) Resuelve AID (inventario activo o aux.bajada_inventario) para fallback Postgres.
+    2) Device name y Expected SN en vivo: INP ``search-intents`` + intent/EMA operador.
+    3) TX/RX y alarmas sobre la ONT Altiplano; si no hay SN/ONT en vivo, usa Postgres.
 
     Args:
         access_id: Access ID a consultar.
 
     Returns:
-        Dict con `AID`, `TX`, `RX` y `SN` (Expected Serial Number vía EMA si está disponible).
+        Dict con `AID`, `TX`, `RX`, `SN`, `ONT` (Altiplano si existe) y comparación Postgres.
     """
     aid_in = str(access_id or "").strip()
     base = consultar_access_id_estructura(access_id)
@@ -985,13 +1055,16 @@ def consultar_access_id_potencias(access_id):
         status = ""
 
     obj_pg, op_id_pg = _resolver_object_name_operator_potencias(aid_canon, cto)
+    obj_live, sn_live, op_id_live = _live_altiplano_device_y_expected_sn(
+        aid_canon, object_name_pg=obj_pg, operator_id_pg=op_id_pg
+    )
     inp_hit = None
-    try:
-        from altiplano import resolver_ont_connection_inp_por_access_id
-
-        inp_hit = resolver_ont_connection_inp_por_access_id(aid_canon)
-    except Exception:
-        logger.exception("consultar_access_id_potencias: resolver INP por Access ID")
+    if obj_live:
+        inp_hit = {
+            "object_name": obj_live,
+            "object_name_ui": obj_live,
+            "operator_id": op_id_live,
+        }
 
     ont_pg = _ont_postgres_para_compare(aid_canon, cto, base, obj_pg)
     ont_alt = _ont_altiplano_para_compare(inp_hit)
@@ -1011,14 +1084,8 @@ def consultar_access_id_potencias(access_id):
             **ont_fields,
         }
 
-    obj, op_id = obj_pg, op_id_pg
-    if inp_hit:
-        obj_inp = (inp_hit.get("object_name") or "").strip()
-        if obj_inp:
-            obj = obj_inp
-        op_inp = inp_hit.get("operator_id")
-        if op_inp is not None:
-            op_id = op_inp
+    obj = obj_live or obj_pg
+    op_id = op_id_live if op_id_live is not None else op_id_pg
     if not obj or op_id is None:
         return {
             "AID": aid_canon or access_id,
@@ -1038,8 +1105,8 @@ def consultar_access_id_potencias(access_id):
         "AID": aid_canon,
         "TX": tx,
         "RX": rx,
-        # SN: Expected Serial de Altiplano (EMA o intent ``ont``); inventario solo si no hay lectura.
-        "SN": telem.get("sn") or base_sn or None,
+        # SN: Expected Serial en vivo; Postgres solo si Altiplano no devuelve lectura.
+        "SN": telem.get("sn") or sn_live or base_sn or None,
         **ont_fields,
     }
     out["ALARMAS"] = obtener_alarmas_ont_activas(aid_canon, obj, op_id)

@@ -5391,6 +5391,84 @@ def _sn_expected_from_ont_intent_body(body: object) -> str | None:
     return _sn_valor_legible(ont_block.get("expected-serial-number"))
 
 
+def _is_inp_power_vno(vno: str, auth_url: str) -> bool:
+    """True si el contexto de auth es la AC INP (no el VNO retail del operador)."""
+    if (vno or "").strip().lower() == "inp":
+        return True
+    return "inp-altiplano-ac" in (auth_url or "").lower()
+
+
+def _fetch_expected_sn_live(
+    access_id: str,
+    object_name_raw: str,
+    operator_id,
+    *,
+    ne: str,
+) -> str | None:
+    """
+    Expected Serial Number en tiempo real (misma prioridad que la GUI).
+
+    Orden: intent RESTCONF ``ont`` → EMA ``expected-serial-number`` (VNO operador)
+    → EMA expected (INP). No usa ``detected-serial-number``.
+    """
+    obj = str(object_name_raw or "").strip()
+    ne_val = (ne or "").strip() or (_ne_from_object_name_raw(obj) if obj else "")
+    if not obj or not ne_val:
+        return None
+
+    sn = _fetch_expected_sn_ont_intent_restconf(
+        access_id, obj, operator_id, ne=ne_val
+    )
+    if sn:
+        return sn
+
+    for vno, auth_url, user, pwd in _power_auth_contexts(operator_id):
+        if _is_inp_power_vno(vno, auth_url):
+            continue
+        base_host = auth_url.split("/")[2]
+        ema_body = _http_get_ema_entity_try_versions(
+            base_host,
+            vno,
+            ne_val,
+            obj,
+            auth_url,
+            access_id=str(access_id or "").strip(),
+            log_label=f"EMA expected SN ({vno})",
+            fetch_device_attributes=True,
+            is_one=True,
+            username=user,
+            password=pwd,
+        )
+        if ema_body:
+            sn = _sn_expected_from_ema_entity_body(ema_body)
+            if sn:
+                return sn
+
+    for vno, auth_url, user, pwd in _power_auth_contexts(operator_id):
+        if not _is_inp_power_vno(vno, auth_url):
+            continue
+        base_host = auth_url.split("/")[2]
+        ema_body = _http_get_ema_entity_try_versions(
+            base_host,
+            vno,
+            ne_val,
+            obj,
+            auth_url,
+            access_id=str(access_id or "").strip(),
+            log_label=f"EMA expected SN INP ({vno})",
+            fetch_device_attributes=True,
+            is_one=True,
+            username=user,
+            password=pwd,
+        )
+        if ema_body:
+            sn = _sn_expected_from_ema_entity_body(ema_body)
+            if sn:
+                return sn
+
+    return None
+
+
 def _fetch_expected_sn_ont_intent_restconf(
     access_id: str,
     object_name_raw: str,
@@ -6483,8 +6561,6 @@ def _fetch_ont_telemetry_live(
             onu_detected_ts = _newest_altiplano_iso_timestamp(onu_detected_ts, ts)
 
         if ema_body:
-            if out["sn"] is None:
-                out["sn"] = _sn_expected_from_ema_entity_body(ema_body)
             if out["tx"] is None or out["rx"] is None:
                 pair = _potencias_from_ema_entity_body(ema_body)
                 if pair is not None:
@@ -6539,7 +6615,6 @@ def _fetch_ont_telemetry_live(
         if (
             out["tx"] is not None
             and out["rx"] is not None
-            and out["sn"]
             and out["oper"]
             and out["admin"]
             and out["health"]
@@ -6579,10 +6654,9 @@ def _fetch_ont_telemetry_live(
     if pon_info.get("channel_partition"):
         out["channel_partition"] = pon_info["channel_partition"]
 
-    if out["sn"] is None:
-        out["sn"] = _fetch_expected_sn_ont_intent_restconf(
-            access_id, object_name_raw, operator_id, ne=ne
-        )
+    out["sn"] = _fetch_expected_sn_live(
+        access_id, object_name_raw, operator_id, ne=ne
+    )
 
     return out
 
@@ -6826,11 +6900,16 @@ def obtener_sn_ont(
     *,
     ne: str | None = None,
 ) -> str | None:
-    """Serial number (detectado) desde API EMA de Altiplano."""
-    telem = obtener_telemetry_ont(
-        access_id, object_name_raw, operator_id, ne=ne
+    """Expected Serial Number en vivo (intent / EMA); sin fallback a detectado."""
+    obj = str(object_name_raw or "").strip()
+    if not obj:
+        return None
+    ne_val = (ne or "").strip() or _ne_from_object_name_raw(obj)
+    if not ne_val:
+        return None
+    sn = _fetch_expected_sn_live(
+        str(access_id or "").strip(), obj, operator_id, ne=ne_val
     )
-    sn = telem.get("sn")
     return str(sn).strip().upper() if sn else None
 
 

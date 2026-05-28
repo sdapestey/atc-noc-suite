@@ -4374,6 +4374,41 @@ html[data-theme="light"] .dash-segment__btn:hover:not(.is-active):not([aria-sele
   margin-bottom: 0;
 }
 
+.page-altiplano .altiplano-tasa-ftth-cto {
+  margin-top: 18px;
+  position: relative;
+}
+
+.page-altiplano .altiplano-tasa-ftth-cto .orquestador-panel-head--solo-lead {
+  padding-right: 0;
+  min-height: 0;
+}
+
+#alt-vno-ftth-cto-section.altiplano-consulta-shell .suite-query-row__field.altiplano-consulta-grid {
+  margin-bottom: 0;
+}
+
+#alt-vno-ftth-cto-section .ftth-cto-result--ok {
+  border-left: 3px solid var(--success);
+}
+
+#alt-vno-ftth-cto-section .ftth-cto-result--err {
+  border-left: 3px solid var(--danger);
+}
+
+#alt-vno-ftth-cto-section .altiplano-result-pre {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  font-size: 12px;
+  max-height: 220px;
+  overflow: auto;
+  background: var(--canvas-inset);
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .altiplano-tasa-layout {
   display: grid;
   grid-template-columns: minmax(260px, 300px) 1fr;

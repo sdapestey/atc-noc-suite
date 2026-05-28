@@ -385,6 +385,22 @@ def get_noc_wiki_url() -> str:
     return raw or default
 
 
+def get_ftth_toolbox_config() -> dict[str, str]:
+    """Credenciales y URL base para Web ToolBox FTTH Norte (cambio de CTO vía SendFTTH)."""
+    base = os.environ.get(
+        "FTTH_TOOLBOX_BASE_URL", "https://ar-toolbox.simpledatacorp.com"
+    ).strip().rstrip("/")
+    user = os.environ.get("FTTH_TOOLBOX_USER", "").strip()
+    password = os.environ.get("FTTH_TOOLBOX_PASSWORD", "").strip()
+    ally_atc = os.environ.get("FTTH_TOOLBOX_ALLY_ATC_ID", "8").strip() or "8"
+    return {
+        "base_url": base,
+        "user": user,
+        "password": password,
+        "ally_atc_id": ally_atc,
+    }
+
+
 class Config:
     """Configuración base de Flask y parámetros globales del proyecto."""
     SECRET_KEY = os.environ.get("SECRET_KEY", "dev-only-change-in-production")

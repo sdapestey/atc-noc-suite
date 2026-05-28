@@ -9,6 +9,11 @@ def _mock_sin_inp(monkeypatch):
     import altiplano as ap
 
     monkeypatch.setattr(ap, "resolver_ont_connection_inp_por_access_id", lambda *_a: None)
+    monkeypatch.setattr(
+        inv,
+        "_live_altiplano_device_y_expected_sn",
+        lambda *_a, **kw: (None, None, kw.get("operator_id_pg")),
+    )
     monkeypatch.setattr(inv, "obtener_alarmas_ont_activas", lambda *_a, **_k: [])
 
 

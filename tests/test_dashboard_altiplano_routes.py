@@ -101,9 +101,20 @@ def test_dashboard_altiplano_get_panel_cuando_hay_sesion(client):
     assert 'id="alt-vno-tab-iplan"' in html
     assert 'id="alt-vno-tab-metrotel"' in html
     assert 'id="alt-vno-tab-sion"' in html
-    assert 'id="alt-vno-tab-cambio-cto"' in html
-    assert "dash-segment__btn--warn" in html
-    assert "próxima versión" in html
+    assert 'id="alt-vno-tab-cambio-cto"' not in html
+    assert 'id="alt-vno-ftth-cto-section"' in html
+    assert 'id="ftth-cto-form"' in html
+    assert "Cambio de CTO" in html
+    assert "Web ToolBox FTTH Norte" in html
+    assert 'id="ftth-cto-id"' in html
+    assert 'id="ftth-cto-access-id"' in html
+    assert 'id="ftth-cto-ally-id"' in html
+    assert 'for="ftth-cto-aliado"' not in html
+    assert "consulta-search-card" in html
+    assert "consulta-field" in html
+    assert 'class="search-icon"' in html
+    assert "altiplano-consulta-shell" in html
+    assert "/dashboard/altiplano/vno/cambiar-cto" in html
     assert 'id="tasa-postman-api"' in html
     assert "Configure / Create ONT + Services" in html
     assert "Colección Postman" in html or "TASA - PROD ALTIPLANO" in html
@@ -1274,6 +1285,49 @@ def test_dashboard_altiplano_tasa_ejecutar_sin_credenciales_400(client, monkeypa
         json={"api_id": "configure-create-ont", "variables": {"Device Name": "x"}},
     )
     assert r.status_code == 400
+
+
+def test_dashboard_altiplano_cambiar_cto_sin_sesion_401(client):
+    r = client.post(
+        "/dashboard/altiplano/vno/cambiar-cto",
+        json={"cto_id": "X", "access_id": "105"},
+    )
+    assert r.status_code == 401
+
+
+def test_dashboard_altiplano_cambiar_cto_campos_vacios_400(client):
+    with client.session_transaction() as sess:
+        sess["orquestador_ok"] = True
+        sess["orquestador_inp_token"] = "tok"
+
+    r = client.post("/dashboard/altiplano/vno/cambiar-cto", json={"cto_id": "", "access_id": ""})
+    assert r.status_code == 400
+
+
+def test_dashboard_altiplano_cambiar_cto_ok_200(client, monkeypatch):
+    import web.routes as routes
+
+    monkeypatch.setattr(
+        routes,
+        "enviar_cto_ftth_toolbox",
+        lambda **kw: {
+            "ok": True,
+            "message": "Procesado",
+            "toolbox_code": "0",
+            "request": kw,
+        },
+    )
+
+    with client.session_transaction() as sess:
+        sess["orquestador_ok"] = True
+        sess["orquestador_inp_token"] = "tok"
+
+    r = client.post(
+        "/dashboard/altiplano/vno/cambiar-cto",
+        json={"cto_id": "04F5A122505D80", "access_id": "1059355238"},
+    )
+    assert r.status_code == 200
+    assert r.get_json()["ok"] is True
 
 
 def test_dashboard_altiplano_tasa_ejecutar_ok_200(client, monkeypatch):

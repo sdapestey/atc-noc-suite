@@ -94,6 +94,80 @@ def test_sn_from_ema_entity_body_prioriza_expected_serial_number():
     assert altiplano._sn_from_ema_entity_body(body) == "ASKY00866827"
 
 
+def test_fetch_expected_sn_live_intent_antes_que_inp_ema(monkeypatch):
+    """Intent del VNO operador gana sobre expected-serial-number erróneo en EMA INP."""
+    import altiplano
+
+    contexts = (
+        ("tasa", "https://10.0.0.1:32443/tasa-altiplano-ac/rest/auth/login", "u", "p"),
+        ("inp", "https://10.0.0.2:32443/inp-altiplano-ac/rest/auth/login", "u", "p"),
+    )
+
+    def fake_intent(*_a, **_k):
+        return "ASKY0078C8B9"
+
+    def fake_ema(base_host, vno, ne, ont, auth_url, **kwargs):
+        label = kwargs.get("log_label", "")
+        if "INP" in label:
+            return {
+                "extraAttributes": {
+                    "expected-serial-number": "SDMCFDF2CB41",
+                    "detected-serial-number": "SDMCFDF2CB41",
+                }
+            }
+        return {
+            "extraAttributes": {
+                "expected-serial-number": {"className": "Undefined"},
+            }
+        }
+
+    monkeypatch.setattr(altiplano, "_power_auth_contexts", lambda _op: contexts)
+    monkeypatch.setattr(altiplano, "_fetch_expected_sn_ont_intent_restconf", fake_intent)
+    monkeypatch.setattr(altiplano, "_http_get_ema_entity_try_versions", fake_ema)
+
+    sn = altiplano._fetch_expected_sn_live(
+        "1059355238",
+        "BA_OLTA_ES01_01-10-12-18",
+        1001,
+        ne="BA_OLTA_ES01_01.LT10",
+    )
+    assert sn == "ASKY0078C8B9"
+
+
+def test_fetch_expected_sn_live_inp_solo_si_sin_intent_ni_operador(monkeypatch):
+    import altiplano
+
+    contexts = (
+        ("tasa", "https://10.0.0.1:32443/tasa-altiplano-ac/rest/auth/login", "u", "p"),
+        ("inp", "https://10.0.0.2:32443/inp-altiplano-ac/rest/auth/login", "u", "p"),
+    )
+    ema_calls = []
+
+    def fake_intent(*_a, **_k):
+        return None
+
+    def fake_ema(base_host, vno, ne, ont, auth_url, **kwargs):
+        ema_calls.append(kwargs.get("log_label", ""))
+        if "INP" in kwargs.get("log_label", ""):
+            return {
+                "extraAttributes": {"expected-serial-number": "ALCL00101099"}
+            }
+        return {"extraAttributes": {"expected-serial-number": {"className": "Undefined"}}}
+
+    monkeypatch.setattr(altiplano, "_power_auth_contexts", lambda _op: contexts)
+    monkeypatch.setattr(altiplano, "_fetch_expected_sn_ont_intent_restconf", fake_intent)
+    monkeypatch.setattr(altiplano, "_http_get_ema_entity_try_versions", fake_ema)
+
+    sn = altiplano._fetch_expected_sn_live(
+        "105",
+        "BA_OLTA_TG01_02-2-15-8",
+        1001,
+        ne="BA_OLTA_TG01_02.LT2",
+    )
+    assert sn == "ALCL00101099"
+    assert any("INP" in c for c in ema_calls)
+
+
 def test_obtener_telemetry_ont_incluye_sn_desde_ema(monkeypatch):
     import altiplano
 
