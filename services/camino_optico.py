@@ -739,7 +739,20 @@ def _jerarquia_nav_armar(
     sp = _nav_paso("sitio", sitio_consulta, "Sitio")
     if sp:
         pasos.append(sp)
-    for step in pasos_equipo or []:
+    pasos_equipo_filtrados = list(pasos_equipo or [])
+    if lt_val and pasos_equipo_filtrados:
+        olt_focal = _olt_base_desde_lt_key(lt_val)
+        if olt_focal:
+            pasos_match = [
+                step
+                for step in pasos_equipo_filtrados
+                if isinstance(step, dict)
+                and step.get("tipo") == "equipo"
+                and (step.get("valor") or "").strip() == olt_focal
+            ]
+            if pasos_match:
+                pasos_equipo_filtrados = pasos_match
+    for step in pasos_equipo_filtrados:
         if isinstance(step, dict) and step.get("valor") and step.get("tipo"):
             pasos.append(step)
     np_lt = _nav_paso("lt", lt_val, "LT / equipo")

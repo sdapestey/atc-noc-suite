@@ -50,7 +50,7 @@ function toast(msg) {
 }
 
 function copyTextToClipboard(text) {
-  const done = () => toast("Copiado al portapapeles (pegá en Excel con Ctrl+V)");
+  const done = () => toast("Coordenadas copiadas al portapapeles");
   if (navigator.clipboard && navigator.clipboard.writeText) {
     return navigator.clipboard.writeText(text).then(done).catch(fallback);
   }
@@ -474,6 +474,95 @@ function _fitRamaMapToData(map, gj, markers) {
   }
 }
 
+function _ramaCoordTextFromLatLon(lat, lon) {
+  const latN = Number(lat);
+  const lonN = Number(lon);
+  if (!Number.isFinite(latN) || !Number.isFinite(lonN)) return "";
+  return latN.toFixed(6) + ", " + lonN.toFixed(6);
+}
+
+function _setCtoCoordsMeta(body, lat, lon) {
+  if (!body) return;
+  const coordsEl = body.querySelector("[data-cto-coords]");
+  if (!coordsEl) return;
+  const coordText = _ramaCoordTextFromLatLon(lat, lon);
+  if (!coordText) {
+    coordsEl.innerHTML = "";
+    return;
+  }
+  coordsEl.innerHTML =
+    '<span class="rama-cto-address__label">Coordenadas</span>' +
+    '<span class="rama-cto-address__value mono">' +
+    _escHtml(coordText) +
+    "</span>";
+}
+
+function _ramaMarkerPopupHtml(cto, lat, lon, addr, opts) {
+  const coordText = _ramaCoordTextFromLatLon(lat, lon);
+  const showAddrLoading = opts && opts.showAddrLoading;
+  return (
+    '<div class="camino-popup-cto">' +
+    '<div class="camino-popup-cto__id"><strong>' +
+    _escHtml(cto || "") +
+    "</strong></div>" +
+    '<div class="camino-popup-cto__addr" data-rama-popup-addr>' +
+    (addr
+      ? '<span class="camino-popup-addr">' + _escHtml(addr) + "</span>"
+      : showAddrLoading
+      ? '<span class="muted">Buscando dirección…</span>'
+      : '<span class="muted">Sin dirección postal</span>') +
+    "</div>" +
+    (coordText
+      ? '<div class="camino-popup-cto__coords mono" title="Latitud, Longitud">' +
+        _escHtml(coordText) +
+        "</div>"
+      : "") +
+    (coordText
+      ? '<div class="camino-popup-cto__copy muted">Click en la CTO para copiar coordenadas</div>'
+      : "") +
+    "</div>"
+  );
+}
+
+function _ramaCtoMarkerHoverStyle(base) {
+  return {
+    radius: Math.min((base.radius || 9) + 5, 22),
+    fillColor: base.fillColor,
+    color: base.color,
+    weight: Math.min((base.weight || 2) + 2, 5),
+    opacity: base.opacity,
+    fillOpacity: Math.min((base.fillOpacity != null ? base.fillOpacity : 0.95) + 0.04, 1),
+  };
+}
+
+function _wireRamaCtoMarker(cm, tooltipHtml, styleBase, coordText) {
+  const base = {};
+  Object.keys(styleBase || {}).forEach((k) => {
+    base[k] = styleBase[k];
+  });
+  cm._ramaCtoBaseOpts = base;
+  cm._ramaCtoHoverOpts = _ramaCtoMarkerHoverStyle(base);
+  cm.bindTooltip(tooltipHtml, {
+    direction: "top",
+    opacity: 0.96,
+    className: "camino-popup-cto camino-cto-hover-tip",
+    interactive: false,
+  });
+  cm.on("mouseover", () => {
+    cm.setStyle(cm._ramaCtoHoverOpts);
+    try {
+      cm.bringToFront();
+    } catch (_e) {}
+  });
+  cm.on("mouseout", () => {
+    cm.setStyle(cm._ramaCtoBaseOpts);
+  });
+  cm.on("click", () => {
+    if (!coordText) return;
+    copyTextToClipboard(coordText);
+  });
+}
+
 function ensureCtoMapForCtoNode(ctoNode) {
   if (!ctoNode || !ctoNode.hasAttribute("data-cto-node")) return;
   const body = ctoNode.nextElementSibling;
@@ -505,12 +594,14 @@ function ensureCtoMapForCtoNode(ctoNode) {
       if (!data || !data.ok) {
         msg.textContent = (data && data.error) || "Sin coordenadas para esta CTO";
         canvas.hidden = true;
+        _setCtoCoordsMeta(body, null, null);
         mapPanel.dataset.mapReady = "nocords";
         return;
       }
       if (typeof window.L === "undefined") {
         msg.textContent = "No se pudo cargar el mapa (Leaflet).";
         canvas.hidden = true;
+        _setCtoCoordsMeta(body, null, null);
         mapPanel.dataset.mapReady = "nocords";
         return;
       }
@@ -519,15 +610,17 @@ function ensureCtoMapForCtoNode(ctoNode) {
       if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
         msg.textContent = "Sin coordenadas para esta CTO";
         canvas.hidden = true;
+        _setCtoCoordsMeta(body, null, null);
         mapPanel.dataset.mapReady = "nocords";
         return;
       }
       msg.textContent = "";
       canvas.hidden = false;
+      _setCtoCoordsMeta(body, lat, lon);
 
       if (!mapPanel._leafletMap) {
         if (window.NocMapTiles && window.NocMapTiles.createLeafletMap) {
-          const created = window.NocMapTiles.createLeafletMap(canvas, { lat, lon, zoom: 17, marker: true });
+          const created = window.NocMapTiles.createLeafletMap(canvas, { lat, lon, zoom: 17, marker: false });
           if (!created) {
             msg.textContent = "No se pudo inicializar el mapa.";
             canvas.hidden = true;
@@ -546,7 +639,6 @@ function ensureCtoMapForCtoNode(ctoNode) {
             attribution: "&copy; OpenStreetMap &copy; CARTO",
             maxZoom: 19,
           }).addTo(map);
-          window.L.marker([lat, lon]).addTo(map);
           mapPanel._leafletMap = map;
           if (window.NocLeafletMap && window.NocLeafletMap.attachScrollActivation) {
             window.NocLeafletMap.attachScrollActivation(map, canvas);
@@ -558,17 +650,36 @@ function ensureCtoMapForCtoNode(ctoNode) {
             window.NocMapTiles.refreshLeafletMapLayout(map);
           }
         }
-      } else if (window.NocMapTiles && window.NocMapTiles.updateMapMarker) {
-        window.NocMapTiles.updateMapMarker(mapPanel._leafletMap, lat, lon, 17);
       } else if (window.NocMapTiles && window.NocMapTiles.refreshLeafletMapLayout) {
         window.NocMapTiles.refreshLeafletMapLayout(mapPanel._leafletMap);
       }
+      if (mapPanel._ramaCtoPointLayer) {
+        mapPanel._leafletMap.removeLayer(mapPanel._ramaCtoPointLayer);
+        mapPanel._ramaCtoPointLayer = null;
+      }
+      const coordText = _ramaCoordTextFromLatLon(lat, lon);
+      const pointStyle = {
+        radius: 9,
+        fillColor: "#f97316",
+        color: "#e0f2fe",
+        weight: 2,
+        opacity: 1,
+        fillOpacity: 0.95,
+      };
+      const addrText =
+        (body.querySelector("[data-cto-postal-address] .rama-cto-address__value")?.textContent || "").trim();
+      const cto = (ctoNode.getAttribute("data-cto") || "").trim();
+      const marker = window.L.circleMarker([lat, lon], pointStyle);
+      _wireRamaCtoMarker(marker, _ramaMarkerPopupHtml(cto, lat, lon, addrText, { showAddrLoading: false }), pointStyle, coordText);
+      mapPanel._ramaCtoPointLayer = window.L.layerGroup([marker]).addTo(mapPanel._leafletMap);
+      mapPanel._leafletMap.setView([lat, lon], 17);
       mapPanel.dataset.mapReady = "done";
       _ramaRefreshMapTiles(mapPanel._leafletMap, shell._nocMapBasemap);
     })
     .catch(() => {
       msg.textContent = "No se pudo obtener la ubicación.";
       canvas.hidden = true;
+      _setCtoCoordsMeta(body, null, null);
       delete mapPanel.dataset.mapReady;
     });
 }
@@ -833,8 +944,37 @@ function _loadRamaMapPanel(card, rama, panel) {
         const lat = Number(mk.lat);
         const lon = Number(mk.lon);
         if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
-        const marker = window.L.marker([lat, lon]);
-        marker.bindPopup('<span class="mono">' + _escHtml(mk.cto || "") + "</span>", { maxWidth: 320 });
+        const pointStyle = {
+          radius: 9,
+          fillColor: "#3b82f6",
+          color: "#e0f2fe",
+          weight: 2,
+          opacity: 1,
+          fillOpacity: 0.95,
+        };
+        const marker = window.L.circleMarker([lat, lon], pointStyle);
+        const cto = String(mk.cto || "").trim();
+        const coordText = _ramaCoordTextFromLatLon(lat, lon);
+        _wireRamaCtoMarker(marker, _ramaMarkerPopupHtml(cto, lat, lon, "", { showAddrLoading: true }), pointStyle, coordText);
+        marker._ramaAddrResolved = false;
+        marker.on("mouseover", () => {
+          if (!cto || marker._ramaAddrResolved) return;
+          marker._ramaAddrResolved = true;
+          fetch(_RAMA_CTO_ADDRESS_URL + "?cto=" + encodeURIComponent(cto))
+            .then((r) => (r.ok ? r.json() : null))
+            .then((data) => {
+              const addr =
+                data && data.ok && data.address ? String(data.address).trim() : "";
+              marker.setTooltipContent(
+                _ramaMarkerPopupHtml(cto, lat, lon, addr, { showAddrLoading: false })
+              );
+            })
+            .catch(() => {
+              marker.setTooltipContent(
+                _ramaMarkerPopupHtml(cto, lat, lon, "", { showAddrLoading: false })
+              );
+            });
+        });
         fg.addLayer(marker);
       });
       if (fg.getLayers().length > 0) {
@@ -1187,6 +1327,7 @@ function renderInventarioRama(rama, inv, container) {
       <div class="hidden indent3">
         <div class="rama-cto-map-shell" data-cto-map-shell data-cto="${_escHtml(cto)}">
           <p class="hint rama-cto-address" data-cto-postal-address aria-live="polite"></p>
+          <p class="hint rama-cto-address rama-cto-coords" data-cto-coords aria-live="polite"></p>
         </div>
         <div class="rama-cto-map-panel hidden" data-cto-map-panel aria-hidden="true">
           <p class="hint rama-cto-map-msg" aria-live="polite"></p>
