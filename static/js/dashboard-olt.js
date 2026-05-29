@@ -1378,12 +1378,58 @@ function _oltQueryRankLt(ltL, q) {
   return -1;
 }
 
+let _oltLtScrollTimer = null;
+let _oltLastLtScrollKey = "";
+
+function _cancelOltLtRowScroll() {
+  if (_oltLtScrollTimer) clearTimeout(_oltLtScrollTimer);
+  _oltLtScrollTimer = null;
+  _oltLastLtScrollKey = "";
+}
+
+function _oltLtRowMostlyInView(tr) {
+  if (!tr) return false;
+  const r = tr.getBoundingClientRect();
+  const pad = 56;
+  const vh = window.innerHeight || document.documentElement.clientHeight || 0;
+  return r.top >= pad && r.bottom <= vh - pad;
+}
+
+function _scrollOltLtRowSmooth(tr) {
+  if (!tr || !tr.scrollIntoView) return;
+  tr.scrollIntoView({ block: "center", behavior: "smooth" });
+}
+
+/** Scroll suave a fila LT tras abrir sitio/OLT; no roba foco del buscador. */
+function _scheduleOltLtRowScroll(raw, tr) {
+  if (_oltLtScrollTimer) clearTimeout(_oltLtScrollTimer);
+  const key = raw.trim().toLowerCase();
+  if (!tr || !key) return;
+  _oltLtScrollTimer = setTimeout(() => {
+    _oltLtScrollTimer = null;
+    const inp = document.getElementById("bus-olt");
+    const qNow = (inp && inp.value != null ? inp.value : raw).trim().toLowerCase();
+    if (qNow !== key) return;
+    if (_oltLastLtScrollKey === key && _oltLtRowMostlyInView(tr)) return;
+    _oltLastLtScrollKey = key;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (!tr.isConnected || !_oltRowIsSearchVisible(tr)) return;
+        _scrollOltLtRowSmooth(tr);
+      });
+    });
+  }, 48);
+}
+
 function enfocarFilaLtCoincidente(raw) {
   const q = raw.trim().toLowerCase();
   document.querySelectorAll("tr.ltrow.olt-lt-search-hit").forEach((tr) => {
     tr.classList.remove("olt-lt-search-hit");
   });
-  if (!q) return;
+  if (!q) {
+    _cancelOltLtRowScroll();
+    return;
+  }
 
   const rows = Array.from(document.querySelectorAll("tr.ltrow")).filter(_oltRowIsSearchVisible);
   let bestTr = null;
@@ -1398,23 +1444,13 @@ function enfocarFilaLtCoincidente(raw) {
     }
   }
 
-  if (!bestTr || bestRank < 22) return;
+  if (!bestTr || bestRank < 22) {
+    _cancelOltLtRowScroll();
+    return;
+  }
 
   bestTr.classList.add("olt-lt-search-hit");
-  window.requestAnimationFrame(() => {
-    const inp = document.getElementById("bus-olt");
-    const typingInSearch =
-      inp && (document.activeElement === inp || inp.closest(".field")?.contains(document.activeElement));
-    bestTr.scrollIntoView({ block: "center", behavior: typingInSearch ? "nearest" : "smooth" });
-    /* No mover foco al <tr> mientras se escribe: tabindex en la fila robaba el input */
-    if (!typingInSearch) {
-      try {
-        bestTr.focus({ preventScroll: true });
-      } catch (_) {
-        /* ignore */
-      }
-    }
-  });
+  _scheduleOltLtRowScroll(raw, bestTr);
 }
 
 function aplicarBusquedaOlt() {
@@ -1452,9 +1488,7 @@ function aplicarBusquedaOlt() {
       });
     }
   });
-  window.requestAnimationFrame(() => {
-    enfocarFilaLtCoincidente(raw);
-  });
+  enfocarFilaLtCoincidente(raw);
   _saveOltStateSoon();
 }
 

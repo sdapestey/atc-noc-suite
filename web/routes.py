@@ -777,7 +777,7 @@ def register(app):
         if ensure_db_connection_ready():
             return None
 
-        message = "Base de datos no disponible temporalmente. Reintentá en unos segundos."
+        message = "Base de datos no disponible temporalmente. Reintentá en unos segundos, o contacta con Daniel Kippke."
         is_json = (
             request.path.startswith("/api/")
             or request.path.endswith("/consultar")

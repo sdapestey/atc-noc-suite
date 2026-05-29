@@ -24,6 +24,9 @@ def test_dashboard_olt_js_contains_core_handlers():
     assert "function potenciaCto(" in js
     assert "function potenciaRama(" in js
     assert "function enfocarFilaLtCoincidente(" in js
+    assert "function _scheduleOltLtRowScroll(" in js
+    assert 'behavior: "smooth"' in js
+    assert "typingInSearch" not in js
     assert "olt-lt-search-hit" in js
     assert 'id="olt-export-operador"' in Path("templates/dashboard_olt.html").read_text(
         encoding="utf-8"
