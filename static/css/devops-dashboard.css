@@ -1215,7 +1215,14 @@ tr:hover td {
 }
 
 .table-kv th {
-  width: 220px;
+  width: 1%;
+  white-space: nowrap;
+  padding-right: 14px;
+  vertical-align: top;
+}
+
+.table-kv td {
+  vertical-align: middle;
 }
 
 .helper-note {
@@ -1331,7 +1338,16 @@ td.mono.status-up,
 
 .theme-devops td.consulta-potencia-loading .olt-txrx-loading-wrap {
   justify-content: flex-start;
+  min-width: 0;
   margin: 0;
+  padding: 0;
+  vertical-align: baseline;
+}
+
+/* Detalle consulta: spinner y valor final comparten el mismo inicio horizontal */
+.theme-devops .table-kv td.consulta-potencia-loading .olt-txrx-loading-wrap {
+  display: inline-flex;
+  align-items: center;
 }
 
 .consulta-down-poll-counting {

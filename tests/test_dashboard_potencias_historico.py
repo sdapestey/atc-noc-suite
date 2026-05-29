@@ -28,6 +28,8 @@ def test_dashboard_potencias_historico_get_renders(client):
     assert "Umbral -27 dBm" in js
     assert "Umbral -25 dBm" in js
     assert "clasificar_rx_dbm" in js
+    assert "HISTORICO_RX_DOWN_PLACEHOLDER_DBM" in js
+    assert "_isHistoricoRxDownPlaceholder" in js
     assert "_copyHistoricoAccessId" in js
     assert "data-access-id" in js
 def test_api_potencias_historico_consultar_ahora_success(client, monkeypatch):
@@ -199,6 +201,49 @@ def test_api_potencias_historico_internal_error_includes_request_id(client, monk
     payload = r.get_json()
     assert "error" in payload
     assert "request_id" in payload
+
+
+def test_historico_last_summary_skips_down_placeholder_rx(monkeypatch):
+    from datetime import datetime
+
+    import services.historico_potencias as historico
+
+    monkeypatch.setattr(historico, "_resolver_pon_desde_rama", lambda _ratc: "BA_OLTA_X-1-1")
+    monkeypatch.setattr(historico, "_ont_inventory_maps", lambda _rama: ({}, {}))
+
+    rows = [
+        (datetime(2026, 5, 29, 8, 31), "BA_OLTA_X:1-1-1-1-1", -22.0),
+        (datetime(2026, 5, 29, 11, 31), "BA_OLTA_X:1-1-1-1-1", -100.0),
+    ]
+
+    class _Cur:
+        def execute(self, *_a, **_k):
+            pass
+
+        def fetchall(self):
+            return rows
+
+    class _Ctx:
+        def __enter__(self):
+            return _Cur()
+
+        def __exit__(self, *_a):
+            return False
+
+    monkeypatch.setattr(historico, "db_cursor", lambda: _Ctx())
+    payload = historico._consultar_potencias_historico_rama_uncached("MR01-RATC-0-000200", 1)
+    assert payload["ok"] is True
+    summary = {s["ont_key"]: s for s in payload["ont_summary"]}
+    assert summary["1"]["last_hist_rx"] == -22.0
+    assert summary["1"]["last_hist_ts"] == "2026-05-29 08:31"
+
+
+def test_is_historico_rx_down_placeholder():
+    import services.historico_potencias as historico
+
+    assert historico._is_historico_rx_down_placeholder(-100.0) is True
+    assert historico._is_historico_rx_down_placeholder(-22.0) is False
+    assert historico._is_historico_rx_down_placeholder(None) is False
 
 
 def test_ont_key_from_object_name_strips_altiplano_prefix():

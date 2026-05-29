@@ -16,6 +16,14 @@ from .inventory import consultar_rama_potencias_altiplano_por_ont
 
 _OBJ_RE = re.compile(r"^(.*?):1-1-(\d+)-(\d+)-")
 ALLOWED_HISTORICO_DAYS = (1, 7, 15, 30)
+# Lectura guardada en Postgres cuando la rama/ONT no tenía señal (no comparar como baseline).
+HISTORICO_RX_DOWN_PLACEHOLDER_DBM = -100.0
+
+
+def _is_historico_rx_down_placeholder(rx: float | None) -> bool:
+    if rx is None:
+        return False
+    return float(rx) == HISTORICO_RX_DOWN_PLACEHOLDER_DBM
 
 
 def _resolver_pon_desde_rama(ratc: str) -> str | None:
@@ -146,10 +154,11 @@ def _consultar_potencias_historico_rama_uncached(rama: str, days_validado: int) 
         ont_short = _ont_key_from_object_name(objectname_str)
         if not ont_short:
             continue
-        by_ont[ont_short][ts_key] = None if rx is None else float(rx)
+        rx_val = None if rx is None else float(rx)
+        by_ont[ont_short][ts_key] = rx_val
         timestamps.add(ts_key)
-        last_by_ont[ont_short] = None if rx is None else float(rx)
-        if rx is not None:
+        if rx is not None and not _is_historico_rx_down_placeholder(rx_val):
+            last_by_ont[ont_short] = rx_val
             last_ts_by_ont[ont_short] = ts_key
         csv_rows.append({
             "timestamp": ts_key,
@@ -181,7 +190,10 @@ def _consultar_potencias_historico_rama_uncached(rama: str, days_validado: int) 
             "last_hist_ts": last_ts_by_ont.get(ont),
         })
 
-    last_values = [v for v in last_by_ont.values() if v is not None]
+    last_values = [
+        v for v in last_by_ont.values()
+        if v is not None and not _is_historico_rx_down_placeholder(v)
+    ]
     median_value = round(float(median(last_values)), 2) if last_values else "-"
 
     return {

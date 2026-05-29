@@ -60,6 +60,12 @@ function _copyHistoricoAccessId(accessId) {
   }
 }
 const colors = ["#3b82f6", "#8b5cf6", "#10b981", "#f59e0b", "#ef4444", "#06b6d4", "#84cc16", "#f97316", "#a855f7", "#22c55e"];
+/** Postgres guarda −100 dBm cuando la rama/ONT no tenía lectura; no usar como baseline. */
+const HISTORICO_RX_DOWN_PLACEHOLDER_DBM = -100;
+
+function _isHistoricoRxDownPlaceholder(v) {
+  return v !== null && v !== undefined && Number.isFinite(Number(v)) && Number(v) === HISTORICO_RX_DOWN_PLACEHOLDER_DBM;
+}
 
 function _themePalette() {
   const isLight = document.documentElement.getAttribute("data-theme") === "light";
@@ -367,7 +373,7 @@ function _buildOntCtoTable(payload) {
   });
   if (cap) {
     cap.textContent =
-      "Agrupado por CTO. Umbrales RX como consulta índice (clasificar_rx_dbm): rojo si Rx < −27 dBm; amarillo si −27 < Rx ≤ −25 dBm; verde si Rx > −25 dBm (Rx = −27 dBm es verde). Las líneas del gráfico marcan −27 y −25 dBm. Las filas se resaltan en amarillo o rojo según el peor valor entre último histórico y Rx actual. «Rx actual» y «Δ» al pulsar Consultar RX; Δ = Rx actual menos el último punto histórico en el gráfico inmediatamente anterior a esa consulta. Clic en el nombre ONT copia el Access ID.";
+      "Agrupado por CTO. Umbrales RX como consulta índice (clasificar_rx_dbm): rojo si Rx < −27 dBm; amarillo si −27 < Rx ≤ −25 dBm; verde si Rx > −25 dBm (Rx = −27 dBm es verde). Las líneas del gráfico marcan −27 y −25 dBm. Las filas se resaltan en amarillo o rojo según el peor valor entre último histórico válido y Rx actual. «Rx actual» y «Δ» al pulsar Consultar RX; Δ = Rx actual menos el último punto histórico válido (distinto de −100 dBm) anterior a esa consulta. Clic en el nombre ONT copia el Access ID.";
   }
   wrap.hidden = rows.length === 0;
 }
@@ -400,11 +406,16 @@ function _fillOntCtoRxAfterSnapshot(payload, labelIdx) {
     } else {
       cells[5].textContent = "—";
     }
-    var lastHistNum =
-      tr.dataset.lastHistRx !== "" && Number.isFinite(Number(tr.dataset.lastHistRx))
-        ? Number(tr.dataset.lastHistRx)
-        : null;
-    _applyOntRowRxSemaforo(tr, lastHistNum, manualNum);
+    var baselineHist =
+      lastH.value != null && !_isHistoricoRxDownPlaceholder(lastH.value) ? lastH.value : null;
+    if (baselineHist == null) {
+      baselineHist =
+        tr.dataset.lastHistRx !== "" && Number.isFinite(Number(tr.dataset.lastHistRx))
+          ? Number(tr.dataset.lastHistRx)
+          : null;
+      if (_isHistoricoRxDownPlaceholder(baselineHist)) baselineHist = null;
+    }
+    _applyOntRowRxSemaforo(tr, baselineHist, manualNum);
   });
   var wrap = document.getElementById("ont-cto-summary-wrap");
   if (wrap) wrap.hidden = tbody.querySelectorAll("tr[data-ont-key]").length === 0;
@@ -444,7 +455,12 @@ function _findLastHistoricRxBefore(dataset, beforeIdx) {
   var start = Math.min(beforeIdx - 1, dataset.data.length - 1);
   for (var j = start; j >= 0; j--) {
     var v = dataset.data[j];
-    if (v !== null && v !== undefined && Number.isFinite(Number(v))) {
+    if (
+      v !== null &&
+      v !== undefined &&
+      Number.isFinite(Number(v)) &&
+      !_isHistoricoRxDownPlaceholder(Number(v))
+    ) {
       return { value: Number(v), tsLabel: labels[j] != null ? String(labels[j]) : null };
     }
   }
