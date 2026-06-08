@@ -24,8 +24,13 @@ def test_dashboard_rama_js_contains_core_handlers():
     assert "filaTieneAidConsulta" in js
     assert "_ramaFinalizeTxRxPendientes" in js
     assert "_ramaPotenciasParaCtosExpandidosEn" in js
-    assert "_ramaInventarioLoadingHtml" in js
+    assert "function renderInventarioRama(" in js
+    assert 'badge hide-sm cto-head-row__ont-count" title="ONT IN SERVICE en esta CTO">ONT ${ontCount}</span>' in js
+    assert "NocClipboard" in js
+    assert "NocMaps" in js or "Abrir en Maps" in Path("static/js/consulta-index-map.js").read_text(encoding="utf-8")
     assert "Cargando inventario de red…" in js
     assert "rama-detail-spinner" in js
     assert "<th>Estado</th>" not in js
     assert "RAMA_COL_EST" not in js
+    assert "/dashboard/rama/semaforo-historico" in js
+    assert "function _cargarSemaforoHistoricoSitio(" in js

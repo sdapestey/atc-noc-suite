@@ -442,6 +442,86 @@
     });
   }
 
+  function masivoCopyLists() {
+    var cfg = window.__CONSULTA_INDEX_CFG__ || {};
+    return cfg.masivoCopyLists || null;
+  }
+
+  function copyMasivoList(kind, operador) {
+    var lists = masivoCopyLists();
+    if (!lists) return;
+    var items = [];
+    var label = "";
+    if (kind === "cto") {
+      items = lists.ctos || [];
+      label = "CTO";
+    } else if (kind === "ont") {
+      items = lists.aids || [];
+      label = "ONT";
+    } else if (kind === "operador") {
+      var op = String(operador || "")
+        .trim()
+        .toUpperCase();
+      items = (lists.aids_by_operador && lists.aids_by_operador[op]) || [];
+      label = op;
+    }
+    if (!items.length) {
+      if (window.NocToast) {
+        window.NocToast.show("toast", "No hay " + label + " para copiar con esa selección");
+      }
+      return;
+    }
+    var text = items.join("\n");
+    var done = function () {
+      if (window.NocToast) {
+        window.NocToast.show("toast", label + " copiados al portapapeles");
+      }
+    };
+    var fail = function () {
+      if (window.NocToast) {
+        window.NocToast.show("toast", "No se pudo copiar", { variant: "error" });
+      }
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done).catch(fail);
+      return;
+    }
+    try {
+      var ta = document.createElement("textarea");
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      if (document.execCommand("copy")) done();
+      else fail();
+      document.body.removeChild(ta);
+    } catch (_e) {
+      fail();
+    }
+  }
+
+  function bindMasivoTotalsCopy() {
+    var root = document.querySelector(".consulta-masivo-totals");
+    if (!root || root.dataset.masivoCopyBound === "1") return;
+    root.dataset.masivoCopyBound = "1";
+    function triggerCopy(pill) {
+      var kind = pill.getAttribute("data-consulta-masivo-copy");
+      if (!kind) return;
+      copyMasivoList(kind, pill.getAttribute("data-consulta-operador"));
+    }
+    root.addEventListener("click", function (e) {
+      var pill = e.target.closest("[data-consulta-masivo-copy]");
+      if (!pill || !root.contains(pill)) return;
+      triggerCopy(pill);
+    });
+    root.addEventListener("keydown", function (e) {
+      if (e.key !== "Enter" && e.key !== " ") return;
+      var pill = e.target.closest("[data-consulta-masivo-copy]");
+      if (!pill || !root.contains(pill)) return;
+      e.preventDefault();
+      triggerCopy(pill);
+    });
+  }
+
   function initPager(opts) {
     opts = opts || {};
     var sel = sizeSelect();
@@ -454,6 +534,7 @@
     applyPage();
     bindQuicknav();
     bindPanelExpandCtos();
+    bindMasivoTotalsCopy();
     updateRamaSummary();
 
     if (!sel) return preloadRun;

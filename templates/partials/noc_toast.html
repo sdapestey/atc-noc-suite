@@ -1,0 +1,13 @@
+{% macro render(toast_id='toast', variant='success') %}
+<div
+  id="{{ toast_id }}"
+  class="noc-toast noc-toast--{{ variant }}"
+  role="status"
+  aria-live="polite"
+  hidden
+>
+  <span class="noc-toast__icon" aria-hidden="true">✓</span>
+  <p class="noc-toast__text"></p>
+  <button type="button" class="noc-toast__close" aria-label="Cerrar">×</button>
+</div>
+{% endmacro %}

@@ -292,6 +292,16 @@ def get_dashboard_historico_cache_seconds() -> int:
     return _int_env_positive_or_zero("DASHBOARD_HISTORICO_CACHE_SECONDS", 600)
 
 
+def get_radar_degradacion_olt_workers() -> int:
+    """Workers paralelos al leer ``altiplano.potencias`` por OLT en Radar Degradacion."""
+    return _int_env_at_least("RADAR_DEGRADACION_OLT_WORKERS", 6, 1)
+
+
+def get_radar_degradacion_statement_timeout_ms() -> int:
+    """Timeout por consulta OLT en Radar (ms). Más alto que el global por volumen de datos."""
+    return _int_env_at_least("RADAR_DEGRADACION_STATEMENT_TIMEOUT_MS", 90000, 5000)
+
+
 def get_dashboard_rama_power_cache_seconds() -> int:
     """
     TTL de resultados de `/dashboard/rama/consultar` (potencias por rama).

@@ -1,133 +1,29 @@
 (function () {
   "use strict";
 
+  window.__CONSULTA_MAP_BUILD__ = "pon40-optimized";
+
   var CTO_MAP_URL = "/dashboard/rama/cto-map";
   var RAMA_MAP_URL = "/dashboard/rama/rama-map";
   var CTO_ADDRESS_URL = "/dashboard/rama/cto-address";
   var RAMA_CAMINO_GIS_URL = "/dashboard/camino-optico/gis";
 
-  function escHtml(s) {
-    return String(s || "")
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#39;");
+  function ctoPopup(addr, cto, lat, lon, loading) {
+    if (!window.NocMaps || !window.NocMaps.ctoPopupHtml) return "";
+    return window.NocMaps.ctoPopupHtml(cto, lat, lon, addr, {
+      showAddrLoading: loading,
+    });
   }
 
-  function showConsultaToast(msg) {
-    var el = document.getElementById("toast");
-    if (!el) return;
-    el.textContent = msg;
-    el.classList.add("show");
-    if (showConsultaToast._timer) clearTimeout(showConsultaToast._timer);
-    showConsultaToast._timer = setTimeout(function () {
-      el.classList.remove("show");
-    }, 1800);
-  }
-
-  function copyCoordsToClipboard(text) {
-    var done = function () {
-      showConsultaToast("Coordenadas copiadas al portapapeles");
-    };
-    var fail = function () {
-      showConsultaToast("No se pudo copiar");
-    };
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      return navigator.clipboard.writeText(text).then(done).catch(function () {
-        fallback();
-      });
-    }
-    fallback();
-    function fallback() {
-      var ta = document.createElement("textarea");
-      ta.value = text;
-      document.body.appendChild(ta);
-      ta.select();
-      try {
-        if (document.execCommand("copy")) done();
-        else fail();
-      } catch (_e) {
-        fail();
-      }
-      document.body.removeChild(ta);
-    }
-  }
-
-  function coordTextFromLatLon(lat, lon) {
-    var latN = Number(lat);
-    var lonN = Number(lon);
-    if (!Number.isFinite(latN) || !Number.isFinite(lonN)) return "";
-    return latN.toFixed(6) + ", " + lonN.toFixed(6);
-  }
-
-  function markerPopupHtml(cto, lat, lon, addr, opts) {
-    var coordText = coordTextFromLatLon(lat, lon);
-    var showAddrLoading = opts && opts.showAddrLoading;
-    return (
-      '<div class="camino-popup-cto">' +
-      '<div class="camino-popup-cto__id"><strong>' +
-      escHtml(cto || "") +
-      "</strong></div>" +
-      '<div class="camino-popup-cto__addr" data-rama-popup-addr>' +
-      (addr
-        ? '<span class="camino-popup-addr">' + escHtml(addr) + "</span>"
-        : showAddrLoading
-        ? '<span class="muted">Buscando dirección…</span>'
-        : '<span class="muted">Sin dirección postal</span>') +
-      "</div>" +
-      (coordText
-        ? '<div class="camino-popup-cto__coords mono" title="Latitud, Longitud">' +
-          escHtml(coordText) +
-          "</div>"
-        : "") +
-      (coordText
-        ? '<div class="camino-popup-cto__copy muted">Click en la CTO para copiar coordenadas</div>'
-        : "") +
-      "</div>"
+  function wireConsultaCtoMarker(cm, tooltipHtml, styleBase, coordText, opts) {
+    if (!window.NocMaps || !window.NocMaps.wireCtoCircleMarker) return;
+    window.NocMaps.wireCtoCircleMarker(
+      cm,
+      tooltipHtml,
+      styleBase,
+      coordText,
+      Object.assign({ toastId: "toast" }, opts || {})
     );
-  }
-
-  function markerHoverStyle(base) {
-    return {
-      radius: Math.min((base.radius || 9) + 5, 22),
-      fillColor: base.fillColor,
-      color: base.color,
-      weight: Math.min((base.weight || 2) + 2, 5),
-      opacity: base.opacity,
-      fillOpacity: Math.min((base.fillOpacity != null ? base.fillOpacity : 0.95) + 0.04, 1),
-    };
-  }
-
-  function wireConsultaCtoMarker(cm, tooltipHtml, styleBase, coordText) {
-    var base = {};
-    Object.keys(styleBase || {}).forEach(function (k) {
-      base[k] = styleBase[k];
-    });
-    cm._consultaBaseOpts = base;
-    cm._consultaHoverOpts = markerHoverStyle(base);
-    cm.bindTooltip(tooltipHtml, {
-      direction: "top",
-      opacity: 0.96,
-      className: "camino-popup-cto camino-cto-hover-tip",
-      interactive: false,
-    });
-    cm.on("mouseover", function () {
-      cm.setStyle(cm._consultaHoverOpts);
-      try {
-        cm.bringToFront();
-      } catch (_e) {}
-    });
-    cm.on("mouseout", function () {
-      cm.setStyle(cm._consultaBaseOpts);
-    });
-    cm.on("click", function (ev) {
-      if (window.L && window.L.DomEvent && ev) {
-        window.L.DomEvent.stopPropagation(ev);
-      }
-      if (!coordText) return;
-      copyCoordsToClipboard(coordText);
-    });
   }
 
   function extendBoundsFromGeoJSON(bounds, gj) {
@@ -268,7 +164,10 @@
           map.removeLayer(shell._consultaCtoPointLayer);
           shell._consultaCtoPointLayer = null;
         }
-        var coordText = coordTextFromLatLon(lat, lon);
+        var coordText =
+          window.NocMaps && window.NocMaps.coordTextFromLatLon
+            ? window.NocMaps.coordTextFromLatLon(lat, lon)
+            : "";
         var pointStyle = {
           radius: 9,
           fillColor: "#f97316",
@@ -278,34 +177,23 @@
           fillOpacity: 0.95,
         };
         var marker = window.L.circleMarker([lat, lon], pointStyle);
+        shell._consultaCtoPointLayer = window.L.layerGroup([marker]).addTo(map);
         wireConsultaCtoMarker(
           marker,
-          markerPopupHtml(cto, lat, lon, "", { showAddrLoading: true }),
+          ctoPopup("", cto, lat, lon, true),
           pointStyle,
-          coordText
+          coordText,
+          { map: map }
         );
-        marker._consultaAddrResolved = false;
-        marker.on("mouseover", function () {
-          if (marker._consultaAddrResolved) return;
-          marker._consultaAddrResolved = true;
-          fetch(CTO_ADDRESS_URL + "?cto=" + encodeURIComponent(cto))
-            .then(function (r) {
-              return r.ok ? r.json() : null;
-            })
-            .then(function (dataAddr) {
-              var addr =
-                dataAddr && dataAddr.ok && dataAddr.address ? String(dataAddr.address).trim() : "";
-              marker.setTooltipContent(
-                markerPopupHtml(cto, lat, lon, addr, { showAddrLoading: false })
-              );
-            })
-            .catch(function () {
-              marker.setTooltipContent(
-                markerPopupHtml(cto, lat, lon, "", { showAddrLoading: false })
-              );
-            });
-        });
-        shell._consultaCtoPointLayer = window.L.layerGroup([marker]).addTo(map);
+        if (window.NocMaps && window.NocMaps.wireCtoAddressPrefetch) {
+          window.NocMaps.wireCtoAddressPrefetch(
+            marker,
+            CTO_ADDRESS_URL + "?cto=" + encodeURIComponent(cto),
+            function (addr) {
+              return ctoPopup(addr, cto, lat, lon, false);
+            }
+          );
+        }
         map.setView([lat, lon], 17);
         refreshMapTiles(map, shell._nocMapBasemap);
         shell.dataset.consultaCtoMapReady = "done";
@@ -465,34 +353,26 @@
           };
           var cto = String(mk.cto || "").trim();
           var marker = window.L.circleMarker([lat, lon], pointStyle);
-          var coordText = coordTextFromLatLon(lat, lon);
+          var coordText =
+            window.NocMaps && window.NocMaps.coordTextFromLatLon
+              ? window.NocMaps.coordTextFromLatLon(lat, lon)
+              : "";
           wireConsultaCtoMarker(
             marker,
-            markerPopupHtml(cto, lat, lon, "", { showAddrLoading: true }),
+            ctoPopup("", cto, lat, lon, true),
             pointStyle,
-            coordText
+            coordText,
+            { map: map }
           );
-          marker._consultaAddrResolved = false;
-          marker.on("mouseover", function () {
-            if (!cto || marker._consultaAddrResolved) return;
-            marker._consultaAddrResolved = true;
-            fetch(CTO_ADDRESS_URL + "?cto=" + encodeURIComponent(cto))
-              .then(function (r) {
-                return r.ok ? r.json() : null;
-              })
-              .then(function (dataAddr) {
-                var addr =
-                  dataAddr && dataAddr.ok && dataAddr.address ? String(dataAddr.address).trim() : "";
-                marker.setTooltipContent(
-                  markerPopupHtml(cto, lat, lon, addr, { showAddrLoading: false })
-                );
-              })
-              .catch(function () {
-                marker.setTooltipContent(
-                  markerPopupHtml(cto, lat, lon, "", { showAddrLoading: false })
-                );
-              });
-          });
+          if (cto && window.NocMaps && window.NocMaps.wireCtoAddressPrefetch) {
+            window.NocMaps.wireCtoAddressPrefetch(
+              marker,
+              CTO_ADDRESS_URL + "?cto=" + encodeURIComponent(cto),
+              function (addr) {
+                return ctoPopup(addr, cto, lat, lon, false);
+              }
+            );
+          }
           fg.addLayer(marker);
         });
 
@@ -613,7 +493,13 @@
         .then(function (data) {
           el.classList.remove("consulta-cto-ficha__row--loading");
           if (data && data.ok && data.address) {
-            var addr = escHtml(String(data.address).trim());
+            var esc =
+              window.NocMaps && window.NocMaps.escHtml
+                ? window.NocMaps.escHtml
+                : function (s) {
+                    return String(s || "");
+                  };
+            var addr = esc(String(data.address).trim());
             el.innerHTML =
               '<span class="consulta-cto-ficha__label">Dirección</span>' +
               '<span class="consulta-cto-ficha__value">' +

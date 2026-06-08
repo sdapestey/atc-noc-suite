@@ -745,17 +745,8 @@
   </div>
 </div>
 
-<div
-  id="consulta-success-toast"
-  class="altiplano-consulta-toast altiplano-consulta-toast--success"
-  role="status"
-  aria-live="polite"
-  hidden
->
-  <span class="altiplano-consulta-toast__icon" aria-hidden="true">✓</span>
-  <p class="altiplano-consulta-toast__text"></p>
-  <button type="button" class="altiplano-consulta-toast__close" aria-label="Cerrar">×</button>
-</div>
+{% from 'partials/noc_toast.html' import render as noc_toast %}
+{{ noc_toast('consulta-success-toast') }}
 
 <dialog
   id="altiplano-confirm-dialog"
@@ -968,38 +959,19 @@
   var consultaBusyDefaultMessage = "Consultando Altiplano INP…";
   var consultaAdvancedBusyMessage = "Búsqueda avanzada en Altiplano INP…";
   var consultaReinyeccionOkMessage = "Reinyección completada";
-  var consultaToastTimer = null;
-
   function consultaHideToast() {
-    var el = document.getElementById("consulta-success-toast");
-    if (!el) return;
-    el.classList.remove("is-visible");
-    if (consultaToastTimer) {
-      clearTimeout(consultaToastTimer);
-      consultaToastTimer = null;
-    }
-    window.setTimeout(function () {
-      if (el && !el.classList.contains("is-visible")) el.hidden = true;
-    }, 220);
+    if (window.NocToast) window.NocToast.hide("consulta-success-toast");
   }
 
   function consultaToast(message, opts) {
+    if (!window.NocToast) return;
     opts = opts || {};
-    var el = document.getElementById("consulta-success-toast");
-    if (!el) return;
-    var textEl = el.querySelector(".altiplano-consulta-toast__text");
-    if (textEl) textEl.textContent = message != null ? String(message) : "";
-    el.classList.remove("altiplano-consulta-toast--success", "altiplano-consulta-toast--error");
-    el.classList.add("altiplano-consulta-toast--" + (opts.variant || "success"));
-    el.hidden = false;
-    requestAnimationFrame(function () {
-      el.classList.add("is-visible");
-    });
-    if (consultaToastTimer) clearTimeout(consultaToastTimer);
-    var ms = opts.durationMs != null ? Number(opts.durationMs) : 4800;
-    if (ms > 0) {
-      consultaToastTimer = window.setTimeout(consultaHideToast, ms);
-    }
+    var showOpts = {
+      variant: opts.variant || "success",
+      durationMs: opts.durationMs != null ? Number(opts.durationMs) : 4800,
+      atPointer: false,
+    };
+    window.NocToast.show("consulta-success-toast", message, showOpts);
   }
 
   function consultaClearSuccessHint() {
@@ -4465,16 +4437,6 @@
       consultaHideToast();
     }
   });
-  (function consultaWireSuccessToast() {
-    var toastEl = document.getElementById("consulta-success-toast");
-    if (!toastEl) return;
-    var closeBtn = toastEl.querySelector(".altiplano-consulta-toast__close");
-    if (closeBtn) {
-      closeBtn.addEventListener("click", function () {
-        consultaHideToast();
-      });
-    }
-  })();
   (function consultaWireRnDialog() {
     var dlg = document.getElementById("consulta-rn-dialog");
     if (!dlg) return;

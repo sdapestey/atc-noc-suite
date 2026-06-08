@@ -1,0 +1,366 @@
+/* Ancho Bentley SF01-R1301-010; alto de hoja según contenido (una sola hoja continua). */
+@page {
+  size: 1368pt auto;
+  margin: 0;
+}
+
+:root {
+  --b-red: #ff0000;
+  --b-black: #000000;
+  --b-border: #000000;
+  --b-grey-label: #d9d9d9;
+  --b-grey-band: #bfbfbf;
+  --b-grey-sp: #dcdcdc;
+  --b-white: #ffffff;
+  --b-hi: #fff7ed;
+  --b-font: Calibri, Carlito, "Liberation Sans", "Segoe UI", Arial, sans-serif;
+  --b-page-w: 1368pt;
+  --b-page-h: 943pt;
+  --b-table-w: 1234pt;
+  /* Centrado en página; mismo valor = margen lateral y margen inferior */
+  --b-table-x: calc((var(--b-page-w) - var(--b-table-w)) / 2);
+}
+
+* { box-sizing: border-box; }
+
+html, body { margin: 0; padding: 0; }
+
+body.bentley-export {
+  font-family: var(--b-font);
+  font-size: 10pt;
+  line-height: 1.2;
+  color: var(--b-black);
+  background: #808080;
+}
+
+body.bentley-export--pdf {
+  background: #fff;
+}
+
+.bentley-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 16px;
+  background: #2d2d2d;
+  color: #fff;
+  font-size: 12pt;
+  min-width: var(--b-page-w);
+}
+
+.bentley-toolbar a,
+.bentley-toolbar button {
+  font: inherit;
+  padding: 6px 12px;
+  border: 1px solid #666;
+  background: #444;
+  color: #fff;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.bentley-toolbar .primary {
+  background: #c2410c;
+  border-color: #9a3412;
+}
+
+.bentley-toolbar .hint {
+  font-size: 9pt;
+  opacity: 0.85;
+  margin-left: auto;
+}
+
+.bentley-page {
+  position: relative;
+  width: var(--b-page-w);
+  min-width: var(--b-page-w);
+  min-height: auto;
+  height: auto;
+  margin: 8px auto;
+  padding-bottom: var(--b-table-x);
+  background: var(--b-white);
+  page-break-after: avoid;
+  overflow: visible;
+}
+
+body.bentley-export .bentley-wm {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 62%;
+  max-width: 700pt;
+  height: auto;
+  z-index: 50;
+  /* Opacidad horneada en american-tower-watermark.png (CSS opacity no imprime bien en PDF). */
+  opacity: 1;
+  pointer-events: none;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+.bentley-page > header,
+.bentley-page > .bentley-grid,
+.bentley-page > table {
+  position: relative;
+  z-index: 1;
+}
+
+.bentley-header {
+  margin-left: var(--b-table-x);
+  width: var(--b-table-w);
+}
+
+.bentley-header-body {
+  width: 100%;
+}
+
+.bentley-header-logo {
+  text-align: center;
+  padding: 2pt 0 8pt;
+}
+
+.bentley-header-logo img {
+  display: block;
+  margin: 0 auto;
+  height: 44pt;
+  width: auto;
+  max-width: 320pt;
+  object-fit: contain;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+.bentley-red-rule {
+  height: 4pt;
+  background: var(--b-red);
+  margin: 0 0 1pt;
+}
+
+.bentley-meta-grid {
+  display: grid;
+  grid-template-columns: 75pt 377pt 93pt 363pt 100pt 226pt;
+  width: var(--b-table-w);
+  border: 1px solid var(--b-border);
+  font-size: 10pt;
+  line-height: 1.2;
+}
+
+.bentley-meta-grid > div {
+  border: 1px solid var(--b-border);
+  padding: 2pt 5pt;
+  min-height: 18pt;
+  display: flex;
+  align-items: center;
+}
+
+.bentley-meta-grid .lbl {
+  background: var(--b-grey-label);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.bentley-meta-grid .val {
+  text-align: left;
+  overflow: hidden;
+}
+
+.bentley-meta-grid .val--url {
+  font-size: 8.5pt;
+  line-height: 1.1;
+  word-break: break-all;
+}
+
+.bentley-meta-grid .val--wide {
+  grid-column: span 3;
+}
+
+.bentley-meta-grid a {
+  color: #0000ee;
+  text-decoration: underline;
+}
+
+.bentley-meta {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 10pt;
+}
+
+.bentley-meta td {
+  border: 1px solid var(--b-border);
+  padding: 2pt 5pt;
+  height: 18pt;
+  vertical-align: middle;
+}
+
+.bentley-meta .lbl {
+  background: var(--b-grey-label);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.bentley-meta .val {
+  text-align: left;
+  overflow: hidden;
+}
+
+.bentley-meta a {
+  color: #0000ee;
+  text-decoration: underline;
+  font-size: 9pt;
+}
+
+.bentley-meta col:nth-child(1) { width: 75pt; }
+.bentley-meta col:nth-child(2) { width: 377pt; }
+.bentley-meta col:nth-child(3) { width: 93pt; }
+.bentley-meta col:nth-child(4) { width: 363pt; }
+.bentley-meta col:nth-child(5) { width: 100pt; }
+.bentley-meta col:nth-child(6) { width: 226pt; }
+
+.bentley-grid {
+  margin-left: var(--b-table-x);
+  width: var(--b-table-w);
+  max-width: var(--b-table-w);
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 10pt;
+}
+
+.bentley-grid + .bentley-grid {
+  margin-top: 0;
+}
+
+.bentley-grid th,
+.bentley-grid td {
+  border: 1px solid var(--b-border);
+  padding: 1pt 3pt;
+  vertical-align: middle;
+  text-align: center;
+  line-height: 1.15;
+  min-height: 18pt;
+  height: auto;
+  overflow: hidden;
+}
+
+.bentley-grid thead th {
+  background: var(--b-grey-band);
+  font-weight: 700;
+  font-size: 10pt;
+  white-space: nowrap;
+  padding: 1pt 2pt;
+}
+
+.bentley-grid--splitter col:nth-child(1)  { width: 166pt; }
+.bentley-grid--splitter col:nth-child(2)  { width: 53pt; }
+.bentley-grid--splitter col:nth-child(3)  { width: 64pt; }
+.bentley-grid--splitter col:nth-child(4)  { width: 59pt; }
+.bentley-grid--splitter col:nth-child(5)  { width: 74pt; }
+.bentley-grid--splitter col:nth-child(6)  { width: 151pt; }
+.bentley-grid--splitter col:nth-child(7)  { width: 91pt; }
+.bentley-grid--splitter col:nth-child(8)  { width: 69pt; }
+.bentley-grid--splitter col:nth-child(9)  { width: 163pt; }
+.bentley-grid--splitter col:nth-child(10) { width: 47pt; }
+.bentley-grid--splitter col:nth-child(11) { width: 54pt; }
+.bentley-grid--splitter col:nth-child(12) { width: 39pt; }
+.bentley-grid--splitter col:nth-child(13) { width: 50pt; }
+.bentley-grid--splitter col:nth-child(14) { width: 154pt; }
+
+.bentley-grid--cable col:nth-child(1)  { width: 166pt; }
+.bentley-grid--cable col:nth-child(2)  { width: 53pt; }
+.bentley-grid--cable col:nth-child(3)  { width: 64pt; }
+.bentley-grid--cable col:nth-child(4)  { width: 59pt; }
+.bentley-grid--cable col:nth-child(5)  { width: 74pt; }
+.bentley-grid--cable col:nth-child(6)  { width: 151pt; }
+.bentley-grid--cable col:nth-child(7)  { width: 166pt; }
+.bentley-grid--cable col:nth-child(8)  { width: 53pt; }
+.bentley-grid--cable col:nth-child(9)  { width: 64pt; }
+.bentley-grid--cable col:nth-child(10) { width: 59pt; }
+.bentley-grid--cable col:nth-child(11) { width: 73pt; }
+.bentley-grid--cable col:nth-child(12) { width: 252pt; }
+
+.bentley-grid .band {
+  background: var(--b-grey-band);
+  font-weight: 700;
+}
+
+.bentley-grid .splitter-lbl {
+  background: var(--b-grey-sp);
+  font-weight: 700;
+  font-size: 8.5pt;
+  line-height: 1.1;
+}
+
+.bentley-grid .splitter-lbl--merged {
+  vertical-align: middle;
+  text-align: center;
+  padding: 6pt 4pt;
+}
+
+.bentley-grid .splitter-lbl--merged .splitter-lbl__main,
+.bentley-grid .splitter-lbl--merged .splitter-lbl__close {
+  display: block;
+  margin: 8pt auto;
+  max-width: 11em;
+  word-break: break-word;
+}
+
+.bentley-grid .left {
+  text-align: left;
+  font-size: 9pt;
+}
+
+.bentley-grid .path-cell,
+.bentley-grid .circuit-cell {
+  font-size: 8.5pt;
+}
+
+.bentley-grid .num,
+.bentley-grid .port {
+  white-space: nowrap;
+  font-size: 9pt;
+}
+
+.bentley-grid .fc {
+  font-size: 9pt;
+  white-space: nowrap;
+}
+
+.bentley-grid tr.highlight td {
+  background: var(--b-hi) !important;
+}
+
+.fc {
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+.fc--azul { background: #0066cc !important; color: #fff !important; }
+.fc--naranja { background: #ff9900 !important; color: #000 !important; }
+.fc--verde { background: #00b050 !important; color: #fff !important; }
+.fc--marron { background: #804000 !important; color: #fff !important; }
+.fc--gris { background: #808080 !important; color: #fff !important; }
+.fc--blanco { background: #fff !important; color: #000 !important; border: 1px solid #999 !important; }
+.fc--rojo { background: #ff0000 !important; color: #fff !important; }
+.fc--negro { background: #000 !important; color: #fff !important; }
+.fc--amarillo { background: #ff0 !important; color: #000 !important; }
+.fc--violeta { background: #9933ff !important; color: #fff !important; }
+.fc--rosa { background: #ff99cc !important; color: #000 !important; }
+.fc--celeste { background: #00ccff !important; color: #000 !important; }
+
+@media print {
+  body.bentley-export { background: #fff; }
+  .bentley-toolbar { display: none !important; }
+  .bentley-page {
+    margin: 0 auto;
+    padding-bottom: var(--b-table-x);
+    page-break-after: avoid;
+  }
+}
+
+@media screen {
+  body.bentley-export { overflow-x: auto; }
+}

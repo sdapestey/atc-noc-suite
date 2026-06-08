@@ -55,7 +55,7 @@
     <div class="controls-hint dashboard-tree-hint dashboard-tree-hint--metrics suite-note">
       <div class="dashboard-tree-hint__text">
         <strong class="hint-kicker">NOC</strong>
-        Marcá PON (o “Seleccionar todos los PON de este LT”) y usá copiar / exportar CSV (solo Access ID <strong>IN SERVICE</strong>; descarga local UTF‑8).
+        Marcá PON (o “Seleccionar todos los PON de este LT”) y usá copiar / exportar CSV (solo Access ID <strong>IN SERVICE</strong>; descarga local UTF‑8). Clic en <strong>RAMAs</strong>, <strong>CTO</strong>, <strong>ONT</strong> u operador del resumen para copiar solo esa lista.
       </div>
       <div class="dashboard-tree-metrics">
         <p class="dashboard-tree-selection" id="pon-selection-summary"><span class="olt-selection-summary-label">Seleccionados:</span> <span class="olt-pon-selected-kicker olt-pon-selected-kicker--empty" title="PON marcados; copiar/exportar incluye solo AID IN SERVICE"><span class="olt-pon-selected-count">0</span> <span class="olt-pon-selected-label">PON</span></span> <span class="olt-summary-sep" aria-hidden="true">·</span> <span class="dashboard-metric-pill olt-metric-pill olt-metric-pill--ramas olt-metric-pill--empty" title="RAMAs únicas con al menos un AID IN SERVICE en la selección"><span class="dashboard-metric-pill__n olt-metric-pill__n">0</span> <span class="dashboard-metric-pill__l olt-metric-pill__l">RAMAs</span></span> <span class="olt-summary-sep" aria-hidden="true">·</span> <span class="dashboard-metric-pill olt-metric-pill olt-metric-pill--cto olt-metric-pill--empty" title="CTO únicas con al menos un AID IN SERVICE en la selección"><span class="dashboard-metric-pill__n olt-metric-pill__n">0</span> <span class="dashboard-metric-pill__l olt-metric-pill__l">CTO</span></span> <span class="olt-summary-sep" aria-hidden="true">·</span> <span class="dashboard-metric-pill olt-metric-pill olt-metric-pill--ont olt-metric-pill--empty" title="Filas de inventario con estado IN SERVICE (copiar / exportar)"><span class="dashboard-metric-pill__n olt-metric-pill__n">0</span> <span class="dashboard-metric-pill__l olt-metric-pill__l">ONT</span></span></p>
@@ -136,6 +136,7 @@
 
 </div>
 
-<div id="toast-olt" class="toast" role="status" aria-live="polite"></div>
+{% from 'partials/noc_toast.html' import render as noc_toast %}
+{{ noc_toast('toast-olt') }}
 </body>
 </html>

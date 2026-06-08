@@ -239,6 +239,42 @@ QUERIES = {
         ORDER BY b.reserved_date DESC NULLS LAST, b.provided_date DESC NULLS LAST
         LIMIT 1
     """,
+    "historico_resolver_pon_desde_ramas": """
+        WITH r AS (
+            SELECT DISTINCT ON (f.path_atc)
+                f.path_atc,
+                f.physical_path
+            FROM cm.inventory_fat_occupation f
+            WHERE f.path_atc = ANY(%s)
+            ORDER BY f.path_atc, f.access_id
+        ),
+        ranked AS (
+            SELECT
+                r.path_atc,
+                btrim(b.object_name) AS object_name,
+                ROW_NUMBER() OVER (
+                    PARTITION BY r.path_atc
+                    ORDER BY b.reserved_date DESC NULLS LAST, b.provided_date DESC NULLS LAST
+                ) AS rn
+            FROM r
+            JOIN aux.bajada_inventario b ON b.fibra_f01_f02_f03 = r.physical_path
+            WHERE b.object_name IS NOT NULL
+              AND btrim(b.object_name) <> ''
+        )
+        SELECT path_atc, object_name
+        FROM ranked
+        WHERE rn = 1
+    """,
+    "onts_por_ramas_batch": """
+        SELECT
+            f.path_atc,
+            s.object_name AS object_name_raw,
+            REPLACE(COALESCE(s.object_name, ''), ':1-1', '') AS object_name_ui
+        FROM cm.inventory_fat_occupation f
+        LEFT JOIN altiplano.serial s ON s.access_id = f.access_id
+        WHERE f.path_atc = ANY(%s)
+          AND f.status = 'IN SERVICE'
+    """,
     "historico_potencias_por_pon": """
         SELECT
             "ont-pwr_rx_updated_on" AS ts,
@@ -248,5 +284,35 @@ QUERIES = {
         WHERE objectname LIKE %s
           AND "ont-pwr_rx_updated_on" >= NOW() - make_interval(days => %s)
         ORDER BY "ont-pwr_rx_updated_on" ASC
+    """,
+    "historico_ultima_rx_por_olt": """
+        SELECT DISTINCT ON (regexp_replace(objectname, '^v[0-9]+__t_', ''))
+            "ont-pwr_rx_updated_on" AS ts,
+            objectname,
+            ("ont-pwr_rx" / 10.0)::float8 AS rx
+        FROM altiplano.potencias
+        WHERE (objectname LIKE %s OR objectname LIKE %s)
+          AND ("ont-pwr_rx" / 10.0)::float8 <> -100.0
+        ORDER BY regexp_replace(objectname, '^v[0-9]+__t_', ''), "ont-pwr_rx_updated_on" DESC
+    """,
+    "radar_degradacion_inventario": """
+        SELECT
+            f.path_atc AS rama,
+            COUNT(*)::int AS ont_count,
+            COUNT(DISTINCT f.location_description)::int AS cto_count
+        FROM cm.inventory_fat_occupation f
+        WHERE f.status = 'IN SERVICE'
+          AND f.path_atc IS NOT NULL
+        GROUP BY f.path_atc
+    """,
+    "radar_degradacion_muestras_por_olt": """
+        SELECT
+            date_trunc('day', "ont-pwr_rx_updated_on") AS dia,
+            "ont-pwr_rx_updated_on" AS ts,
+            objectname,
+            ("ont-pwr_rx" / 10.0)::float8 AS rx
+        FROM altiplano.potencias
+        WHERE "ont-pwr_rx_updated_on" >= NOW() - make_interval(days => %s)
+          AND (objectname LIKE %s OR objectname LIKE %s)
     """,
 }

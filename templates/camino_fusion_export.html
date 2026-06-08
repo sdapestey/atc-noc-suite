@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>{% if report.ok %}{{ report.header.fusion_id }}{% else %}Export fusión{% endif %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/camino-fusion-bentley.css', _external=pdf_mode) }}">
+</head>
+<body class="bentley-export{% if pdf_mode %} bentley-export--pdf{% endif %}">
+  {% if not pdf_mode %}
+  <div class="bentley-toolbar">
+    <a class="primary" href="{{ url_for('dash_camino_optico_export_fusion', fusion=report.fusion_id, rama=report.rama or '', pdf=1) }}">Descargar PDF</a>
+    <a href="{{ url_for('dash_camino_optico') }}">Volver a Camino óptico</a>
+    {% if report.ok %}<span>{{ report.header.fusion_id }}</span>{% endif %}
+    <span class="hint">Usá «Descargar PDF» para igualar al modelo Bentley (no Imprimir del navegador).</span>
+  </div>
+  {% endif %}
+
+  {% macro fc(label, slug) %}
+    {% if label %}<td class="fc fc--{{ slug or 'none' }}">{{ label }}</td>{% else %}<td></td>{% endif %}
+  {% endmacro %}
+
+  {% macro cable_rows(rows) %}
+    {% for row in rows %}
+    <tr class="{% if row.highlight %}highlight{% endif %}">
+      <td class="left">{{ row.cable_in }}</td>
+      <td class="num">{{ row.grupo_in }}</td>
+      {{ fc(row.color_grupo_in, row.color_grupo_in_slug) }}
+      <td class="num">{{ row.fibra_in }}</td>
+      {{ fc(row.color_fibra_in, row.color_fibra_in_slug) }}
+      <td class="left">{{ row.rama_salida }}</td>
+      <td class="left">{{ row.cable_out }}</td>
+      <td class="num">{{ row.grupo_out }}</td>
+      {{ fc(row.color_grupo_out, row.color_grupo_out_slug) }}
+      <td class="num">{{ row.fibra_out }}</td>
+      {{ fc(row.color_fibra_out, row.color_fibra_out_slug) }}
+      <td class="left">{{ row.destino }}</td>
+    </tr>
+    {% endfor %}
+  {% endmacro %}
+
+  {% macro cable_head() %}
+      <thead>
+        <tr>
+          <th colspan="5" class="band">ENTRADA</th>
+          <th rowspan="2" class="band">RAMA</th>
+          <th colspan="6" class="band">SALIDA</th>
+        </tr>
+        <tr>
+          <th>CABLE (IN)</th>
+          <th>GRUPO</th>
+          <th>COLOR</th>
+          <th>FIBRA</th>
+          <th>COLOR</th>
+          <th>CABLE (OUT)</th>
+          <th>GRUPO</th>
+          <th>COLOR</th>
+          <th>FIBRA</th>
+          <th>COLOR</th>
+          <th>DESTINO</th>
+        </tr>
+      </thead>
+  {% endmacro %}
+
+  {% if not report.ok %}
+  <div class="bentley-page">
+    <p><strong>Error</strong> — {{ report.error or "No se pudo generar el reporte." }}</p>
+  </div>
+  {% else %}
+  {% set h = report.header %}
+  {% set b = report.bentley %}
+  {% set cables = b.cable_render %}
+
+  <div class="bentley-page">
+    <header class="bentley-header">
+      <div class="bentley-header-body">
+        <div class="bentley-header-logo">
+          <img src="{{ logo_src }}" alt="American Tower" width="240" height="48">
+        </div>
+        <div class="bentley-red-rule"></div>
+        <div class="bentley-meta-grid" role="table">
+          <div class="lbl" role="rowheader">DIRECCIÓN:</div>
+          <div class="val">{{ h.direccion or "—" }}</div>
+          <div class="lbl" role="rowheader">COORDENADAS:</div>
+          <div class="val val--url">{% if h.maps_url %}<a href="{{ h.maps_url }}">{{ h.maps_url }}</a>{% else %}—{% endif %}</div>
+          <div class="lbl" role="rowheader">TIPO:</div>
+          <div class="val">{{ h.tipo }}</div>
+
+          <div class="lbl" role="rowheader">BACKHAUL:</div>
+          <div class="val">{{ h.backhaul or "—" }}</div>
+          <div class="lbl" role="rowheader">NOMBRE:</div>
+          <div class="val">{{ h.nombre_fosc or "—" }}</div>
+          <div class="lbl" role="rowheader">STATUS:</div>
+          <div class="val">{{ h.status or "—" }}</div>
+
+          <div class="lbl" role="rowheader">OWNER:</div>
+          <div class="val">{{ h.owner or "—" }}</div>
+          <div class="lbl" role="rowheader">ALIAS:</div>
+          <div class="val">{{ h.alias or "—" }}</div>
+          <div class="lbl" role="rowheader">FUSIÓN:</div>
+          <div class="val">{{ h.fusion_num or "—" }}</div>
+
+          <div class="lbl" role="rowheader">PARTIDO:</div>
+          <div class="val">{{ h.partido or "—" }}</div>
+          <div class="lbl" role="rowheader">DESCRIPTION:</div>
+          <div class="val val--wide" style="grid-column: span 3">{{ h.fusion_id }}</div>
+        </div>
+      </div>
+    </header>
+
+    <table class="bentley-grid bentley-grid--splitter">
+      <colgroup>
+        <col><col><col><col><col><col><col><col><col><col><col><col><col><col>
+      </colgroup>
+      <thead>
+        <tr>
+          <th colspan="5" class="band">ENTRADA</th>
+          <th rowspan="2" class="band">SPLITTER</th>
+          <th colspan="3" class="band">SALIDA DEL SPLITTER</th>
+          <th colspan="5" class="band">COMPONENTE (OUT)</th>
+        </tr>
+        <tr>
+          <th>COMPONENTE (IN)</th>
+          <th>GRUPO</th>
+          <th>COLOR</th>
+          <th>FIBRA/PORT</th>
+          <th>COLOR</th>
+          <th>FIBRA</th>
+          <th>COLOR</th>
+          <th>COMPONENTE</th>
+          <th>GRUPO</th>
+          <th>COLOR</th>
+          <th>FIBRA</th>
+          <th>COLOR</th>
+          <th>DESTINO</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for sec in b.splitter_sections %}
+        {% for sp in sec.sp_blocks %}
+          {% set n = sp.rows|length %}
+          {% for row in sp.rows %}
+        <tr class="{% if row.highlight %}highlight{% endif %}">
+          {% if row.rowspan_entrada %}
+          <td rowspan="{{ n }}" class="left">{{ row.comp_in }}</td>
+          <td rowspan="{{ n }}" class="num">{{ row.grupo_in }}</td>
+          <td rowspan="{{ n }}" class="fc fc--{{ row.color_grupo_in_slug or 'none' }}">{{ row.color_grupo_in }}</td>
+          <td rowspan="{{ n }}" class="num">{{ row.fibra_port }}</td>
+          <td rowspan="{{ n }}" class="fc fc--{{ row.color_fibra_port_slug or 'none' }}">{{ row.color_fibra_port }}</td>
+          {% endif %}
+          {% if sp.splitter_merge %}
+          {% if loop.first %}
+          <td rowspan="{{ n }}" class="splitter-lbl splitter-lbl--merged">
+            <span class="splitter-lbl__main">{{ sp.splitter_main }}</span>
+            {% if sp.splitter_close %}
+            <span class="splitter-lbl__close">{{ sp.splitter_close }}</span>
+            {% endif %}
+          </td>
+          {% endif %}
+          {% else %}
+          <td class="splitter-lbl">{{ row.splitter_text }}</td>
+          {% endif %}
+          {% if row.tipo == 'header' %}
+          <td></td>
+          <td class="left path-cell">{{ row.path_display }}</td>
+          <td></td><td></td><td></td>
+          <td class="left circuit-cell">{{ row.circuit_display }}</td>
+          <td></td><td></td>
+          {% elif row.tipo == 'out_only' %}
+          <td class="port">{{ row.salida_splitter }}</td>
+          <td class="fc fc--{{ row.color_salida_slug or 'none' }}">{{ row.color_salida }}</td>
+          <td></td><td></td><td></td><td></td><td></td><td></td>
+          {% else %}
+          <td class="port">{{ row.salida_splitter }}</td>
+          <td class="fc fc--{{ row.color_salida_slug or 'none' }}">{{ row.color_salida }}</td>
+          <td class="left">{{ row.comp_out }}</td>
+          <td class="num">{{ row.grupo_out }}</td>
+          <td class="fc fc--{{ row.color_grupo_out_slug or 'none' }}">{{ row.color_grupo_out }}</td>
+          <td class="num">{{ row.fibra_out }}</td>
+          <td class="fc fc--{{ row.color_fibra_out_slug or 'none' }}">{{ row.color_fibra_out }}</td>
+          <td class="left">{{ row.destino }}</td>
+          {% endif %}
+        </tr>
+          {% endfor %}
+        {% endfor %}
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <table class="bentley-grid bentley-grid--cable">
+      <colgroup>
+        <col><col><col><col><col><col><col><col><col><col><col><col>
+      </colgroup>
+      {{ cable_head() }}
+      <tbody>
+        {{ cable_rows(cables.page1) }}
+        {% if cables.page2 %}{{ cable_rows(cables.page2) }}{% endif %}
+      </tbody>
+    </table>
+    <img class="bentley-wm" src="{{ watermark_src }}" alt="" aria-hidden="true">
+  </div>
+  {% endif %}
+</body>
+</html>

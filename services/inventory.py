@@ -1109,7 +1109,13 @@ def consultar_access_id_potencias(access_id):
         "SN": telem.get("sn") or sn_live or base_sn or None,
         **ont_fields,
     }
-    out["ALARMAS"] = obtener_alarmas_ont_activas(aid_canon, obj, op_id)
+    from altiplano import filter_alarmas_por_serial_ont
+
+    live_sn = out.get("SN")
+    out["ALARMAS"] = filter_alarmas_por_serial_ont(
+        obtener_alarmas_ont_activas(aid_canon, obj, op_id),
+        str(live_sn).strip() if live_sn else None,
+    )
     if out["ALARMAS"]:
         out["alarmas_label"] = None
     elif _tiene_potencia_valida(tx, rx):

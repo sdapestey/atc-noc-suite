@@ -7,6 +7,7 @@ def test_dashboard_olt_pon_badge_selected_style():
     assert "var(--success-text)" in css
     assert ".olt-selection-summary-operadores" in css
     assert ".olt-metric-pill--op-tasa" in css
+    assert "olt-metric-pill--copy" in css
 
 
 def test_dashboard_olt_js_contains_core_handlers():
@@ -32,11 +33,22 @@ def test_dashboard_olt_js_contains_core_handlers():
         encoding="utf-8"
     )
     assert "function _buildPonExportLines(" in js
+    assert "function _collectPonExportData(" in js
+    assert "function _formatPonExportGrouped(" in js
+    assert "function _formatPonExportFlatSparse(" in js
+    assert 'format: "grouped"' in js
+    assert 'format: "flat-sparse"' in js
+    assert "function _copyPonSelectionList(" in js
+    assert "function _copyPonSelectionOperador(" in js
+    assert "data-olt-copy" in js
+    assert "data-olt-operador" in js
     assert "_OLT_OPERADORES_ORDEN" in js
     assert "function _oltOperadorSummaryHtml(" in js
     assert "(counts[op] || 0) > 0" in js
     assert "olt-selection-summary-operadores" in js
     assert "function _sanitizeExportBasename(" in js
+    assert "function _exportDateStamp(" in js
+    assert "pones_seleccionados_" in js
     assert "function _shouldListExportOperator(" in js
     assert "finalizeTxRxLoadingCell" in js
     assert "filaTieneAidConsulta" in js
@@ -48,3 +60,8 @@ def test_dashboard_olt_js_contains_core_handlers():
     assert "_OLT_TREE_ACCENT_CLASSES" in js
     assert "<th>Estado</th>" not in js
     assert "OLT_COL_EST" not in js
+    assert "/dashboard/olt/semaforo-historico" in js
+    assert "function _cargarSemaforoHistoricoOlt(" in js
+    assert "olt-lt-row--semaforo-historico" in js
+    assert "_restorePeorSiPendiente" in js
+    assert 'peCell.textContent.trim() === "…"' in js

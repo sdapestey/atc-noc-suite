@@ -1,4 +1,3 @@
-let _qualityToastTimer = null;
 let _calidadRules = [];
 let _pageOffset = 0;
 const _pageSize = 50;
@@ -19,13 +18,10 @@ const _fmtCount =
     return String(n);
   };
 
-function qualityToast(msg) {
-  const el = document.getElementById("toast");
-  if (!el) return;
-  el.textContent = msg;
-  el.classList.add("show");
-  if (_qualityToastTimer) clearTimeout(_qualityToastTimer);
-  _qualityToastTimer = setTimeout(() => el.classList.remove("show"), 1400);
+function qualityToast(msg, opts) {
+  if (!window.NocToast) return;
+  const options = Object.assign({ durationMs: 1400 }, opts || {});
+  window.NocToast.show("toast", msg, options);
 }
 
 function _filters() {

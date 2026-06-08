@@ -11,10 +11,12 @@ from db import db_cursor
 from queries import QUERIES
 
 from .dashboard_cache import get_cached_historico_potencias
+from .domain import lt_desde_object_name, resumen_semaforo_desde_rx_values
 from .inventory import consultar_rama_potencias_altiplano_por_ont
 
 
 _OBJ_RE = re.compile(r"^(.*?):1-1-(\d+)-(\d+)-")
+_POTENCIAS_OBJ_PREFIX_RE = re.compile(r"^v\d+__t_")
 ALLOWED_HISTORICO_DAYS = (1, 7, 15, 30)
 # Lectura guardada en Postgres cuando la rama/ONT no tenía señal (no comparar como baseline).
 HISTORICO_RX_DOWN_PLACEHOLDER_DBM = -100.0
@@ -274,3 +276,296 @@ def consultar_potencias_altiplano_ahora_rama(ratc: str) -> dict:
         "pon": pon,
         "samples": samples,
     }
+
+
+def _strip_potencias_objectname_prefix(objectname: str) -> str:
+    """Quita prefijo de telemetría (``v1__t_``, ``v7__t_``, …) de ``altiplano.potencias``."""
+    return _POTENCIAS_OBJ_PREFIX_RE.sub("", str(objectname or "").strip())
+
+
+def _normalizar_potencias_objectname(objectname: str) -> str:
+    """Alinea ``v1__t_BA_OLTA_x:1-1-L-P-ONT`` al formato con guiones (como Altiplano)."""
+    s = _strip_potencias_objectname_prefix(objectname)
+    if ":1-1-" in s:
+        base, resto = s.split(":1-1-", 1)
+        return f"{base}-{resto}"
+    return s
+
+
+def _lt_key_from_potencias_objectname(objectname: str) -> str | None:
+    """Deriva ``OLT.LT<n>`` desde ``objectname`` guardado en ``altiplano.potencias``."""
+    normalized = _normalizar_potencias_objectname(objectname)
+    m = re.match(r"^(BA_OLTA_[A-Za-z0-9_]+)-(\d+)", normalized)
+    if m:
+        return f"{m.group(1)}.LT{m.group(2)}"
+    return lt_desde_object_name(normalized)
+
+
+def _olt_prefix_from_lt(lt: str) -> str | None:
+    """``BA_OLTA_ES01_01.LT2`` → ``BA_OLTA_ES01_01``."""
+    lt_s = str(lt or "").strip()
+    if ".LT" not in lt_s.upper():
+        return None
+    return lt_s.rsplit(".", 1)[0].strip() or None
+
+
+def _procesar_filas_historico_por_lt(
+    rows: list,
+    lts_solicitados: set[str],
+) -> dict[str, dict]:
+    """Última RX por ``objectname`` agrupada por LT; excluye placeholder DOWN."""
+    last_rx_by_lt: dict[str, dict[str, float]] = defaultdict(dict)
+
+    for ts, objectname, rx in rows:
+        if not isinstance(ts, datetime):
+            continue
+        lt_key = _lt_key_from_potencias_objectname(str(objectname or ""))
+        if not lt_key or lt_key not in lts_solicitados:
+            continue
+        obj_s = _normalizar_potencias_objectname(str(objectname or ""))
+        if not obj_s:
+            continue
+        if rx is None:
+            continue
+        rx_val = float(rx)
+        if _is_historico_rx_down_placeholder(rx_val):
+            continue
+        prev = last_rx_by_lt[lt_key].get(obj_s)
+        if prev is None or ts >= prev[0]:
+            last_rx_by_lt[lt_key][obj_s] = (ts, rx_val)
+
+    out: dict[str, dict] = {}
+    for lt_key in lts_solicitados:
+        rx_map = last_rx_by_lt.get(lt_key) or {}
+        rx_values = [pair[1] for pair in rx_map.values()]
+        resumen = resumen_semaforo_desde_rx_values(rx_values)
+        peor = min(rx_values) if rx_values else None
+        out[lt_key] = {
+            "ROJAS": resumen["ROJAS"],
+            "AMARILLAS": resumen["AMARILLAS"],
+            "VERDES": resumen["VERDES"],
+            "PEOR_RX": None if peor is None else round(float(peor), 2),
+            "ONT_CON_RX": len(rx_values),
+        }
+    return out
+
+
+def _merge_semaforo_historico_chunk(merged: dict[str, dict], chunk: dict[str, dict]) -> None:
+    """Fusiona resultados por OLT sin pisar RAMAs/LTs ya resueltas con ceros vacíos."""
+    for key, data in chunk.items():
+        if int(data.get("ONT_CON_RX") or 0) > 0:
+            merged[key] = data
+
+
+def _semaforo_historico_por_lts_uncached(lts: list[str]) -> dict:
+    """Última RX guardada por ONT en Postgres (sin ventana temporal)."""
+    lts_norm = sorted({str(lt or "").strip() for lt in lts if str(lt or "").strip()})
+    if not lts_norm:
+        return {"ok": False, "status_code": 400, "error": "Parámetro lts requerido"}
+
+    por_olt: dict[str, set[str]] = defaultdict(set)
+    for lt in lts_norm:
+        olt = _olt_prefix_from_lt(lt)
+        if olt:
+            por_olt[olt].add(lt)
+
+    lts_set = set(lts_norm)
+    merged: dict[str, dict] = {lt: {
+        "ROJAS": 0,
+        "AMARILLAS": 0,
+        "VERDES": 0,
+        "PEOR_RX": None,
+        "ONT_CON_RX": 0,
+    } for lt in lts_norm}
+
+    with db_cursor() as cur:
+        for olt in sorted(por_olt.keys()):
+            cur.execute(
+                QUERIES["historico_ultima_rx_por_olt"],
+                (f"%{olt}-%", f"%{olt}:%"),
+            )
+            rows = cur.fetchall()
+            chunk = _procesar_filas_historico_por_lt(rows, lts_set)
+            _merge_semaforo_historico_chunk(merged, chunk)
+
+    return {
+        "ok": True,
+        "mode": "ultima_guardada",
+        "source": "historico",
+        "lts": merged,
+    }
+
+
+def semaforo_historico_por_lts(lts: list[str], days: int | None = None) -> dict:
+    """Resumen semafórico por LT desde la última RX en ``altiplano.potencias`` (Postgres).
+
+    Ignora ``days`` (compatibilidad con clientes viejos): siempre usa la última
+    medición persistida por ``objectname``, sin filtro temporal.
+    """
+    del days  # ventana temporal retirada: última guardada en BD
+    lts_norm = sorted({str(lt or "").strip() for lt in lts if str(lt or "").strip()})
+    cache_key = "|".join(lts_norm)
+    return get_cached_historico_potencias(
+        get_dashboard_historico_cache_seconds(),
+        f"semaforo_lt|ultima_v2|{cache_key}",
+        lambda: _semaforo_historico_por_lts_uncached(lts_norm),
+    )
+
+
+def _pon_desde_object_name_resuelto(object_name: str) -> str | None:
+    """``BA_OLTA_x:1-1-L-P-…`` → ``BA_OLTA_x-L-P`` (misma regla que histórico por rama)."""
+    obj_name = str(object_name or "").strip()
+    m = _OBJ_RE.search(obj_name)
+    if m:
+        return f"{m.group(1)}-{m.group(2)}-{m.group(3)}"
+    norm = _normalizar_potencias_objectname(obj_name)
+    m2 = re.match(r"^(BA_OLTA_[A-Za-z0-9_]+-\d+-\d+)", norm)
+    return m2.group(1) if m2 else None
+
+
+def _pon_prefix_from_normalized_objectname(norm: str) -> str | None:
+    m = re.match(r"^(BA_OLTA_[A-Za-z0-9_]+-\d+-\d+)", str(norm or "").strip())
+    return m.group(1) if m else None
+
+
+def _olt_desde_pon(pon: str) -> str | None:
+    m = re.match(r"^(BA_OLTA_[A-Za-z0-9_]+)-\d+-\d+$", str(pon or "").strip())
+    return m.group(1) if m else None
+
+
+def _batch_pon_desde_ramas(ramas: list[str]) -> dict[str, str | None]:
+    ramas_norm = [str(r or "").strip() for r in ramas if str(r or "").strip()]
+    out: dict[str, str | None] = {r: None for r in ramas_norm}
+    if not ramas_norm:
+        return out
+    with db_cursor() as cur:
+        cur.execute(QUERIES["historico_resolver_pon_desde_ramas"], (ramas_norm,))
+        rows = cur.fetchall()
+    for path_atc, object_name in rows:
+        rama = str(path_atc or "").strip()
+        if rama:
+            out[rama] = _pon_desde_object_name_resuelto(str(object_name or ""))
+    return out
+
+
+def _batch_ont_keys_por_ramas(ramas: list[str]) -> dict[str, set[str]]:
+    ramas_norm = [str(r or "").strip() for r in ramas if str(r or "").strip()]
+    out: dict[str, set[str]] = defaultdict(set)
+    if not ramas_norm:
+        return out
+    with db_cursor() as cur:
+        cur.execute(QUERIES["onts_por_ramas_batch"], (ramas_norm,))
+        rows = cur.fetchall()
+    for path_atc, obj_raw, obj_ui in rows:
+        rama = str(path_atc or "").strip()
+        if not rama:
+            continue
+        for col in (obj_raw, obj_ui):
+            ok = _ont_key_from_object_name(col)
+            if ok:
+                out[rama].add(ok)
+    return out
+
+
+def _procesar_filas_historico_por_ramas(
+    rows: list,
+    ramas_solicitadas: set[str],
+    pon_by_rama: dict[str, str | None],
+    ont_keys_by_rama: dict[str, set[str]],
+) -> dict[str, dict]:
+    """Última RX por ONT de inventario IN SERVICE, agrupada por RAMA."""
+    ramas_by_pon: dict[str, set[str]] = defaultdict(set)
+    for rama in ramas_solicitadas:
+        pon = pon_by_rama.get(rama)
+        if pon:
+            ramas_by_pon[pon].add(rama)
+
+    last_rx: dict[str, dict[str, tuple]] = {r: {} for r in ramas_solicitadas}
+
+    for ts, objectname, rx in rows:
+        if not isinstance(ts, datetime):
+            continue
+        if rx is None:
+            continue
+        rx_val = float(rx)
+        if _is_historico_rx_down_placeholder(rx_val):
+            continue
+        norm = _normalizar_potencias_objectname(str(objectname or ""))
+        pon = _pon_prefix_from_normalized_objectname(norm)
+        if not pon or pon not in ramas_by_pon:
+            continue
+        ont_key = _ont_key_from_object_name(objectname)
+        if not ont_key:
+            continue
+        for rama in ramas_by_pon[pon]:
+            if ont_key not in ont_keys_by_rama.get(rama, set()):
+                continue
+            canon = f"{pon}-{ont_key}"
+            prev = last_rx[rama].get(canon)
+            if prev is None or ts >= prev[0]:
+                last_rx[rama][canon] = (ts, rx_val)
+
+    out: dict[str, dict] = {}
+    for rama in ramas_solicitadas:
+        rx_values = [pair[1] for pair in last_rx.get(rama, {}).values()]
+        resumen = resumen_semaforo_desde_rx_values(rx_values)
+        peor = min(rx_values) if rx_values else None
+        out[rama] = {
+            "ROJAS": resumen["ROJAS"],
+            "AMARILLAS": resumen["AMARILLAS"],
+            "VERDES": resumen["VERDES"],
+            "PEOR_RX": None if peor is None else round(float(peor), 2),
+            "ONT_CON_RX": len(rx_values),
+        }
+    return out
+
+
+def _semaforo_historico_por_ramas_uncached(ramas: list[str]) -> dict:
+    ramas_norm = sorted({str(r or "").strip() for r in ramas if str(r or "").strip()})
+    if not ramas_norm:
+        return {"ok": False, "status_code": 400, "error": "Parámetro ramas requerido"}
+
+    pon_by_rama = _batch_pon_desde_ramas(ramas_norm)
+    ont_keys_by_rama = _batch_ont_keys_por_ramas(ramas_norm)
+    ramas_set = set(ramas_norm)
+    merged: dict[str, dict] = {
+        r: {"ROJAS": 0, "AMARILLAS": 0, "VERDES": 0, "ONT_CON_RX": 0}
+        for r in ramas_norm
+    }
+
+    olts: set[str] = set()
+    for pon in pon_by_rama.values():
+        if pon:
+            olt = _olt_desde_pon(pon)
+            if olt:
+                olts.add(olt)
+
+    with db_cursor() as cur:
+        for olt in sorted(olts):
+            cur.execute(
+                QUERIES["historico_ultima_rx_por_olt"],
+                (f"%{olt}-%", f"%{olt}:%"),
+            )
+            rows = cur.fetchall()
+            chunk = _procesar_filas_historico_por_ramas(
+                rows, ramas_set, pon_by_rama, ont_keys_by_rama,
+            )
+            _merge_semaforo_historico_chunk(merged, chunk)
+
+    return {
+        "ok": True,
+        "mode": "ultima_guardada",
+        "source": "historico",
+        "ramas": merged,
+    }
+
+
+def semaforo_historico_por_ramas(ramas: list[str]) -> dict:
+    """Resumen semafórico por RAMA desde la última RX en ``altiplano.potencias``."""
+    ramas_norm = sorted({str(r or "").strip() for r in ramas if str(r or "").strip()})
+    cache_key = "|".join(ramas_norm)
+    return get_cached_historico_potencias(
+        get_dashboard_historico_cache_seconds(),
+        f"semaforo_rama|ultima_v2|{cache_key}",
+        lambda: _semaforo_historico_por_ramas_uncached(ramas_norm),
+    )

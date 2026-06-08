@@ -17,6 +17,9 @@ def test_index_includes_splash_partial(client):
     assert "noc-suite-surface.css" in html
     assert "global-tabs-row" in html
     assert "global-tab--wiki" in html
+    assert "global-nav-group" in html
+    assert "data-nav-desktop-group" in html
+    assert "global-nav-dd-section" in html
     assert 'target="_blank"' in html
     assert "10.90.1.196:6875" in html
 
@@ -39,3 +42,10 @@ def test_splash_static_assets_exist():
     assert Path("static/js/splash.js").is_file()
     assert Path("static/css/splash.css").is_file()
     assert Path("templates/partials/splash_overlay.html").is_file()
+
+
+def test_splash_skips_on_index_deep_link_query():
+    js = Path("static/js/splash.js").read_text(encoding="utf-8")
+    assert "hasDeepLinkIntent" in js
+    assert 'params.get("q")' in js
+    assert 'params.get("rama")' in js

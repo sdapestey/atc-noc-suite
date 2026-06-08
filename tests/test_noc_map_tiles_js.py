@@ -21,3 +21,6 @@ def test_noc_map_tiles_uses_carto_only_not_osm_tile_server():
     assert "attachMapFullscreen" in fs
     assert "requestFullscreen" in fs
     assert "noc-map-fs-btn" in fs
+    assert "copyMountEl" in fs
+    assert "showActiveToast" in fs
+    assert "noc-map-fs-toast" in fs

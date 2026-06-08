@@ -173,6 +173,7 @@
     </ul>
   </details>
 </div>
-<div id="toast" class="toast" role="status" aria-live="polite"></div>
+{% from 'partials/noc_toast.html' import render as noc_toast %}
+{{ noc_toast('toast') }}
 </body>
 </html>

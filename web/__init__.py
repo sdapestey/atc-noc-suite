@@ -62,21 +62,42 @@ def create_app() -> Flask:
             tab = "altiplano"
         elif p.startswith("/dashboard/potencias-historico"):
             tab = "historico"
+        elif p.startswith("/dashboard/radar-degradacion"):
+            tab = "radar"
         elif p.startswith("/dashboard/estadisticas") or p.startswith("/dashboard/calidad-inventario"):
             tab = "estadisticas"
         else:
             tab = "index"
         labels = {
-            "index": "Consulta",
+            "index": "Potencias",
             "rama": "RAMA / CTO",
             "olt": "OLT / LT",
             "camino": "Camino Optico",
             "historico": "Historico Potencias",
+            "radar": "Radar Degradacion",
             "estadisticas": "Estadisticas",
             "altiplano": "Altiplano",
         }
+        groups = {
+            "index": "consulta",
+            "historico": "consulta",
+            "radar": "consulta",
+            "rama": "inventario",
+            "olt": "inventario",
+            "camino": "inventario",
+            "estadisticas": "monitoreo",
+            "altiplano": "monitoreo",
+        }
+        group_labels = {
+            "consulta": "Consulta",
+            "inventario": "Inventario",
+            "monitoreo": "Monitoreo",
+        }
+        nav_group = groups.get(tab, "consulta")
         return {
             "nav_tab": tab,
+            "nav_group": nav_group,
+            "nav_group_label": group_labels.get(nav_group, "Consulta"),
             "nav_tab_label": labels.get(tab, "Consulta"),
             "noc_wiki_url": get_noc_wiki_url(),
             "consulta_altiplano_ui_cache_seconds": get_consulta_altiplano_ui_cache_seconds(),

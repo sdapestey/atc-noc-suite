@@ -1,5 +1,5 @@
 /**
- * Splash pantalla completa: solo "/", una vez por pestaña (sessionStorage noc_splash_v1).
+ * Splash pantalla completa: solo "/" sin intención de consulta, una vez por pestaña.
  * Fade in al abrir y fade out al cerrar (opacity + transitionend).
  */
 (function () {
@@ -9,6 +9,32 @@
 
   var path = window.location.pathname || "";
   if (path !== "/") return;
+
+  function hasDeepLinkIntent() {
+    try {
+      var params = new URLSearchParams(window.location.search || "");
+      var prefill = (
+        params.get("q") ||
+        params.get("rama") ||
+        params.get("value") ||
+        ""
+      ).trim();
+      return !!prefill;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function markSplashSeen() {
+    try {
+      window.sessionStorage.setItem(KEY, "1");
+    } catch (e2) {}
+  }
+
+  if (hasDeepLinkIntent()) {
+    markSplashSeen();
+    return;
+  }
 
   try {
     if (window.sessionStorage.getItem(KEY) === "1") return;
@@ -29,9 +55,7 @@
     overlay.setAttribute("aria-hidden", "true");
     document.body.classList.remove("noc-splash-open");
     overlay.removeEventListener("transitionend", onTransitionEnd);
-    try {
-      window.sessionStorage.setItem(KEY, "1");
-    } catch (e2) {}
+    markSplashSeen();
   }
 
   function onTransitionEnd(ev) {

@@ -224,6 +224,15 @@ def test_camino_optico_template_cto_loads_map():
     assert "ctoMarkerFocalOpts" in tpl
     assert "focal" in tpl
     assert "wireCaminoCtoMarker" in tpl
+    assert "camino-cto-hover-tip" in tpl
+    assert "bindTooltip" in tpl
+    assert "caminoMapsLinkHtml" in tpl
+    assert "caminoFoscPopupHtml" in tpl
+    assert "caminoFusionPopupHtml" in tpl
+    assert "copyCaminoCoordsOnClick" in tpl
+    assert "NocMaps.copyMapCoords" in tpl
+    assert "wireCaminoPointMarker" in tpl
+    assert "Abrir en Maps" in tpl or "NocMaps.mapsLinkHtml" in tpl
 
 
 def test_dashboard_camino_optico_lt_jerarquia_includes_equipo_pasos(monkeypatch):

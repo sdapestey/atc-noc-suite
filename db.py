@@ -6,6 +6,7 @@ import threading
 import time
 from contextlib import contextmanager
 from psycopg2 import InterfaceError, OperationalError
+from psycopg2.errors import QueryCanceled
 from psycopg2.pool import ThreadedConnectionPool
 
 from config import Config, get_db_params
@@ -81,6 +82,10 @@ def db_cursor():
             yield cur
             conn.commit()
             return
+        except QueryCanceled:
+            if conn is not None:
+                conn.rollback()
+            raise
         except (OperationalError, InterfaceError):
             if conn is not None:
                 try:

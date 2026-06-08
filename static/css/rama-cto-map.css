@@ -1,6 +1,7 @@
 /* Mapa CTO — solo panel RAMA / CTO expandido (sin estilos globales agresivos) */
 .rama-cto-map-shell {
   margin-bottom: 0.75rem;
+  overflow: visible;
 }
 
 .rama-cto-address {
@@ -166,8 +167,12 @@ html[data-theme="light"] .noc-map-fs-wrap:-webkit-full-screen {
   width: 100%;
   min-height: 220px;
   border-radius: 8px;
-  overflow: hidden;
+  overflow: visible;
   border: 1px solid var(--border-default, #30363d);
+}
+
+.rama-cto-map-canvas.leaflet-container {
+  z-index: 1;
 }
 
 .rama-cto-map-canvas.leaflet-container,
@@ -187,6 +192,7 @@ html[data-theme="light"] .consulta-mapa-rama-leaflet.leaflet-container {
 /* Mapa por CTO (colapsable con Ver mapa) */
 .rama-cto-map-panel {
   margin: 0.5rem 0 0.75rem;
+  overflow: visible;
 }
 
 .rama-cto-map-panel.hidden {

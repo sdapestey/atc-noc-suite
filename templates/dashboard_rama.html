@@ -6,8 +6,8 @@
 {% include 'partials/noc_head.html' %}
 {% set leaflet_rama_map_css = true %}
 {% include 'partials/head_leaflet.html' %}
-<script defer src="{{ url_for('static', filename='js/noc-tools.js') }}"></script>
-<script defer src="{{ url_for('static', filename='js/dashboard-rama.js') }}"></script>
+<script defer src="{{ url_for('static', filename='js/noc-tools.js') }}?v=noc12"></script>
+<script defer src="{{ url_for('static', filename='js/dashboard-rama.js') }}?v=rama9"></script>
 </head>
 
 <body class="theme-devops page-tree-dashboard page-rama">
@@ -130,6 +130,7 @@
 
 </div>
 
-<div id="toast" class="toast" role="status" aria-live="polite"></div>
+{% from 'partials/noc_toast.html' import render as noc_toast %}
+{{ noc_toast('toast') }}
 </body>
 </html>

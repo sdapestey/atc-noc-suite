@@ -48,6 +48,15 @@ def test_build_alarmas_activas_search_query_incluye_variantes_v2():
     ]
     assert any("v1~BA_OLTA_SF01_01-8-12-1_GPON" in p for p in wild_raw)
     assert any("v2~BA_OLTA_SF01_01-8-12-1_GPON" in p for p in wild_raw)
+    assert any("v7~BA_OLTA_SF01_01-8-12-1_GPON" in p for p in wild_raw)
+    assert any(p == "*BA_OLTA_SF01_01-8-12-1*" for p in wild_raw)
+
+
+def test_build_alarmas_activas_search_query_incluye_v7_gpon():
+    import altiplano
+
+    suffixes = altiplano._ont_gpon_interface_suffixes("BA_OLTA_TG02_02-10-6-22")
+    assert "v7~BA_OLTA_TG02_02-10-6-22_GPON" in suffixes
 
 
 def test_parse_alarmas_activas_search_body():
@@ -171,7 +180,7 @@ def test_consultar_access_id_potencias_sin_lectura_incluye_alarmas(monkeypatch):
                 "type": "absence-of-phy",
                 "raised": "2026-05-19T00:40:18.000Z",
                 "resource": "interface:BA_OLTA_SF01_04.LT7:v1~BA_OLTA_SF01_04-7-1-5_GPON",
-                "text": "Serial-Number=ASKY00866827",
+                    "text": "Serial-Number=ASKY00866826",
             }
         ],
     )

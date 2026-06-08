@@ -4,8 +4,8 @@ const ltCargando = {};
 const ltInventarioData = {};
 const _oltRamaPotenciasCache = {};
 const _oltRamaPotenciasCacheMs = 45000;
+const _oltSemaforoHistoricoLoaded = {};
 const _OLT_STATE_KEY = "oltDashboardStateV1";
-let _toastTimerOlt = null;
 let _restoringOltState = false;
 const _oltStateStore = window.createNocPageStateStore
   ? window.createNocPageStateStore(_OLT_STATE_KEY, { debounceMs: 120 })
@@ -58,17 +58,17 @@ function _oltRowCellsHtml(o, rama, cto, outNum) {
                       ${rxCell}`;
 }
 
-function toastOlt(msg) {
-  const el = document.getElementById("toast-olt");
-  if (!el) return;
-  el.textContent = msg;
-  el.classList.add("show");
-  if (_toastTimerOlt) clearTimeout(_toastTimerOlt);
-  _toastTimerOlt = setTimeout(() => el.classList.remove("show"), 2000);
+function toastOlt(msg, opts) {
+  if (!window.NocToast) return;
+  const options = Object.assign({ durationMs: 2000 }, opts || {});
+  window.NocToast.show("toast-olt", msg, options);
 }
 
-function copyTextToClipboardOlt(text) {
-  const done = () => toastOlt("Copiado (pegá en Excel con Ctrl+V)");
+function copyTextToClipboardOlt(text, label) {
+  const done = () =>
+    toastOlt(
+      label ? label + " copiados al portapapeles" : "Copiados al portapapeles"
+    );
   if (navigator.clipboard && navigator.clipboard.writeText) {
     return navigator.clipboard.writeText(text).then(done).catch(fallback);
   }
@@ -190,23 +190,34 @@ function _sanitizeExportBasename(s) {
   return t || "export";
 }
 
-function _buildPonExportLines(opts) {
+function _exportDateStamp() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return y + "-" + m + "-" + day;
+}
+
+function _collectPonExportData(opts) {
   const raw = opts && opts.filterOperator != null ? opts.filterOperator : "";
   const filterNorm = _normExportOp(raw);
   const applyFilter = filterNorm.length > 0;
 
   const selected = Array.from(document.querySelectorAll(".pon-select:checked"));
   if (selected.length === 0) {
-    return { error: "Seleccioná al menos un PON", lines: [], count: 0 };
+    return { error: "Seleccioná al menos un PON", rows: [], selected: [] };
   }
 
-  const lines = [];
-  lines.push(["PON", "RAMA", "CTO", "ACCESS ID", "OPERADOR", "ONT"].join("\t"));
-  let n = 0;
+  const rows = [];
   const selectedRamas = new Set();
   const selectedCtos = new Set();
-  let selectedOnts = 0;
+  const selectedCtoCodes = new Set();
+  const selectedAids = new Set();
   const operadorCounts = _emptyOperadorCounts();
+  const aidsByOperador = {};
+  _OLT_OPERADORES_ORDEN.forEach((op) => {
+    aidsByOperador[op] = new Set();
+  });
 
   selected.forEach((cb) => {
     const uid = cb.getAttribute("data-uid") || "";
@@ -225,64 +236,186 @@ function _buildPonExportLines(opts) {
           if (applyFilter && opNorm !== filterNorm) return;
           selectedRamas.add(rama);
           selectedCtos.add(rama + "||" + cto);
-          selectedOnts += 1;
+          selectedCtoCodes.add(cto);
+          const aid = String(o.AID || "").trim();
+          if (aid) selectedAids.add(aid);
           const opCanon = _canonicalOperadorOlt(o.OPERADOR);
-          if (opCanon) operadorCounts[opCanon] = (operadorCounts[opCanon] || 0) + 1;
-          lines.push([
-            pon,
-            rama,
-            cto,
-            o.AID || "",
-            o.OPERADOR || "",
-            o.ONT || "",
-          ].join("\t"));
-          n++;
+          if (opCanon) {
+            operadorCounts[opCanon] = (operadorCounts[opCanon] || 0) + 1;
+            if (aid) aidsByOperador[opCanon].add(aid);
+          }
+          rows.push({
+            pon: pon,
+            rama: rama,
+            cto: cto,
+            aid: aid,
+            operador: o.OPERADOR || "",
+            ont: o.ONT || "",
+          });
         });
       });
     });
   });
 
-  if (n === 0) {
+  if (rows.length === 0) {
     if (applyFilter) {
       return {
         error:
           "No hay Access ID IN SERVICE para ese operador con la selección actual",
-        lines: [],
-        count: 0,
+        rows: [],
+        selected: selected,
       };
     }
     return {
       error:
         "No hay Access ID en estado IN SERVICE para exportar con esa selección",
-      lines: [],
-      count: 0,
+      rows: [],
+      selected: selected,
     };
   }
-  lines.push("");
-  lines.push("RESUMEN:");
-  lines.push("PON: " + String(selected.length));
-  lines.push("RAMAS: " + String(selectedRamas.size));
-  lines.push("CTO: " + String(selectedCtos.size));
-  lines.push("ONT: " + String(selectedOnts));
+
+  rows.sort((a, b) => {
+    const byPon = String(a.pon).localeCompare(String(b.pon));
+    if (byPon) return byPon;
+    const byRama = String(a.rama).localeCompare(String(b.rama));
+    if (byRama) return byRama;
+    const byCto = String(a.cto).localeCompare(String(b.cto));
+    if (byCto) return byCto;
+    return String(a.aid).localeCompare(String(b.aid));
+  });
+
+  const sortAlpha = (x, y) => String(x).localeCompare(String(y));
+  return {
+    error: null,
+    rows: rows,
+    selected: selected,
+    selectedRamas: selectedRamas,
+    selectedCtos: selectedCtos,
+    selectedCtoCodes: selectedCtoCodes,
+    selectedAids: selectedAids,
+    operadorCounts: operadorCounts,
+    aidsByOperador: aidsByOperador,
+    applyFilter: applyFilter,
+    filterNorm: filterNorm,
+    sortAlpha: sortAlpha,
+  };
+}
+
+function _ponExportResumenLines(data) {
+  const lines = ["", "RESUMEN:"];
+  lines.push("PON: " + String(data.selected.length));
+  lines.push("RAMAS: " + String(data.selectedRamas.size));
+  lines.push("CTO: " + String(data.selectedCtos.size));
+  lines.push("ONT: " + String(data.rows.length));
   _OLT_OPERADORES_ORDEN.forEach((op) => {
-    const nOp = operadorCounts[op] || 0;
+    const nOp = data.operadorCounts[op] || 0;
     if (nOp > 0) lines.push(op + ": " + String(nOp));
   });
+  return lines;
+}
+
+function _formatPonExportFlatSparse(rows) {
+  const lines = [["PON", "RAMA", "CTO", "ACCESS ID", "OPERADOR", "ONT"].join("\t")];
+  let prevPon = null;
+  let prevRama = null;
+  let prevCto = null;
+  rows.forEach((r) => {
+    const ponCol = r.pon !== prevPon ? r.pon : "";
+    const ramaCol = r.pon !== prevPon || r.rama !== prevRama ? r.rama : "";
+    const ctoCol =
+      r.pon !== prevPon || r.rama !== prevRama || r.cto !== prevCto ? r.cto : "";
+    lines.push([ponCol, ramaCol, ctoCol, r.aid, r.operador, r.ont].join("\t"));
+    prevPon = r.pon;
+    prevRama = r.rama;
+    prevCto = r.cto;
+  });
+  return lines;
+}
+
+function _formatPonExportGrouped(rows, data) {
+  const lines = [];
+  if (data.applyFilter && data.filterNorm) {
+    lines.push("Filtro operador: " + data.filterNorm);
+    lines.push("");
+  }
+
+  const ctoCounts = new Map();
+  rows.forEach((r) => {
+    const key = r.pon + "\0" + r.rama + "\0" + r.cto;
+    ctoCounts.set(key, (ctoCounts.get(key) || 0) + 1);
+  });
+
+  let curPon = null;
+  let curRama = null;
+  let curCto = null;
+  rows.forEach((r) => {
+    if (r.pon !== curPon) {
+      if (curPon !== null) lines.push("");
+      lines.push("=== " + r.pon + " ===");
+      curPon = r.pon;
+      curRama = null;
+      curCto = null;
+    }
+    if (r.rama !== curRama) {
+      lines.push("RAMA: " + r.rama);
+      curRama = r.rama;
+      curCto = null;
+    }
+    if (r.cto !== curCto) {
+      const key = r.pon + "\0" + r.rama + "\0" + r.cto;
+      const cnt = ctoCounts.get(key) || 0;
+      lines.push("  CTO: " + r.cto + " (" + cnt + " ONT)");
+      lines.push("    ACCESS ID\tOPERADOR\tONT");
+      curCto = r.cto;
+    }
+    lines.push("    " + [r.aid, r.operador, r.ont].join("\t"));
+  });
+  return lines;
+}
+
+function _buildPonExportLines(opts) {
+  const data = _collectPonExportData(opts);
+  if (data.error) {
+    return { error: data.error, lines: [], count: 0 };
+  }
+
+  const format = opts && opts.format === "flat-sparse" ? "flat-sparse" : "grouped";
+  const bodyLines =
+    format === "flat-sparse"
+      ? _formatPonExportFlatSparse(data.rows)
+      : _formatPonExportGrouped(data.rows, data);
+  const lines = bodyLines.concat(_ponExportResumenLines(data));
+  const sortAlpha = data.sortAlpha;
+
   return {
     error: null,
     lines: lines,
-    count: n,
+    count: data.rows.length,
     resumen: {
-      ramas: selectedRamas.size,
-      ctos: selectedCtos.size,
-      onts: selectedOnts,
-      operadores: operadorCounts,
+      ramas: data.selectedRamas.size,
+      ctos: data.selectedCtos.size,
+      onts: data.rows.length,
+      operadores: data.operadorCounts,
+    },
+    lists: {
+      ramas: Array.from(data.selectedRamas).sort(sortAlpha),
+      ctos: Array.from(data.selectedCtoCodes).sort(sortAlpha),
+      aids: Array.from(data.selectedAids).sort(sortAlpha),
+      aidsByOperador: Object.fromEntries(
+        _OLT_OPERADORES_ORDEN.filter((op) => data.aidsByOperador[op].size > 0).map((op) => [
+          op,
+          Array.from(data.aidsByOperador[op]).sort(sortAlpha),
+        ])
+      ),
     },
   };
 }
 
 function _rowsPonesSeleccionados() {
-  return _buildPonExportLines({ filterOperator: _oltExportFilterFromUi() });
+  return _buildPonExportLines({
+    filterOperator: _oltExportFilterFromUi(),
+    format: "grouped",
+  });
 }
 
 function copiarPonesSeleccionados() {
@@ -292,6 +425,76 @@ function copiarPonesSeleccionados() {
     return;
   }
   copyTextToClipboardOlt(res.lines.join("\n"));
+}
+
+function _copyPonSelectionList(kind) {
+  const res = _buildPonExportLines({ filterOperator: _oltExportFilterFromUi() });
+  if (res.error) {
+    toastOlt(res.error);
+    return;
+  }
+  const lists = res.lists || {};
+  let items = [];
+  let label = "";
+  if (kind === "ramas") {
+    items = lists.ramas || [];
+    label = "RAMAs";
+  } else if (kind === "cto") {
+    items = lists.ctos || [];
+    label = "CTO";
+  } else if (kind === "ont") {
+    items = lists.aids || [];
+    label = "ONT";
+  } else {
+    return;
+  }
+  if (!items.length) {
+    toastOlt("No hay " + label + " para copiar con esa selección");
+    return;
+  }
+  copyTextToClipboardOlt(items.join("\n"), label);
+}
+
+function copiarRamasPonSeleccionados() {
+  _copyPonSelectionList("ramas");
+}
+
+function copiarCtosPonSeleccionados() {
+  _copyPonSelectionList("cto");
+}
+
+function copiarOntsPonSeleccionados() {
+  _copyPonSelectionList("ont");
+}
+
+function _copyPonSelectionOperador(operador) {
+  const op =
+    _canonicalOperadorOlt(operador) ||
+    String(operador || "")
+      .trim()
+      .toUpperCase();
+  if (!op) return;
+  const selected = document.querySelectorAll(".pon-select:checked").length;
+  if (!selected) {
+    toastOlt("Seleccioná al menos un PON");
+    return;
+  }
+  const res = _buildPonExportLines({ filterOperator: "" });
+  if (res.error) {
+    toastOlt(res.error);
+    return;
+  }
+  const items =
+    (res.lists && res.lists.aidsByOperador && res.lists.aidsByOperador[op]) || [];
+  if (!items.length) {
+    toastOlt("No hay Access ID IN SERVICE para operador " + op);
+    return;
+  }
+  copyTextToClipboardOlt(items.join("\n"), op);
+}
+
+function copiarOperadorPonSeleccionados(operador) {
+  _copyPonSelectionOperador(operador);
 }
 
 function descargarCsv(filename, lines, delimiter) {
@@ -308,7 +511,7 @@ function descargarCsv(filename, lines, delimiter) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = filename || "pones_seleccionados.csv";
+  a.download = filename || "pones_seleccionados_" + _exportDateStamp() + ".csv";
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -317,27 +520,51 @@ function descargarCsv(filename, lines, delimiter) {
 
 function exportarPonesSeleccionadosCsv() {
   const filt = _oltExportFilterFromUi();
-  const res = _buildPonExportLines({ filterOperator: filt });
+  const res = _buildPonExportLines({
+    filterOperator: filt,
+    format: "flat-sparse",
+  });
   if (res.error) {
     toastOlt(res.error);
     return;
   }
+  const date = _exportDateStamp();
   const fname = filt
-    ? "pones_seleccionados_" + _sanitizeExportBasename(filt) + ".csv"
-    : "pones_seleccionados.csv";
+    ? "pones_seleccionados_" + date + "_" + _sanitizeExportBasename(filt) + ".csv"
+    : "pones_seleccionados_" + date + ".csv";
   descargarCsv(fname, res.lines, ",");
   toastOlt("CSV exportado");
 }
 
-function _oltMetricPillHtml(n, label, kind, title) {
+function _oltMetricPillHtml(n, label, kind, title, copyKind) {
   const v = String(Math.max(0, Number(n) || 0));
   const empty = v === "0";
+  const copyable = !empty && copyKind;
+  const copyTitle =
+    copyKind === "ramas"
+      ? "Clic para copiar lista de RAMAs (IN SERVICE, uno por línea)"
+      : copyKind === "cto"
+        ? "Clic para copiar lista de CTO (IN SERVICE, uno por línea)"
+        : copyKind === "ont"
+          ? "Clic para copiar Access ID IN SERVICE (uno por línea)"
+          : title;
   return (
     '<span class="dashboard-metric-pill olt-metric-pill olt-metric-pill--' +
     kind +
     (empty ? " olt-metric-pill--empty" : "") +
-    '" title="' +
-    title +
+    (copyable ? " olt-metric-pill--copy" : "") +
+    '"' +
+    (copyable
+      ? ' role="button" tabindex="0" data-olt-copy="' +
+        copyKind +
+        '" aria-label="' +
+        v +
+        " " +
+        label +
+        ', copiar al portapapeles"'
+      : "") +
+    ' title="' +
+    (copyable ? copyTitle : title) +
     '">' +
     '<span class="dashboard-metric-pill__n olt-metric-pill__n">' +
     v +
@@ -352,11 +579,27 @@ function _oltOperadorPillHtml(n, operador) {
   const op = String(operador || "").trim().toUpperCase();
   const slug = op.toLowerCase().replace(/[^a-z0-9]+/g, "-");
   const v = String(Math.max(0, Number(n) || 0));
+  const empty = v === "0";
   return (
     '<span class="dashboard-metric-pill olt-metric-pill olt-metric-pill--operador olt-metric-pill--op-' +
     slug +
-    '" title="ONT IN SERVICE · operador ' +
-    op +
+    (empty ? " olt-metric-pill--empty" : " olt-metric-pill--copy") +
+    '"' +
+    (empty
+      ? ""
+      : ' role="button" tabindex="0" data-olt-copy="operador" data-olt-operador="' +
+        op +
+        '" aria-label="' +
+        v +
+        " ONT IN SERVICE operador " +
+        op +
+        ', copiar Access ID al portapapeles"') +
+    ' title="' +
+    (empty
+      ? "ONT IN SERVICE · operador " + op
+      : "Clic para copiar Access ID IN SERVICE de operador " +
+        op +
+        " (uno por línea)") +
     '">' +
     '<span class="dashboard-metric-pill__n olt-metric-pill__n">' +
     v +
@@ -403,21 +646,24 @@ function _oltPonSummaryHtml(pon, ramas, cto, ont, operadores) {
       r,
       "RAMAs",
       "ramas",
-      "RAMAs únicas con al menos un AID IN SERVICE en la selección"
+      "RAMAs únicas con al menos un AID IN SERVICE en la selección",
+      "ramas"
     ) +
     ' <span class="olt-summary-sep" aria-hidden="true">·</span> ' +
     _oltMetricPillHtml(
       c,
       "CTO",
       "cto",
-      "CTO únicas con al menos un AID IN SERVICE en la selección"
+      "CTO únicas con al menos un AID IN SERVICE en la selección",
+      "cto"
     ) +
     ' <span class="olt-summary-sep" aria-hidden="true">·</span> ' +
     _oltMetricPillHtml(
       o,
       "ONT",
       "ont",
-      "Filas de inventario con estado IN SERVICE (copiar / exportar)"
+      "Filas de inventario con estado IN SERVICE (copiar / exportar)",
+      "ont"
     ) +
     "</span>";
   return main + _oltOperadorSummaryHtml(operadores);
@@ -686,6 +932,7 @@ function toggleNode(id, autoPotencias) {
   if (autoPotencias !== false) {
     _autoPotenciaCtoOltAlExpandir(id);
   }
+  _cargarSemaforoHistoricoOlt(id);
   _saveOltStateSoon();
 }
 
@@ -741,6 +988,7 @@ function ensureNodeOpen(id, autoPotencias) {
   if (autoPotencias !== false) {
     _autoPotenciaCtoOltAlExpandir(id);
   }
+  _cargarSemaforoHistoricoOlt(id);
   _saveOltStateSoon();
 }
 
@@ -806,7 +1054,16 @@ function _applyPotenciaEnFilaOlt(tr, txVal, rxVal, row) {
   const tdRx = tr.children[OLT_COL_RX];
   _npOlt().finalizeTxRxLoadingCell(tdTx, txVal, tr);
   _npOlt().finalizeTxRxLoadingCell(tdRx, rxVal, tr);
-  if (row && tdRx) _addSemFromRx(row, tdRx.textContent);
+}
+
+function _setSem(row, res) {
+  if (!row || !res) return;
+  const r = row.querySelector(".rojas");
+  const a = row.querySelector(".amarillas");
+  const v = row.querySelector(".verdes");
+  if (r) r.textContent = String(res.ROJAS || 0);
+  if (a) a.textContent = String(res.AMARILLAS || 0);
+  if (v) v.textContent = String(res.VERDES || 0);
 }
 
 function _addSem(row, res) {
@@ -817,6 +1074,98 @@ function _addSem(row, res) {
   if (r) r.textContent = (parseInt(r.textContent, 10) || 0) + (res.ROJAS || 0);
   if (a) a.textContent = (parseInt(a.textContent, 10) || 0) + (res.AMARILLAS || 0);
   if (v) v.textContent = (parseInt(v.textContent, 10) || 0) + (res.VERDES || 0);
+}
+
+function _clearSemaforoHistoricoLt(row) {
+  if (!row) return;
+  delete row.dataset.semaforoHistorico;
+  row.classList.remove("olt-lt-row--semaforo-historico");
+  row.querySelectorAll(".rojas, .amarillas, .verdes, .peor").forEach((el) => {
+    el.removeAttribute("title");
+  });
+}
+
+function _applySemaforoHistoricoLt(row, res) {
+  if (!row || !res) return;
+  _setSem(row, res);
+  const pe = row.querySelector(".peor");
+  if (pe) pe.textContent = res.PEOR_RX != null ? String(res.PEOR_RX) : "-";
+  row.dataset.semaforoHistorico = "1";
+  row.classList.add("olt-lt-row--semaforo-historico");
+  const hint = "Semáforos desde última medición RX guardada en Postgres (altiplano.potencias)";
+  row.querySelectorAll(".rojas, .amarillas, .verdes, .peor").forEach((el) => {
+    el.title = hint;
+  });
+}
+
+function _recomputeLtSemaforos(wrap, row) {
+  if (!row || !wrap) return;
+  let rojas = 0;
+  let amarillas = 0;
+  let verdes = 0;
+  let min = null;
+  let anyRx = false;
+  wrap.querySelectorAll("tr[data-aid]").forEach((tr) => {
+    if (_oltFatSkipPotencias(tr)) return;
+    const rxCell = tr.children[OLT_COL_RX];
+    if (!rxCell || rxCell.classList.contains("olt-txrx-cell--loading")) return;
+    const t = rxCell.textContent.trim();
+    if (t === "-" || t === "") return;
+    const v = _npOlt() ? _npOlt().parseRxDbm(t) : null;
+    if (v === null) return;
+    anyRx = true;
+    const c = _clasif(v);
+    if (c === "rojo") rojas += 1;
+    else if (c === "amarillo") amarillas += 1;
+    else if (c === "verde") verdes += 1;
+    if (min === null || v < min) min = v;
+  });
+  if (!anyRx) return;
+  _clearSemaforoHistoricoLt(row);
+  _setSem(row, { ROJAS: rojas, AMARILLAS: amarillas, VERDES: verdes });
+  const pe = row.querySelector(".peor");
+  if (pe) pe.textContent = min != null ? String(min) : "-";
+}
+
+function _cargarSemaforoHistoricoOlt(nodeId) {
+  const id = String(nodeId || "").trim();
+  if (!id || _oltSemaforoHistoricoLoaded[id]) return;
+  const esc = id.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  const section = document.querySelector('[data-node-id="' + esc + '"]');
+  if (!section || !section.classList.contains("olt-section")) return;
+  const tableShell = section.querySelector(".olt-lt-table-shell");
+  if (!tableShell) return;
+  const lts = [];
+  const rowByLt = {};
+  tableShell.querySelectorAll("tr.ltrow").forEach((tr) => {
+    const td = tr.querySelector("td.lt-row-toggle");
+    const lt = td && (td.getAttribute("data-lt") || "").trim();
+    if (!lt) return;
+    lts.push(lt);
+    rowByLt[lt] = tr;
+  });
+  if (!lts.length) return;
+  _oltSemaforoHistoricoLoaded[id] = true;
+  fetch("/dashboard/olt/semaforo-historico", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: "lts=" + encodeURIComponent(lts.join(",")),
+  })
+    .then((r) => {
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    })
+    .then((data) => {
+      if (!data || !data.ok) return;
+      const byLt = data.lts || {};
+      Object.keys(byLt).forEach((lt) => {
+        const row = rowByLt[lt];
+        if (row) _applySemaforoHistoricoLt(row, byLt[lt]);
+      });
+    })
+    .catch(() => {
+      delete _oltSemaforoHistoricoLoaded[id];
+    });
 }
 
 function _clasif(rx) {
@@ -995,24 +1344,32 @@ function toggleLTCargar(lt, uid) {
   ltCargando[uid] = true;
 
   const peCell = row.querySelector(".peor");
+  const historicoLt = row.dataset.semaforoHistorico === "1";
   const prevPe = peCell ? peCell.textContent : "-";
-  if (peCell) peCell.textContent = "…";
+  if (peCell && !historicoLt) peCell.textContent = "…";
 
-  row.querySelector(".rojas").innerText = "0";
-  row.querySelector(".amarillas").innerText = "0";
-  row.querySelector(".verdes").innerText = "0";
+  if (!historicoLt) {
+    row.querySelector(".rojas").innerText = "0";
+    row.querySelector(".amarillas").innerText = "0";
+    row.querySelector(".verdes").innerText = "0";
+  }
 
   showLtLoading(uid);
+
+  function _restorePeorSiPendiente() {
+    if (!peCell || historicoLt) return;
+    if (peCell.textContent.trim() === "…") peCell.textContent = prevPe;
+  }
 
   cargarInventarioLT(lt, uid, row)
     .then((wrap) => {
       ltInventarioCargado[uid] = true;
-      if (peCell) peCell.textContent = prevPe;
+      _restorePeorSiPendiente();
       toggleNode(uid);
       _saveOltStateSoon();
     })
     .catch(() => {
-      if (peCell) peCell.textContent = prevPe;
+      _restorePeorSiPendiente();
       const dr = document.getElementById("detail-" + uid);
       if (dr) {
         dr.classList.remove("hidden");
@@ -1209,9 +1566,6 @@ function _oltTxRxCellsStuckToDashForRama(wrap, rama) {
 }
 
 function _aplicarPotenciaRamaOlt(rama, wrap, row, data) {
-  const res = data.__dashboard_resumen__;
-  if (res) _addSem(row, res);
-
   Object.keys(data).forEach((k) => {
     if (k === "__dashboard_resumen__") return;
     const byAid = data[k];
@@ -1232,7 +1586,7 @@ function _aplicarPotenciaRamaOlt(rama, wrap, row, data) {
       _applyPotenciaEnFilaOlt(tr, null, null, row);
     }
   });
-  _recomputePeor(wrap, row);
+  _recomputeLtSemaforos(wrap, row);
 }
 
 function potenciaRama(rama, wrap, row, btnEl) {
@@ -1313,7 +1667,7 @@ function potenciaCto(cto, wrap, row, btnEl) {
           _applyPotenciaEnFilaOlt(tr, null, null, row);
         }
       });
-      _recomputePeor(wrap, row);
+      _recomputeLtSemaforos(wrap, row);
     })
     .catch(() => {
       toastOlt("Error al consultar potencias (CTO)");
@@ -1558,6 +1912,32 @@ window.addEventListener("load", () => {
       updatePonesSelectionSummary();
     }
   });
+
+  const ponSummaryEl = document.getElementById("pon-selection-summary");
+  if (ponSummaryEl) {
+    const triggerPonSummaryCopy = (target) => {
+      const pill = target.closest("[data-olt-copy]");
+      if (!pill || !ponSummaryEl.contains(pill)) return;
+      const kind = pill.getAttribute("data-olt-copy");
+      if (kind === "ramas") copiarRamasPonSeleccionados();
+      else if (kind === "cto") copiarCtosPonSeleccionados();
+      else if (kind === "ont") copiarOntsPonSeleccionados();
+      else if (kind === "operador") {
+        const op = pill.getAttribute("data-olt-operador");
+        if (op) copiarOperadorPonSeleccionados(op);
+      }
+    };
+    ponSummaryEl.addEventListener("click", (e) => {
+      triggerPonSummaryCopy(e.target);
+    });
+    ponSummaryEl.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter" && e.key !== " ") return;
+      const pill = e.target.closest("[data-olt-copy]");
+      if (!pill) return;
+      e.preventDefault();
+      triggerPonSummaryCopy(pill);
+    });
+  }
 
 
   if (window.initNocPage) {

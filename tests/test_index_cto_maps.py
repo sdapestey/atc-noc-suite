@@ -13,6 +13,20 @@ def _mock_cto_rows():
     ]
 
 
+def test_consulta_index_map_delegates_cto_marker_wiring_to_noc_maps():
+    from pathlib import Path
+
+    js = Path("static/js/consulta-index-map.js").read_text(encoding="utf-8")
+    assert "__CONSULTA_MAP_BUILD__" in js
+    assert "wireConsultaCtoMarker" in js
+    assert "NocMaps.wireCtoCircleMarker" in js
+    assert "NocMaps.wireCtoAddressPrefetch" in js
+    assert "NocMaps.ctoPopupHtml" in js
+    assert 'toastId: "toast"' in js
+    assert "bindPopup" not in js
+    assert "copyCoordsToClipboard" not in js
+
+
 def test_index_cto_renders_cto_head_and_embedded_map_when_coords_exist(client, monkeypatch):
     import web.routes as routes
 
@@ -41,6 +55,8 @@ def test_index_cto_renders_cto_head_and_embedded_map_when_coords_exist(client, m
     assert "Alvear 2464 (BA San Fernando)" in html
     assert "data-consulta-cto-map" in html
     assert "noc-map-tiles.js" in html
+    assert "noc-tools.js" in html
+    assert html.index("noc-tools.js") < html.index("consulta-index-map.js")
     assert "consulta-index-map.js" in html
 
 

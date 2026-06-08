@@ -11,15 +11,10 @@
   }
 let _activeOperador = "ALL";
 let _activeFatStatus = "ALL";
-let _toastTimer = null;
-
-function toast(msg) {
-  const el = document.getElementById("toast");
-  if (!el) return;
-  el.textContent = msg;
-  el.classList.add("show");
-  if (_toastTimer) clearTimeout(_toastTimer);
-  _toastTimer = setTimeout(() => el.classList.remove("show"), 1800);
+function toast(msg, opts) {
+  if (!window.NocToast) return;
+  const options = Object.assign({ durationMs: 1800 }, opts || {});
+  window.NocToast.show("toast", msg, options);
 }
 
 function _normFatStatus(s) {
@@ -106,11 +101,24 @@ function _consultaMarkPotenciasLoadedIfMasivo(root) {
   }
 }
 
+function _consultaResetAlarmasFetched(pre) {
+  if (pre) _consultaAlarmasFetched.delete(pre);
+}
+
+function _consultaMarkAlarmasFetched(pre) {
+  if (pre) _consultaAlarmasFetched.set(pre, true);
+}
+
+function _consultaAlarmasYaFetched(pre) {
+  return Boolean(pre && _consultaAlarmasFetched.get(pre));
+}
+
 function consultaRecargarPotenciasDesdeBtn(btn) {
   const sec = btn && btn.closest ? btn.closest(".consulta-section") : null;
   if (!sec) return;
   const tok = sec.getAttribute("data-query-token") || "";
   if (!tok) return;
+  _consultaResetAlarmasFetched(sec.getAttribute("data-section-prefix") || "");
   if (window.ConsultaMasivoUi && window.ConsultaMasivoUi.clearPotenciasLoaded) {
     window.ConsultaMasivoUi.clearPotenciasLoaded(sec);
   }
@@ -122,6 +130,7 @@ function consultaRecargarPotenciasSubcto(btn) {
   const sec = btn && btn.closest ? btn.closest(".consulta-section") : null;
   const block = btn && btn.closest ? btn.closest(".consulta-cto-block") : null;
   if (!cto || !sec || !block) return;
+  _consultaResetAlarmasFetched(sec.getAttribute("data-section-prefix") || "");
   cargarPotenciasSeccion(cto, sec, block);
 }
 
@@ -165,6 +174,8 @@ const _CONSULTA_NV_POLL_INTERVAL_MS = 12000;
 const _CONSULTA_PON_POST_REFRESH_MS = 1500;
 const _CONSULTA_PON_POST_REFRESH_EXTRA_MS = [4000, 12000];
 const _consultaDownPollers = new Map();
+/** Detalle AID: tras la primera respuesta de ``/potencias``, alarmas no vuelven a spinner en poll TX/RX. */
+const _consultaAlarmasFetched = new Map();
 const _consultaPonCommitted = new Map();
 const _consultaOperCommitted = new Map();
 const _consultaNvRefreshUntil = new Map();
@@ -370,21 +381,10 @@ function _consultaIsDownPollActive(root) {
   return Boolean(key && _consultaDownPollers.has(key));
 }
 
-/** Si el poll sigue activo y aún no hay alarmas, mantiene la fila con spinner. */
-function _consultaDetallePollAlarmasTail(pre, root, data) {
-  if (!root || !_consultaIsDownPollActive(root)) return;
-  if (!_consultaDetallePollShouldContinue(pre, root, root)) return;
-  const list = data && Array.isArray(data.ALARMAS) ? data.ALARMAS : [];
-  if (list.length > 0) return;
-  if (data && data.alarmas_label === "Sin Alarmas") return;
-  _setAlarmasDetalleRowVisible(pre, true);
-  const al = _potCell(pre, "alarmas");
-  if (al) _setConsultaPotenciaLoading(al, true);
-}
-
 function _consultaDetallePollPrepUI(pre, root, scopeEl) {
   if (!_isConsultaDetallePotenciaPar(pre)) return;
   if (!_consultaSectionNeedsPotenciaPoll(pre, root, scopeEl)) return;
+  if (_consultaAlarmasYaFetched(pre)) return;
   _setAlarmasDetalleRowVisible(pre, true);
 }
 
@@ -1246,14 +1246,15 @@ function _applyAlarmasDetalle(pre, data, root) {
 
   const el = _ensureAlarmasDetalleCell();
   if (!el) return;
-  const pollPending =
-    root && _consultaDetallePollShouldContinue(pre, root, root);
   _setConsultaPotenciaLoading(el, false);
   if (!data || typeof data !== "object") {
-    if (!pollPending) _setAlarmasDetalleRowVisible(pre, false);
+    _setAlarmasDetalleRowVisible(pre, false);
     return;
   }
   const list = Array.isArray(data.ALARMAS) ? data.ALARMAS : [];
+  if (Array.isArray(data.ALARMAS)) {
+    _consultaMarkAlarmasFetched(pre);
+  }
   if (data.alarmas_label === "Sin Alarmas") {
     el.innerHTML = "";
     el.removeAttribute("title");
@@ -1261,13 +1262,8 @@ function _applyAlarmasDetalle(pre, data, root) {
     return;
   }
   if (!list.length) {
-    if (!pollPending) {
-      el.innerHTML = "";
-      _setAlarmasDetalleRowVisible(pre, false);
-      return;
-    }
-    _setAlarmasDetalleRowVisible(pre, true);
-    _setConsultaPotenciaLoading(el, true);
+    el.innerHTML = "";
+    _setAlarmasDetalleRowVisible(pre, false);
     return;
   }
   _setAlarmasDetalleRowVisible(pre, true);
@@ -1440,6 +1436,7 @@ function cargarPotenciasSeccion(valor, root, scopeEl, opts) {
   });
   if (!silentNvRefresh) {
     cellsCarga.forEach((el) => {
+      if (el.id === pfx + "alarmas" && _consultaAlarmasYaFetched(pre)) return;
       const keepAlarmasRendered =
         el.id === pfx + "alarmas" && el.querySelector(".consulta-alarmas-block");
       if (keepAlarmasRendered) return;
@@ -1505,7 +1502,6 @@ function cargarPotenciasSeccion(valor, root, scopeEl, opts) {
         );
         _consultaSemaforoDesdePotenciasPayload(root, valor, data, pfx);
         if (window.ConsultaMasivoUi) window.ConsultaMasivoUi.evalRamaAllDown(root);
-        _consultaDetallePollAlarmasTail(pre, root, data);
         return;
       }
       if (Array.isArray(data)) {
@@ -1863,7 +1859,7 @@ function copiarTodo() {
   document.execCommand("copy");
   document.body.removeChild(ta);
 
-  toast("Datos copiados");
+  toast("Datos copiados al portapapeles");
 }
 
 function _updateDetalleVisualStatus(pre, data, root) {
@@ -2000,6 +1996,19 @@ window.addEventListener("beforeunload", () => {
 
 window.addEventListener("load", () => {
   _consultaStopAllDownPolls();
+  (function consultaApplyDeepLinkFromUrl() {
+    const params = new URLSearchParams(window.location.search);
+    const prefill = (params.get("q") || params.get("rama") || params.get("value") || "").trim();
+    if (!prefill || document.querySelector(".consulta-section")) return;
+    const qInp = document.getElementById("q");
+    const modoEl0 = document.getElementById("consulta_modo");
+    if (!qInp) return;
+    if (modoEl0) modoEl0.value = "individual";
+    qInp.value = prefill;
+    if (params.get("auto") === "0") return;
+    const form = qInp.closest("form");
+    if (form) form.requestSubmit();
+  })();
   if (document.querySelector("tr[data-operador][data-fat-status]")) {
     aplicarFiltrosConsulta();
   }

@@ -38,6 +38,7 @@ from db import ensure_db_connection_ready, healthcheck_db
 from services.domain import (
     OPERADORES,
     canonical_operador_consulta,
+    natural_sort_key_str,
     resumen_semaforo_desde_rx_values,
     sort_operadores_consulta,
     split_index_query_tokens,
@@ -65,7 +66,9 @@ from services import (
     dashboard_camino_optico_cto,
     dashboard_camino_optico_equipo,
     dashboard_camino_optico_lt,
+    dashboard_camino_optico_fusion_planta,
     dashboard_camino_optico_rama,
+    dashboard_camino_optico_ramas_masivo,
     dashboard_camino_optico_sitio,
     gis_payload_para_lt,
     infer_camino_consulta_tipo,
@@ -92,6 +95,10 @@ from services import (
     export_index_query_csv,
     consultar_potencias_altiplano_ahora_rama,
     consultar_potencias_historico_rama,
+    consultar_radar_degradacion,
+    export_csv_radar_degradacion,
+    semaforo_historico_por_lts,
+    semaforo_historico_por_ramas,
 )
 from services.inp_borrado_cascade import borrar_inp_con_cascada_vno
 from services.tasa_postman_catalog import build_tasa_vno_wizard_context
@@ -664,6 +671,22 @@ def _consulta_in_service_inventory_rows(c: dict) -> list[dict]:
     return []
 
 
+def _consulta_section_cto_codes(c: dict) -> list[str]:
+    """Códigos CTO de una sección (para copiar lista en consulta masiva)."""
+    if c.get("resultado"):
+        res = c["resultado"]
+        cto = str(res.get("CTO") or "").strip()
+        return [cto] if cto and cto != "—" else []
+    t = c.get("tabla_cto")
+    if not t:
+        return []
+    if c.get("es_rama"):
+        return [str(k).strip() for k in t.keys() if str(k).strip()]
+    ruta = c.get("ruta") or {}
+    cto = str(ruta.get("cto") or "").strip()
+    return [cto] if cto else []
+
+
 def _consulta_masivo_inventory_totals(consultas: list[dict]) -> dict | None:
     """Suma CTO/ONT IN SERVICE y desglose por operador (consulta masiva, >1 token)."""
     if len(consultas) <= 1:
@@ -671,20 +694,38 @@ def _consulta_masivo_inventory_totals(consultas: list[dict]) -> dict | None:
     cto_total = 0
     ont_total = 0
     ont_por_operador: dict[str, int] = {}
+    cto_codes: set[str] = set()
+    aids: set[str] = set()
+    aids_by_operador: dict[str, set[str]] = {}
     for c in consultas:
         cto, ont = _consulta_section_cto_ont(c)
         cto_total += cto
         ont_total += ont
+        for code in _consulta_section_cto_codes(c):
+            cto_codes.add(code)
         for row in _consulta_in_service_inventory_rows(c):
+            aid = str(row.get("AID") or "").strip()
+            if aid:
+                aids.add(aid)
             op_label = canonical_operador_consulta(row.get("OPERADOR"))
             if not op_label:
                 continue
             ont_por_operador[op_label] = ont_por_operador.get(op_label, 0) + 1
+            if aid:
+                aids_by_operador.setdefault(op_label, set()).add(aid)
     ops_orden = sort_operadores_consulta(ont_por_operador.keys())
+    sort_key = natural_sort_key_str
     return {
         "cto": cto_total,
         "ont": ont_total,
         "ont_por_operador": [(op, ont_por_operador[op]) for op in ops_orden],
+        "lists": {
+            "ctos": sorted(cto_codes, key=sort_key),
+            "aids": sorted(aids, key=sort_key),
+            "aids_by_operador": {
+                op: sorted(aids_by_operador.get(op, set()), key=sort_key) for op in ops_orden
+            },
+        },
     }
 
 
@@ -810,6 +851,8 @@ def register(app):
             return redirect(url_for("dash_altiplano"))
         if tab in ("historico", "potencias-historico"):
             return redirect(url_for("dash_potencias_historico"))
+        if tab in ("radar", "radar-degradacion", "degradacion"):
+            return redirect(url_for("dash_radar_degradacion"))
         if tab in ("calidad", "calidad-inventario", "estadisticas"):
             return redirect(url_for("dash_estadisticas"))
         return redirect(url_for("index"))
@@ -848,6 +891,40 @@ def register(app):
                     )
         elif request.args.get("modo", "").strip().lower() == "masivo":
             consulta_modo = "masivo"
+            raw = (
+                request.args.get("q")
+                or request.args.get("value")
+                or request.args.get("rama")
+                or ""
+            ).strip()
+            if raw:
+                value_masivo = raw
+                for token in split_index_query_tokens(raw):
+                    consultas.append(
+                        _resolve_index_consulta(token, defer_altiplano_summary=True)
+                    )
+        else:
+            prefill = (
+                request.args.get("q")
+                or request.args.get("rama")
+                or request.args.get("value")
+                or ""
+            ).strip()
+            if prefill:
+                tokens = split_index_query_tokens(prefill)
+                if len(tokens) == 1:
+                    consulta_modo = "individual"
+                    value_individual = prefill
+                    consultas = [
+                        _resolve_index_consulta(tokens[0], defer_altiplano_summary=True)
+                    ]
+                elif len(tokens) > 1:
+                    consulta_modo = "masivo"
+                    value_masivo = prefill
+                    for token in tokens:
+                        consultas.append(
+                            _resolve_index_consulta(token, defer_altiplano_summary=True)
+                        )
 
         value = value_masivo if consulta_modo == "masivo" else value_individual
 
@@ -1129,6 +1206,21 @@ def register(app):
         data = consultar_dashboard_rama(rama)
         return jsonify(data)
 
+    @app.route("/dashboard/rama/semaforo-historico", methods=["POST"])
+    def dash_rama_semaforo_historico():
+        raw_ramas = (request.form.get("ramas") or "").strip()
+        if not raw_ramas:
+            return jsonify({"ok": False, "error": "Parámetro ramas requerido"}), 400
+        ramas = [x.strip() for x in raw_ramas.split(",") if x.strip()]
+        try:
+            payload = semaforo_historico_por_ramas(ramas)
+        except Exception:
+            return _log_and_internal_error("Error interno consultando semáforo histórico RAMA")
+        status = int(payload.get("status_code") or 200)
+        if not payload.get("ok"):
+            return jsonify(payload), status
+        return jsonify(payload)
+
     @app.route("/dashboard/rama/inventario", methods=["POST"])
     def dash_rama_inventario():
         rama = (request.form.get("rama") or "").strip()
@@ -1217,6 +1309,21 @@ def register(app):
     def dash_olt_consultar():
         lt = request.form.get("lt", "").strip()
         return jsonify(estructura_dashboard_lt(lt))
+
+    @app.route("/dashboard/olt/semaforo-historico", methods=["POST"])
+    def dash_olt_semaforo_historico():
+        raw_lts = (request.form.get("lts") or "").strip()
+        if not raw_lts:
+            return jsonify({"ok": False, "error": "Parámetro lts requerido"}), 400
+        lts = [x.strip() for x in raw_lts.split(",") if x.strip()]
+        try:
+            payload = semaforo_historico_por_lts(lts)
+        except Exception:
+            return _log_and_internal_error("Error interno consultando semáforo histórico OLT")
+        status = int(payload.get("status_code") or 200)
+        if not payload.get("ok"):
+            return jsonify(payload), status
+        return jsonify(payload)
 
     @app.route("/dashboard/olt/export.csv")
     def export_olt_csv():
@@ -1350,6 +1457,57 @@ def register(app):
     @app.route("/dashboard/potencias-historico")
     def dash_potencias_historico():
         return render_template("dashboard_potencias_historico.html")
+
+    @app.route("/dashboard/radar-degradacion")
+    def dash_radar_degradacion():
+        return render_template("dashboard_radar_degradacion.html")
+
+    @app.route("/api/radar-degradacion")
+    def api_radar_degradacion():
+        days = request.args.get("days", default=14, type=int)
+        principal = (request.args.get("principal") or "").strip() or None
+        nivel = (request.args.get("nivel") or "").strip() or None
+        q = (request.args.get("q") or "").strip() or None
+        limit = request.args.get("limit", default=10000, type=int)
+        try:
+            payload = consultar_radar_degradacion(
+                days=days,
+                principal=principal,
+                nivel=nivel,
+                q=q,
+                limit=limit,
+            )
+        except Exception:
+            return _log_and_internal_error("Error interno consultando radar de degradacion")
+        if not payload.get("ok"):
+            return jsonify({"error": payload.get("error", "Error de consulta")}), int(
+                payload.get("status_code", 500)
+            )
+        return jsonify(payload)
+
+    @app.route("/dashboard/radar-degradacion/export.csv")
+    def dash_radar_degradacion_export_csv():
+        days = request.args.get("days", default=14, type=int)
+        principal = (request.args.get("principal") or "").strip() or None
+        nivel = (request.args.get("nivel") or "").strip() or None
+        q = (request.args.get("q") or "").strip() or None
+        limit = request.args.get("limit", default=10000, type=int)
+        try:
+            payload = export_csv_radar_degradacion(
+                days=days,
+                principal=principal,
+                nivel=nivel,
+                q=q,
+                limit=limit,
+            )
+        except Exception:
+            return _log_and_internal_error("Error interno exportando radar de degradacion")
+        if not payload.get("ok"):
+            return jsonify({"error": payload.get("error", "Error de exportación")}), int(
+                payload.get("status_code", 500)
+            )
+        filename = f"radar_degradacion_{payload.get('days', days)}d.csv"
+        return _csv_download_response(payload.get("csv", ""), filename)
 
     @app.route("/dashboard/estadisticas")
     def dash_estadisticas():
@@ -2413,8 +2571,8 @@ def register(app):
                         {
                             "error": (
                                 "No se reconoce el formato. Usá «FATC» (CTO), «RATC» (rama), "
-                                "solo dígitos (Access ID), un LT tipo BA_OLTA_….LT1, "
-                                "o sitio / región (ej. Moreno, MR01, sitio:Tigre)."
+                                "fusión planta (ej. SF01-R1301-010), solo dígitos (Access ID), "
+                                "un LT tipo BA_OLTA_….LT1, o sitio / región (ej. Moreno, MR01)."
                             ),
                         }
                     ),
@@ -2428,6 +2586,8 @@ def register(app):
                 return jsonify(dashboard_camino_optico_cto(valor))
             if tipo == "rama":
                 return jsonify(dashboard_camino_optico_rama(valor))
+            if tipo == "fusion_planta":
+                return jsonify(dashboard_camino_optico_fusion_planta(valor))
             if tipo in ("access_id", "aid", "id"):
                 return jsonify(dashboard_camino_optico_access_id(valor))
             if tipo == "lt":
@@ -2445,6 +2605,21 @@ def register(app):
             ), 400
         except Exception:
             return _log_and_internal_error("Error al consultar camino óptico")
+
+    @app.route("/dashboard/camino-optico/consultar-masivo", methods=["POST"])
+    def dash_camino_optico_consultar_masivo():
+        """Varias ramas RATC: inventario unificado + mapa agregado."""
+        data = request.get_json(silent=True) or {}
+        raw = data.get("values")
+        if raw is None:
+            raw = data.get("text") or data.get("valor") or ""
+        try:
+            out = dashboard_camino_optico_ramas_masivo(raw)
+        except Exception:
+            return _log_and_internal_error("Error al consultar camino óptico masivo")
+        if out.get("error"):
+            return jsonify(out), 400
+        return jsonify(out)
 
     @app.route("/dashboard/camino-optico/gis-por-lt", methods=["POST"])
     def dash_camino_optico_gis_por_lt():
@@ -2484,3 +2659,74 @@ def register(app):
         if not out.get("ok"):
             return jsonify(out), 400
         return jsonify(out)
+
+    @app.route("/dashboard/camino-optico/export-fusion")
+    def dash_camino_optico_export_fusion():
+        """Reporte imprimible tipo PDF (report_fusiones) para una fusión planta interna."""
+        from flask import Response
+
+        from services.camino_fusion_export import consultar_reporte_fusion_export
+
+        fusion = (request.args.get("fusion") or request.args.get("id") or "").strip()
+        rama = (request.args.get("rama") or "").strip() or None
+        pdf_mode = request.args.get("pdf") in ("1", "true", "yes")
+
+        def _fusion_watermark_src(*, for_pdf: bool) -> str:
+            from services.camino_fusion_pdf import prepare_watermark_asset, watermark_placeholder
+
+            if for_pdf:
+                return watermark_placeholder()
+            prepare_watermark_asset()
+            return url_for("static", filename="img/american-tower-watermark.png")
+
+        def _fusion_logo_src(*, for_pdf: bool) -> str:
+            from services.camino_fusion_pdf import header_logo_placeholder
+
+            if for_pdf:
+                return header_logo_placeholder()
+            return url_for("static", filename="img/american-tower-logo.svg")
+
+        if not fusion:
+            return render_template(
+                "camino_fusion_export.html",
+                report={"ok": False, "error": "Parámetro fusion requerido (ej. SF01-R1301-010)."},
+                pdf_mode=False,
+            ), 400
+        try:
+            report = consultar_reporte_fusion_export(fusion, rama=rama)
+        except Exception:
+            return _log_and_internal_error("Error generando export de fusión")
+        if not report.get("ok"):
+            return (
+                render_template("camino_fusion_export.html", report=report, pdf_mode=False),
+                404,
+            )
+        if pdf_mode:
+            try:
+                from services.camino_fusion_pdf import fusion_html_to_pdf
+
+                html = render_template(
+                    "camino_fusion_export.html",
+                    report=report,
+                    pdf_mode=True,
+                    watermark_src=_fusion_watermark_src(for_pdf=True),
+                    logo_src=_fusion_logo_src(for_pdf=True),
+                )
+                pdf_bytes = fusion_html_to_pdf(html, base_url=request.url_root)
+                fname = f"{fusion}.pdf"
+                return Response(
+                    pdf_bytes,
+                    mimetype="application/pdf",
+                    headers={
+                        "Content-Disposition": f'inline; filename="{fname}"',
+                    },
+                )
+            except Exception:
+                return _log_and_internal_error("Error generando PDF de fusión")
+        return render_template(
+            "camino_fusion_export.html",
+            report=report,
+            pdf_mode=False,
+            watermark_src=_fusion_watermark_src(for_pdf=False),
+            logo_src=_fusion_logo_src(for_pdf=False),
+        )

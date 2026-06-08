@@ -1,15 +1,10 @@
 .env
 .venv/
+venv/
 __pycache__/
 *.py[cod]
 .pytest_cache/
 .mypy_cache/
-venv/
 *.ppk
 .cursor/
 .vscode/
-
-# Salidas locales de análisis / export puntual (no versionar)
-resultado.csv
-resultado.cs
-.aider*

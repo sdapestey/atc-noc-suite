@@ -35,6 +35,8 @@ def test_consulta_index_uses_external_js_bundle():
     assert "window.cambiarSNDesdeUIBtn = cambiarSNDesdeUIBtn" in js
     assert "consultaSetBtnConsultando" in js
     assert "_consultaAcquireSectionPotenciaBtnsLoading" in js
+    assert "_consultaAlarmasFetched" in js
+    assert "_consultaDetallePollAlarmasTail" not in js
     assert "skipBtnLoading" in js
     assert "releaseEntriesBtns" in js
     masivo_ui = Path("static/js/consulta-masivo-ui.js").read_text(encoding="utf-8")
@@ -42,4 +44,9 @@ def test_consulta_index_uses_external_js_bundle():
     assert "startBackgroundPotenciasPreload" in masivo_ui
     assert "consulta-masivo-rama-summary__progress" in html
     assert "consulta-masivo-ramas-spin" in html
+    assert "masivoCopyLists" in html
+    assert 'data-consulta-masivo-copy="cto"' in html
+    assert 'data-consulta-masivo-copy="ont"' in html
+    assert 'data-consulta-masivo-copy="operador"' in html
+    assert "bindMasivoTotalsCopy" in masivo_ui
     assert "window.togglePonAdminDesdeUIBtn = togglePonAdminDesdeUIBtn" in js

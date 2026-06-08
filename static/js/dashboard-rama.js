@@ -1,10 +1,10 @@
-let _toastTimer = null;
 let _jumpTimer = null;
 let _filtroRamaTimer = null;
 let _lastJumpKey = "";
 let _restoringRamaState = false;
 const _ramaPotenciasCache = {};
 const _ramaPotenciasCacheMs = 45000;
+const _ramaSemaforoHistoricoLoaded = {};
 const _ramaInventarioCargado = {};
 const _ramaInventarioCargando = {};
 const _RAMA_STATE_KEY = "ramaDashboardStateV1";
@@ -40,17 +40,25 @@ function _ctoBodyTieneFilasPendientesPotencias(ctoBody) {
   return false;
 }
 
-function toast(msg) {
-  const el = document.getElementById("toast");
-  if (!el) return;
-  el.textContent = msg;
-  el.classList.add("show");
-  if (_toastTimer) clearTimeout(_toastTimer);
-  _toastTimer = setTimeout(() => el.classList.remove("show"), 1600);
+function toast(msg, opts) {
+  if (!window.NocToast) return;
+  const options = Object.assign({ durationMs: 1600 }, opts || {});
+  window.NocToast.show("toast", msg, options);
 }
 
-function copyTextToClipboard(text) {
-  const done = () => toast("Coordenadas copiadas al portapapeles");
+function copyTextToClipboard(text, toastMsg, opts) {
+  if (window.NocClipboard && window.NocClipboard.copyText) {
+    const copyOpts = {
+      toastMsg: toastMsg || "Copiados al portapapeles",
+      toastId: "toast",
+      failMsg: "No se pudo copiar",
+    };
+    if (opts && opts.map) copyOpts.map = opts.map;
+    copyOpts.preferSync = true;
+    window.NocClipboard.copyText(text, copyOpts);
+    return;
+  }
+  const done = () => toast(toastMsg || "Copiados al portapapeles");
   if (navigator.clipboard && navigator.clipboard.writeText) {
     return navigator.clipboard.writeText(text).then(done).catch(fallback);
   }
@@ -147,7 +155,7 @@ function copiarCtosSeleccionadas() {
     toast(res.error);
     return;
   }
-  copyTextToClipboard(res.lines.join("\n"));
+  copyTextToClipboard(res.lines.join("\n"), "CTO copiados al portapapeles");
 }
 
 function exportarCtosSeleccionadasCsv() {
@@ -313,6 +321,7 @@ function _expandSiteByName(siteName) {
     if (head && body) {
       body.classList.remove("hidden");
       setExpanded(head, true);
+      _cargarSemaforoHistoricoSitio(head);
     }
   });
 }
@@ -475,92 +484,38 @@ function _fitRamaMapToData(map, gj, markers) {
 }
 
 function _ramaCoordTextFromLatLon(lat, lon) {
+  if (window.NocMaps && window.NocMaps.coordTextFromLatLon) {
+    return window.NocMaps.coordTextFromLatLon(lat, lon);
+  }
   const latN = Number(lat);
   const lonN = Number(lon);
   if (!Number.isFinite(latN) || !Number.isFinite(lonN)) return "";
   return latN.toFixed(6) + ", " + lonN.toFixed(6);
 }
 
-function _setCtoCoordsMeta(body, lat, lon) {
-  if (!body) return;
-  const coordsEl = body.querySelector("[data-cto-coords]");
-  if (!coordsEl) return;
-  const coordText = _ramaCoordTextFromLatLon(lat, lon);
-  if (!coordText) {
-    coordsEl.innerHTML = "";
-    return;
-  }
-  coordsEl.innerHTML =
-    '<span class="rama-cto-address__label">Coordenadas</span>' +
-    '<span class="rama-cto-address__value mono">' +
-    _escHtml(coordText) +
-    "</span>";
+function _setCtoCoordsMeta(_body, _lat, _lon) {
+  /* Coordenadas solo en el popup del mapa (no duplicar sobre el canvas). */
 }
 
 function _ramaMarkerPopupHtml(cto, lat, lon, addr, opts) {
-  const coordText = _ramaCoordTextFromLatLon(lat, lon);
-  const showAddrLoading = opts && opts.showAddrLoading;
-  return (
-    '<div class="camino-popup-cto">' +
-    '<div class="camino-popup-cto__id"><strong>' +
-    _escHtml(cto || "") +
-    "</strong></div>" +
-    '<div class="camino-popup-cto__addr" data-rama-popup-addr>' +
-    (addr
-      ? '<span class="camino-popup-addr">' + _escHtml(addr) + "</span>"
-      : showAddrLoading
-      ? '<span class="muted">Buscando dirección…</span>'
-      : '<span class="muted">Sin dirección postal</span>') +
-    "</div>" +
-    (coordText
-      ? '<div class="camino-popup-cto__coords mono" title="Latitud, Longitud">' +
-        _escHtml(coordText) +
-        "</div>"
-      : "") +
-    (coordText
-      ? '<div class="camino-popup-cto__copy muted">Click en la CTO para copiar coordenadas</div>'
-      : "") +
-    "</div>"
+  if (window.NocMaps && window.NocMaps.ctoPopupHtml) {
+    return window.NocMaps.ctoPopupHtml(cto, lat, lon, addr, {
+      showAddrLoading: !!(opts && opts.showAddrLoading),
+      mapsLink: true,
+    });
+  }
+  return "";
+}
+
+function _wireRamaCtoMarker(cm, tooltipHtml, styleBase, coordText, opts) {
+  if (!window.NocMaps || !window.NocMaps.wireCtoCircleMarker) return;
+  window.NocMaps.wireCtoCircleMarker(
+    cm,
+    tooltipHtml,
+    styleBase,
+    coordText,
+    Object.assign({ toastId: "toast" }, opts || {})
   );
-}
-
-function _ramaCtoMarkerHoverStyle(base) {
-  return {
-    radius: Math.min((base.radius || 9) + 5, 22),
-    fillColor: base.fillColor,
-    color: base.color,
-    weight: Math.min((base.weight || 2) + 2, 5),
-    opacity: base.opacity,
-    fillOpacity: Math.min((base.fillOpacity != null ? base.fillOpacity : 0.95) + 0.04, 1),
-  };
-}
-
-function _wireRamaCtoMarker(cm, tooltipHtml, styleBase, coordText) {
-  const base = {};
-  Object.keys(styleBase || {}).forEach((k) => {
-    base[k] = styleBase[k];
-  });
-  cm._ramaCtoBaseOpts = base;
-  cm._ramaCtoHoverOpts = _ramaCtoMarkerHoverStyle(base);
-  cm.bindTooltip(tooltipHtml, {
-    direction: "top",
-    opacity: 0.96,
-    className: "camino-popup-cto camino-cto-hover-tip",
-    interactive: false,
-  });
-  cm.on("mouseover", () => {
-    cm.setStyle(cm._ramaCtoHoverOpts);
-    try {
-      cm.bringToFront();
-    } catch (_e) {}
-  });
-  cm.on("mouseout", () => {
-    cm.setStyle(cm._ramaCtoBaseOpts);
-  });
-  cm.on("click", () => {
-    if (!coordText) return;
-    copyTextToClipboard(coordText);
-  });
 }
 
 function ensureCtoMapForCtoNode(ctoNode) {
@@ -670,7 +625,13 @@ function ensureCtoMapForCtoNode(ctoNode) {
         (body.querySelector("[data-cto-postal-address] .rama-cto-address__value")?.textContent || "").trim();
       const cto = (ctoNode.getAttribute("data-cto") || "").trim();
       const marker = window.L.circleMarker([lat, lon], pointStyle);
-      _wireRamaCtoMarker(marker, _ramaMarkerPopupHtml(cto, lat, lon, addrText, { showAddrLoading: false }), pointStyle, coordText);
+      _wireRamaCtoMarker(
+        marker,
+        _ramaMarkerPopupHtml(cto, lat, lon, addrText, { showAddrLoading: false }),
+        pointStyle,
+        coordText,
+        { map: mapPanel._leafletMap }
+      );
       mapPanel._ramaCtoPointLayer = window.L.layerGroup([marker]).addTo(mapPanel._leafletMap);
       mapPanel._leafletMap.setView([lat, lon], 17);
       mapPanel.dataset.mapReady = "done";
@@ -717,6 +678,20 @@ function ensureCtoAddressForCtoNode(ctoNode) {
         '<span class="rama-cto-address__label">Dirección</span>' +
         '<span class="rama-cto-address__value">' + addr + "</span>";
       shell.dataset.addrReady = "done";
+      const mapPanel = body.querySelector("[data-cto-map-panel]");
+      const layer = mapPanel && mapPanel._ramaCtoPointLayer;
+      if (layer && typeof layer.getLayers === "function") {
+        const layers = layer.getLayers();
+        if (layers.length === 1 && layers[0].getLatLng) {
+          const marker = layers[0];
+          const ll = marker.getLatLng();
+          marker.setTooltipContent(
+            _ramaMarkerPopupHtml(cto, ll.lat, ll.lng, String(data.address || "").trim(), {
+              showAddrLoading: false,
+            })
+          );
+        }
+      }
     })
     .catch(() => {
       addrEl.textContent = "";
@@ -955,26 +930,20 @@ function _loadRamaMapPanel(card, rama, panel) {
         const marker = window.L.circleMarker([lat, lon], pointStyle);
         const cto = String(mk.cto || "").trim();
         const coordText = _ramaCoordTextFromLatLon(lat, lon);
-        _wireRamaCtoMarker(marker, _ramaMarkerPopupHtml(cto, lat, lon, "", { showAddrLoading: true }), pointStyle, coordText);
-        marker._ramaAddrResolved = false;
-        marker.on("mouseover", () => {
-          if (!cto || marker._ramaAddrResolved) return;
-          marker._ramaAddrResolved = true;
-          fetch(_RAMA_CTO_ADDRESS_URL + "?cto=" + encodeURIComponent(cto))
-            .then((r) => (r.ok ? r.json() : null))
-            .then((data) => {
-              const addr =
-                data && data.ok && data.address ? String(data.address).trim() : "";
-              marker.setTooltipContent(
-                _ramaMarkerPopupHtml(cto, lat, lon, addr, { showAddrLoading: false })
-              );
-            })
-            .catch(() => {
-              marker.setTooltipContent(
-                _ramaMarkerPopupHtml(cto, lat, lon, "", { showAddrLoading: false })
-              );
-            });
-        });
+        _wireRamaCtoMarker(
+          marker,
+          _ramaMarkerPopupHtml(cto, lat, lon, "", { showAddrLoading: true }),
+          pointStyle,
+          coordText,
+          { map }
+        );
+        if (cto && window.NocMaps && window.NocMaps.wireCtoAddressPrefetch) {
+          window.NocMaps.wireCtoAddressPrefetch(
+            marker,
+            _RAMA_CTO_ADDRESS_URL + "?cto=" + encodeURIComponent(cto),
+            (addr) => _ramaMarkerPopupHtml(cto, lat, lon, addr, { showAddrLoading: false })
+          );
+        }
         fg.addLayer(marker);
       });
       if (fg.getLayers().length > 0) {
@@ -1002,6 +971,13 @@ function toggle(el) {
   const rama = (card?.getAttribute("data-rama") || "").trim();
   const isRamaRow = el.classList.contains("rama-row");
   const willExpand = next.classList.contains("hidden");
+  if (willExpand && el.classList.contains("site-head")) {
+    next.classList.remove("hidden");
+    setExpanded(el, true);
+    _cargarSemaforoHistoricoSitio(el);
+    _saveStateSoon();
+    return;
+  }
   if (willExpand && isRamaRow && card) {
     const container = card.querySelector("[data-rama-detail]");
     if (container) {
@@ -1294,6 +1270,12 @@ function _ramaRowCellsHtml(o, rama, cto, outNum) {
   `;
 }
 
+function _countInServiceOnts(onts) {
+  return (onts || []).filter(
+    (o) => String(o.STATUS || "").trim().toUpperCase() === "IN SERVICE"
+  ).length;
+}
+
 function renderInventarioRama(rama, inv, container) {
   const ctos = Object.keys(inv || {}).sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: "base" }));
   let html = `
@@ -1307,12 +1289,14 @@ function renderInventarioRama(rama, inv, container) {
 
   ctos.forEach((cto) => {
     const onts = inv[cto] || [];
+    const ontCount = _countInServiceOnts(onts);
     html += `
       <div class="node indent2 cto-head-row" data-toggle-node data-cto-node data-cto="${_escHtml(cto)}" aria-expanded="false" onclick="toggle(this)">
         <input type="checkbox" class="cto-select" title="Seleccionar CTO para exportación" aria-label="Seleccionar CTO" onclick="event.stopPropagation()">
         <span class="rama-row-kind rama-row-kind--cto">CTO</span>
         <span class="arrow">▶</span>
         <span class="mono rama-row-label">${_escHtml(cto)}</span>
+        <span class="badge hide-sm cto-head-row__ont-count" title="ONT IN SERVICE en esta CTO">ONT ${ontCount}</span>
         <span class="rama-row-actions" onclick="event.stopPropagation()">
           <button type="button" class="btn-mini pot-cto" data-pot-cto="${encodeURIComponent(cto)}">Consultar RX</button>
           <button
@@ -1327,7 +1311,6 @@ function renderInventarioRama(rama, inv, container) {
       <div class="hidden indent3">
         <div class="rama-cto-map-shell" data-cto-map-shell data-cto="${_escHtml(cto)}">
           <p class="hint rama-cto-address" data-cto-postal-address aria-live="polite"></p>
-          <p class="hint rama-cto-address rama-cto-coords" data-cto-coords aria-live="polite"></p>
         </div>
         <div class="rama-cto-map-panel hidden" data-cto-map-panel aria-hidden="true">
           <p class="hint rama-cto-map-msg" aria-live="polite"></p>
@@ -1504,15 +1487,101 @@ function _ramaFinalizeTxRxPendientes(card) {
   });
 }
 
+function _setSemaforoRama(row, res) {
+  if (!row || !res) return;
+  const elR = row.querySelector('[data-semaforo="rojo"]');
+  const elA = row.querySelector('[data-semaforo="amarillo"]');
+  const elV = row.querySelector('[data-semaforo="verde"]');
+  if (elR) elR.textContent = String(res.ROJAS || 0);
+  if (elA) elA.textContent = String(res.AMARILLAS || 0);
+  if (elV) elV.textContent = String(res.VERDES || 0);
+}
+
+function _applySemaforoHistoricoRama(row, res) {
+  if (!row || !res) return;
+  _setSemaforoRama(row, res);
+  row.dataset.semaforoHistorico = "1";
+  const hint = "Semáforos desde última medición RX guardada en Postgres (altiplano.potencias)";
+  row.querySelectorAll('[data-semaforo="rojo"], [data-semaforo="amarillo"], [data-semaforo="verde"]').forEach((el) => {
+    el.title = hint;
+  });
+}
+
+function _cargarSemaforoHistoricoSitio(siteHead) {
+  if (!siteHead || !siteHead.classList.contains("site-head")) return;
+  const block = siteHead.closest(".principal-block");
+  if (!block) return;
+  const siteName = (block.getAttribute("data-principal-name") || "").trim();
+  if (!siteName || _ramaSemaforoHistoricoLoaded[siteName]) return;
+
+  const ramas = [];
+  const rowByRama = {};
+  block.querySelectorAll("[data-rama-card]").forEach((card) => {
+    const rama = (card.getAttribute("data-rama") || "").trim();
+    if (!rama) return;
+    const row = card.querySelector(".rama-row[data-toggle-node]");
+    if (!row) return;
+    ramas.push(rama);
+    rowByRama[rama] = row;
+  });
+  if (!ramas.length) return;
+
+  _ramaSemaforoHistoricoLoaded[siteName] = true;
+  const chunkSize = 80;
+  const chunks = [];
+  for (let i = 0; i < ramas.length; i += chunkSize) {
+    chunks.push(ramas.slice(i, i + chunkSize));
+  }
+
+  let hadError = false;
+  const applyChunk = (data) => {
+    if (!data || !data.ok) return;
+    const byRama = data.ramas || {};
+    Object.keys(byRama).forEach((rama) => {
+      const row = rowByRama[rama];
+      if (row) _applySemaforoHistoricoRama(row, byRama[rama]);
+    });
+  };
+
+  chunks.reduce((chain, chunkRamas) => {
+    return chain.then(() =>
+      fetch("/dashboard/rama/semaforo-historico", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: "ramas=" + encodeURIComponent(chunkRamas.join(",")),
+      })
+        .then((r) => {
+          if (!r.ok) throw new Error("HTTP " + r.status);
+          return r.json();
+        })
+        .then(applyChunk)
+    );
+  }, Promise.resolve()).catch(() => {
+    hadError = true;
+  }).finally(() => {
+    if (hadError) delete _ramaSemaforoHistoricoLoaded[siteName];
+  });
+}
+
 function _aplicarDataRama(rama, data, row, card) {
   const res = data.__dashboard_resumen__;
   if (res && row) {
+    delete row.dataset.semaforoHistorico;
     const elR = row.querySelector('[data-semaforo="rojo"]');
     const elA = row.querySelector('[data-semaforo="amarillo"]');
     const elV = row.querySelector('[data-semaforo="verde"]');
-    if (elR) elR.textContent = res.ROJAS;
-    if (elA) elA.textContent = res.AMARILLAS;
-    if (elV) elV.textContent = res.VERDES;
+    if (elR) {
+      elR.textContent = res.ROJAS;
+      elR.removeAttribute("title");
+    }
+    if (elA) {
+      elA.textContent = res.AMARILLAS;
+      elA.removeAttribute("title");
+    }
+    if (elV) {
+      elV.textContent = res.VERDES;
+      elV.removeAttribute("title");
+    }
   }
   const root = card || document;
   root.querySelectorAll("tr[data-aid]").forEach((tr) => {

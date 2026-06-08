@@ -124,3 +124,33 @@ def test_index_rama_table_sin_columna_estado(client, monkeypatch):
     assert "consulta-cto-block" in html
     assert "consulta-cto-head-row--subrama" in html
     assert "Consultar RX" in html
+
+
+def test_index_get_q_prefills_rama_consulta(client, monkeypatch):
+    import web.routes as routes
+
+    monkeypatch.setattr(
+        routes,
+        "consultar_rama_estructura",
+        lambda _rama: {
+            "SF01-FATC-8-100001": [
+                {
+                    "AID": "201",
+                    "OPERADOR": "ATC",
+                    "PRINCIPAL": "San Fernando",
+                    "ONT": "BA_OLTA_SF01_01-1-1-1",
+                    "SN": "SN1",
+                    "STATUS": "IN SERVICE",
+                    "TX": None,
+                    "RX": None,
+                }
+            ]
+        },
+    )
+
+    r = client.get("/?q=SF01-RATC-0-000408")
+    assert r.status_code == 200
+    html = r.get_data(as_text=True)
+    assert 'value="SF01-RATC-0-000408"' in html
+    assert "SF01-RATC-0-000408" in html
+    assert "consulta-cto-block" in html

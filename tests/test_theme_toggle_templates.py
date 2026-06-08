@@ -40,6 +40,7 @@ def test_dashboard_pages_have_no_attribution_line(client):
         "/dashboard/estadisticas",
         "/dashboard/rama",
         "/dashboard/potencias-historico",
+        "/dashboard/radar-degradacion",
         "/dashboard/camino-optico",
     ]
     for path in paths:

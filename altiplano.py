@@ -5737,6 +5737,112 @@ def _ema_state_from_body(body: object, key: str) -> str | None:
     return _deep_find_ema_scalar(body, key)
 
 
+def _ema_serial_from_body(body: object) -> str | None:
+    """Serial en EMA INP (``extraAttributes``); puede quedar de la ONU anterior en el PON."""
+    if not isinstance(body, dict):
+        return None
+    for key in ("serialNumber", "expected-serial-number", "expectedSerialNumber"):
+        val = body.get(key)
+        if isinstance(val, dict):
+            continue
+        s = str(val or "").strip()
+        if s and s not in ("-", "Undefined"):
+            return s
+    ea = body.get("extraAttributes")
+    if isinstance(ea, dict):
+        for key in (
+            "serialNumber",
+            "expected-serial-number",
+            "expectedSerialNumber",
+            "detected-serial-number",
+            "detectedSerialNumber",
+        ):
+            val = ea.get(key)
+            if isinstance(val, dict):
+                continue
+            s = str(val or "").strip()
+            if s and s not in ("-", "Undefined"):
+                return s
+    return None
+
+
+def _normalize_ont_serial(sn: str | None) -> str:
+    return str(sn or "").strip().upper()
+
+
+def _serial_from_alarma_text(text: str | None) -> str | None:
+    m = re.search(r"Serial-Number=([^,\s]+)", str(text or ""), re.IGNORECASE)
+    if not m:
+        return None
+    s = m.group(1).strip()
+    return s if s and s != "-" else None
+
+
+def filter_alarmas_por_serial_ont(
+    alarmas: list[dict], live_sn: str | None
+) -> list[dict]:
+    """
+    Descarta alarmas cuyo ``Serial-Number=`` en el texto no coincide con la ONU en servicio.
+
+    En un mismo ``object_name`` puede quedar una alarma activa del cliente anterior (EMA INP).
+    """
+    sn_live = _normalize_ont_serial(live_sn)
+    if not sn_live or not alarmas:
+        return list(alarmas or [])
+    kept: list[dict] = []
+    for item in alarmas:
+        if not isinstance(item, dict):
+            continue
+        asn = _serial_from_alarma_text(item.get("text"))
+        if asn and _normalize_ont_serial(asn) != sn_live:
+            continue
+        kept.append(item)
+    return kept
+
+
+def _oper_from_inp_ont_connection_access_id(access_id: str) -> str | None:
+    """``UP`` si ``search-intents`` reporta intent activo y alineado (como la GUI INP)."""
+    row = resolver_ont_connection_inp_por_access_id(str(access_id or "").strip())
+    if not row:
+        return None
+    ns = str(row.get("network_state") or "").strip().lower()
+    al = str(row.get("alignment_state") or "").strip().lower()
+    if ns == "active" and al in ("aligned", "aligned-not-active"):
+        return "UP"
+    return None
+
+
+def _reconcile_ont_nv_oper_status(
+    out: dict[str, object | None],
+    access_id: str,
+    inp_snap: dict[str, str | None],
+) -> None:
+    """
+    Corrige oper/health cuando EMA INP quedó con la ONU anterior pero el VNO ya tiene lectura.
+
+    Caso típico: potencias y SN del operador (TASA) OK, INP EMA con otro serial y ``operationState=DOWN``.
+    """
+    tx, rx = out.get("tx"), out.get("rx")
+    has_power = tx is not None and rx is not None
+    live_sn = _normalize_ont_serial(str(out.get("sn") or ""))
+    ema_sn = _normalize_ont_serial(inp_snap.get("ema_serial"))
+    oper = str(out.get("oper") or "").strip().upper()
+
+    stale_inp_down = (
+        oper == "DOWN"
+        and has_power
+        and live_sn
+        and ema_sn
+        and ema_sn != live_sn
+    )
+    intent_up = _oper_from_inp_ont_connection_access_id(access_id) == "UP"
+
+    if stale_inp_down or (oper == "DOWN" and has_power and intent_up):
+        out["oper"] = "UP"
+        if str(out.get("health") or "").strip().lower() == "faulty":
+            out["health"] = "Healthy"
+
+
 def _inp_ema_credentials(operator_name: str | None) -> tuple[str, str]:
     """Credenciales para EMA INP (misma cadena que lock/unlock en Network Views)."""
     op = str(operator_name or "").strip().upper()
@@ -5762,8 +5868,11 @@ def _fetch_ema_oper_admin_inp(
 
     En operadores como DIRECTV las potencias pueden venir del AC del VNO, pero el estado
     Up/Locked suele exponerse solo en INP.
+
+    Returns:
+        ``oper``, ``admin`` y ``ema_serial`` (serial visto en EMA INP, para detectar ONU obsoleta).
     """
-    out: dict[str, str | None] = {"oper": None, "admin": None}
+    out: dict[str, str | None] = {"oper": None, "admin": None, "ema_serial": None}
     host, port, base_url = get_altiplano_nbi_target("INP")
     if not host or not port or not base_url:
         return out
@@ -5789,6 +5898,7 @@ def _fetch_ema_oper_admin_inp(
     )
     if ema_body:
         out["oper"] = _ema_state_from_body(ema_body, "operationState")
+        out["ema_serial"] = _ema_serial_from_body(ema_body)
 
     ema_admin_body = _http_get_ema_entity_try_versions(
         base_host,
@@ -6621,17 +6731,17 @@ def _fetch_ont_telemetry_live(
         ):
             break
 
-    if out["oper"] is None or out["admin"] is None:
-        inp_states = _fetch_ema_oper_admin_inp(
-            access_id,
-            object_name_raw,
-            ne,
-            operator_name=_operator_name_from_id(operator_id),
-        )
-        if out["oper"] is None and inp_states.get("oper"):
-            out["oper"] = inp_states["oper"]
-        if out["admin"] is None and inp_states.get("admin"):
-            out["admin"] = inp_states["admin"]
+    # Siempre consultar EMA INP: el bucle VNO/INP puede haber puesto ``oper`` sin ``ema_serial``.
+    inp_snap = _fetch_ema_oper_admin_inp(
+        access_id,
+        object_name_raw,
+        ne,
+        operator_name=_operator_name_from_id(operator_id),
+    )
+    if out["oper"] is None and inp_snap.get("oper"):
+        out["oper"] = inp_snap["oper"]
+    if out["admin"] is None and inp_snap.get("admin"):
+        out["admin"] = inp_snap["admin"]
 
     inp_user: str | None = None
     inp_pwd: str | None = None
@@ -6658,6 +6768,8 @@ def _fetch_ont_telemetry_live(
         access_id, object_name_raw, operator_id, ne=ne
     )
 
+    _reconcile_ont_nv_oper_status(out, access_id, inp_snap)
+
     return out
 
 
@@ -6670,11 +6782,11 @@ def _ont_gpon_interface_suffix(object_name_raw: str) -> str:
 
 
 def _ont_gpon_interface_suffixes(object_name_raw: str) -> list[str]:
-    """Sufijos GPON válidos en alarmas (compat ``v1`` y ``v2``)."""
+    """Sufijos GPON en alarmas AC INP (revisión de interfaz ``v1``…``v9``)."""
     onu = normalizar_object_name(str(object_name_raw or "").strip())
     if not onu:
         return []
-    return [f"v1~{onu}_GPON", f"v2~{onu}_GPON"]
+    return [f"v{n}~{onu}_GPON" for n in range(1, 10)]
 
 
 def _alarm_resource_raw_paths(ne: str, object_name_raw: str) -> list[str]:
@@ -6700,13 +6812,6 @@ def _alarm_resource_raw_paths(ne: str, object_name_raw: str) -> list[str]:
                 "ietf-hardware-mounted:hardware/component=CHASSIS",
             ]
         )
-    if onu_key:
-        paths.append(
-            f"{prefix}/bbf-fiber-onu-emulated-mount:onus/onu=v1~{onu_key}_GPON"
-        )
-        paths.append(
-            f"{prefix}/bbf-fiber-onu-emulated-mount:onus/onu=v2~{onu_key}_GPON"
-        )
     return paths
 
 
@@ -6720,6 +6825,9 @@ def _build_alarmas_activas_search_query(ne: str, object_name_raw: str) -> dict |
     for gpon in gpon_list:
         should.append({"wildcard": {"alarmResource.raw": f"*{gpon}*"}})
     if onu_key:
+        # ``alarmResource.raw`` admite wildcard por ONU; en INP ``alarmResourceUiName`` no
+        # siempre matchea con el mismo patrón (p. ej. ``v7~`` en TG02).
+        should.append({"wildcard": {"alarmResource.raw": f"*{onu_key}*"}})
         should.append({"wildcard": {"alarmResourceUiName": f"*{onu_key}_GPON*"}})
         should.append({"wildcard": {"alarmResourceUiName": f"*{onu_key}*"}})
     return {

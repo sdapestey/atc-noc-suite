@@ -118,8 +118,8 @@
 {% include 'partials/noc_head.html' %}
 {% set leaflet_rama_map_css = true %}
 {% include 'partials/head_leaflet.html' %}
-<script src="{{ url_for('static', filename='js/consulta-index-map.js') }}?v=pon27"></script>
-<script src="{{ url_for('static', filename='js/noc-tools.js') }}"></script>
+<script src="{{ url_for('static', filename='js/noc-tools.js') }}?v=noc12"></script>
+<script src="{{ url_for('static', filename='js/consulta-index-map.js') }}?v=pon40"></script>
 <script src="{{ url_for('static', filename='js/consulta-altiplano-auth.js') }}?v=pon8"></script>
 <script>
 window.__CONSULTA_INDEX_CFG__ = {
@@ -128,12 +128,15 @@ window.__CONSULTA_INDEX_CFG__ = {
   altiplanoAuthCacheSeconds: {{ consulta_altiplano_ui_cache_seconds | tojson }},
   potenciasParallelMax: {{ consulta_potencias_parallel_max | tojson }},
   potenciasPreloadBatchWorkers: {{ consulta_potencias_preload_batch_workers | tojson }},
+  {% if consulta_masivo_totals and consulta_masivo_totals.lists %}
+  masivoCopyLists: {{ consulta_masivo_totals.lists | tojson }},
+  {% endif %}
 };
 </script>
 {% if consulta_row_counts %}
 <script defer src="{{ url_for('static', filename='js/consulta-masivo-ui.js') }}?v=7"></script>
 {% endif %}
-<script defer src="{{ url_for('static', filename='js/consulta-index.js') }}?v=pon26"></script>
+<script defer src="{{ url_for('static', filename='js/consulta-index.js') }}?v=pon29"></script>
 </head>
 
 <body class="theme-devops page-consulta-index">
@@ -233,15 +236,15 @@ window.__CONSULTA_INDEX_CFG__ = {
             {% if consulta_masivo_totals %}
             <div class="consulta-masivo-totals dashboard-tree-selection" aria-label="Totales de la búsqueda masiva">
               <div class="consulta-masivo-totals__main olt-selection-summary-main">
-                <span class="dashboard-metric-pill olt-metric-pill olt-metric-pill--cto{% if not consulta_masivo_totals.cto %} olt-metric-pill--empty{% endif %}" title="CTO en todas las secciones de esta búsqueda"><span class="dashboard-metric-pill__n olt-metric-pill__n">{{ consulta_masivo_totals.cto }}</span> <span class="dashboard-metric-pill__l olt-metric-pill__l">CTO</span></span>
+                <span class="dashboard-metric-pill olt-metric-pill olt-metric-pill--cto{% if not consulta_masivo_totals.cto %} olt-metric-pill--empty{% else %} olt-metric-pill--copy{% endif %}"{% if consulta_masivo_totals.cto %} role="button" tabindex="0" data-consulta-masivo-copy="cto" aria-label="{{ consulta_masivo_totals.cto }} CTO, copiar al portapapeles" title="Clic para copiar lista de CTO (uno por línea)"{% else %} title="CTO en todas las secciones de esta búsqueda"{% endif %}><span class="dashboard-metric-pill__n olt-metric-pill__n">{{ consulta_masivo_totals.cto }}</span> <span class="dashboard-metric-pill__l olt-metric-pill__l">CTO</span></span>
                 <span class="olt-summary-sep" aria-hidden="true">·</span>
-                <span class="dashboard-metric-pill olt-metric-pill olt-metric-pill--ont{% if not consulta_masivo_totals.ont %} olt-metric-pill--empty{% endif %}" title="ONT IN SERVICE en todas las secciones de esta búsqueda"><span class="dashboard-metric-pill__n olt-metric-pill__n">{{ consulta_masivo_totals.ont }}</span> <span class="dashboard-metric-pill__l olt-metric-pill__l">ONT</span></span>
+                <span class="dashboard-metric-pill olt-metric-pill olt-metric-pill--ont{% if not consulta_masivo_totals.ont %} olt-metric-pill--empty{% else %} olt-metric-pill--copy{% endif %}"{% if consulta_masivo_totals.ont %} role="button" tabindex="0" data-consulta-masivo-copy="ont" aria-label="{{ consulta_masivo_totals.ont }} ONT, copiar al portapapeles" title="Clic para copiar Access ID IN SERVICE (uno por línea)"{% else %} title="ONT IN SERVICE en todas las secciones de esta búsqueda"{% endif %}><span class="dashboard-metric-pill__n olt-metric-pill__n">{{ consulta_masivo_totals.ont }}</span> <span class="dashboard-metric-pill__l olt-metric-pill__l">ONT</span></span>
               </div>
               {% if consulta_masivo_totals.ont_por_operador %}
               <div class="consulta-masivo-totals__ops olt-selection-summary-operadores" aria-label="ONT IN SERVICE por operador">
                 {% for op, n in consulta_masivo_totals.ont_por_operador %}
                 {% if not loop.first %}<span class="olt-summary-sep" aria-hidden="true">·</span>{% endif %}
-                <span class="dashboard-metric-pill olt-metric-pill olt-metric-pill--operador olt-metric-pill--op-{{ operador_metric_pill_slug(op) }}" title="ONT IN SERVICE · operador {{ op }}"><span class="dashboard-metric-pill__n olt-metric-pill__n">{{ n }}</span> <span class="dashboard-metric-pill__l olt-metric-pill__l">{{ op }}</span></span>
+                <span class="dashboard-metric-pill olt-metric-pill olt-metric-pill--operador olt-metric-pill--op-{{ operador_metric_pill_slug(op) }}{% if not n %} olt-metric-pill--empty{% else %} olt-metric-pill--copy{% endif %}"{% if n %} role="button" tabindex="0" data-consulta-masivo-copy="operador" data-consulta-operador="{{ op }}" aria-label="{{ n }} ONT IN SERVICE operador {{ op }}, copiar Access ID al portapapeles" title="Clic para copiar Access ID IN SERVICE de operador {{ op }} (uno por línea)"{% else %} title="ONT IN SERVICE · operador {{ op }}"{% endif %}><span class="dashboard-metric-pill__n olt-metric-pill__n">{{ n }}</span> <span class="dashboard-metric-pill__l olt-metric-pill__l">{{ op }}</span></span>
                 {% endfor %}
               </div>
               {% endif %}
@@ -884,7 +887,8 @@ window.__CONSULTA_INDEX_CFG__ = {
   </div>
 </dialog>
 
-<div id="toast" class="toast" role="status" aria-live="polite"></div>
+{% from 'partials/noc_toast.html' import render as noc_toast %}
+{{ noc_toast('toast') }}
 {% if consulta_row_counts %}
 <script src="{{ url_for('static', filename='js/consulta-panel-anim.js') }}"></script>
 {% endif %}

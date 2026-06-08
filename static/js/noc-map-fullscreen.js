@@ -65,6 +65,36 @@
     }
   }
 
+  function copyMountEl() {
+    return fsActiveEl() || document.body;
+  }
+
+  function showWrapToast(wrap, msg, durationMs) {
+    if (!wrap || !msg) return;
+    var el = wrap.querySelector(".noc-map-fs-toast");
+    if (!el) {
+      el = document.createElement("div");
+      el.className = "noc-map-fs-toast";
+      el.setAttribute("role", "status");
+      el.setAttribute("aria-live", "polite");
+      wrap.appendChild(el);
+    }
+    el.textContent = msg;
+    el.hidden = false;
+    if (el._hideTimer) clearTimeout(el._hideTimer);
+    el._hideTimer = setTimeout(function () {
+      el.hidden = true;
+    }, durationMs || 1600);
+  }
+
+  function showActiveToast(msg, opts) {
+    opts = opts || {};
+    var fs = fsActiveEl();
+    if (!fs || !msg) return false;
+    showWrapToast(fs, msg, opts.durationMs);
+    return true;
+  }
+
   function ensureWrap(container) {
     if (!container || !container.parentNode) return null;
     var existing = container.closest(".noc-map-fs-wrap");
@@ -135,5 +165,8 @@
     attachMapFullscreen: attachMapFullscreen,
     isWrapFullscreen: isWrapFullscreen,
     exitFullscreen: exitFs,
+    copyMountEl: copyMountEl,
+    showActiveToast: showActiveToast,
+    showWrapToast: showWrapToast,
   };
 })(typeof window !== "undefined" ? window : this);

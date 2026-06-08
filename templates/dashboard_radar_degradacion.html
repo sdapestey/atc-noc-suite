@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Radar Degradacion · ATC NOC Suite</title>
+{% include 'partials/noc_head.html' %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard-radar-degradacion.css') }}?v=radar-trend1">
+</head>
+<body class="theme-devops page-dashboard page-radar-degradacion">
+<div class="container">
+  <div class="topbar">
+    <div class="brand">
+      <div class="brand-row">
+        {% include 'partials/brand_logo.html' %}
+        <h1>ATC NOC Suite</h1>
+      </div>
+      <p class="page-lead page-lead--one-line">
+        <strong>Radar Degradacion</strong> — ramas con tendencia de caida en Rx (histórico Postgres, cada 3 h)
+      </p>
+    </div>
+    <div class="topbar-meta">
+      {% include 'partials/noc_topbar.html' %}
+    </div>
+  </div>
+
+  {% include 'partials/nav_dashboard.html' %}
+
+  <div class="card suite-index-card">
+    <div class="suite-search-surface suite-search-surface--radar">
+      <div class="orquestador-panel-head suite-panel-head consulta-panel-head">
+        <p class="suite-search-lead consulta-search-lead orquestador-panel-head__main">
+          Ranking preventivo por <strong>RAMA RATC</strong> — detectá degradación antes de alarmas correctivas.
+        </p>
+      </div>
+      <form class="search suite-search-form" onsubmit="event.preventDefault(); fetchRadar();">
+        <div class="suite-query-row consulta-query-row">
+          <div class="suite-query-row__field">
+            <div class="field suite-field consulta-field" role="search">
+              <span class="search-icon" aria-hidden="true">⌕</span>
+              <label class="sr-only" for="radar-q">Filtrar RAMA o sitio</label>
+              <input id="radar-q" placeholder="Filtrar por RAMA, región o sitio…" autocomplete="off">
+            </div>
+          </div>
+          <div class="suite-search-actions consulta-search-actions">
+            <div class="radar-range" id="range-picker" aria-label="Ventana de analisis">
+              <button class="btn btn-ghost" type="button" data-days="30">30d</button>
+              <button class="btn btn-ghost is-active" type="button" data-days="14">14d</button>
+              <button class="btn btn-ghost" type="button" data-days="7">7d</button>
+            </div>
+            <select id="radar-principal" class="radar-select" aria-label="Sitio principal">
+              <option value="ALL">Todos los sitios</option>
+            </select>
+            <select id="radar-nivel" class="radar-select" aria-label="Nivel de alerta">
+              <option value="ALL">Todos los niveles</option>
+              <option value="CRITICO">Critico</option>
+              <option value="ATENCION">Atencion</option>
+              <option value="ESTABLE">Estable</option>
+            </select>
+            <button class="btn btn-primary" type="submit" id="btn-search">Actualizar</button>
+            <button class="btn btn-ghost" type="button" id="btn-export" disabled>Exportar CSV</button>
+            <button class="btn btn-ghost" type="button" onclick="resetRadar()">Limpiar</button>
+          </div>
+        </div>
+      </form>
+    </div>
+
+    <div class="metrics-grid" id="stats-grid">
+      <div class="metric-card">
+        <div class="label">Con tendencia</div>
+        <div class="value" id="kpi-tendencia">—</div>
+        <div class="hint" id="kpi-tendencia-hint">ramas analizadas</div>
+      </div>
+      <div class="metric-card metric-card--critico">
+        <div class="label">Critico</div>
+        <div class="value" id="kpi-critico">—</div>
+        <div class="hint">score alto o Rx critico + tendencia</div>
+      </div>
+      <div class="metric-card metric-card--atencion">
+        <div class="label">Atencion</div>
+        <div class="value" id="kpi-atencion">—</div>
+        <div class="hint">degradacion moderada</div>
+      </div>
+      <div class="metric-card metric-card--estado">
+        <div class="label">Sin datos</div>
+        <div class="value status-neutral" id="kpi-sin-datos">—</div>
+        <div class="hint" id="kpi-generated-hint">sin consulta</div>
+      </div>
+    </div>
+
+    <div class="controls-hint radar-hint suite-note">
+      <div class="radar-hint__text">
+        <strong class="hint-kicker">NOC</strong>
+        Orden por <strong>score</strong> (última Rx del día, tendencia sostenida). Hover en score/Rx para métricas extra. Export CSV incluye todas las columnas.
+      </div>
+      <div class="radar-legend" aria-label="Leyenda trayectoria">
+        <span class="radar-legend__item"><span class="radar-legend__swatch radar-legend__swatch--verde"></span>Verde</span>
+        <span class="radar-legend__item"><span class="radar-legend__swatch radar-legend__swatch--amarillo"></span>Amarillo</span>
+        <span class="radar-legend__item"><span class="radar-legend__swatch radar-legend__swatch--rojo"></span>Rojo</span>
+        <span class="radar-legend__item"><span class="radar-legend__swatch radar-legend__swatch--transitorio"></span>Transitorio</span>
+        <span class="radar-legend__item"><span class="radar-legend__swatch radar-legend__swatch--nodata"></span>Sin muestra</span>
+        <span class="radar-legend__dir muted">14d · 1 barra = 1 día · gris = sin muestra</span>
+      </div>
+      <div class="dashboard-tree-metrics" aria-label="Resultados visibles">
+        <span class="dashboard-metric-pill dashboard-metric-pill--ramas" title="Rango de filas en la página actual / total filtrado">
+          <span class="dashboard-metric-pill__n" id="visible-count">0</span>
+          <span class="dashboard-metric-pill__l">en página</span>
+        </span>
+        <span class="dashboard-metric-pill dashboard-metric-pill--cto" title="Ventana de analisis">
+          <span class="dashboard-metric-pill__n" id="window-days">14</span>
+          <span class="dashboard-metric-pill__l">dias</span>
+        </span>
+      </div>
+    </div>
+
+    <div class="table-wrap radar-table-shell">
+      <div id="radar-loading" class="radar-loading" hidden aria-live="polite">
+        <span class="olt-txrx-cell-spin" aria-hidden="true"></span>
+        <span>Calculando ranking… (primera carga: ~1–2 min según ventana; luego queda en caché ~10 min)</span>
+      </div>
+      <div id="radar-empty" class="radar-empty" hidden>
+        <p class="hint">Sin ramas que coincidan con los filtros en la ventana seleccionada.</p>
+      </div>
+      <div class="radar-pager consulta-masivo-pager" id="radar-pager" aria-label="Paginación de resultados" hidden>
+        <div class="consulta-masivo-pager__nav">
+          <button type="button" class="btn btn-ghost btn-sm" id="radar-page-prev" disabled>Anterior</button>
+          <span class="consulta-masivo-pager__info mono" id="radar-page-info">Página 1</span>
+          <button type="button" class="btn btn-ghost btn-sm consulta-masivo-pager__next" id="radar-page-next">Siguiente</button>
+        </div>
+        <div class="consulta-masivo-pager__size-row">
+          <span class="consulta-masivo-pager__label muted">Mostrar</span>
+          <select id="radar-page-size" class="consulta-masivo-pager__size" aria-label="Ramas por página">
+            <option value="10" selected>10</option>
+            <option value="20">20</option>
+          </select>
+          <span class="consulta-masivo-pager__label muted">por página</span>
+        </div>
+      </div>
+      <table id="radar-table" class="radar-table radar-table--compact">
+        <colgroup>
+          <col class="radar-col-nivel">
+          <col class="radar-col-score">
+          <col class="radar-col-rama">
+          <col class="radar-col-rx">
+          <col class="radar-col-trend">
+          <col class="radar-col-timeline">
+          <col class="radar-col-senales">
+          <col class="radar-col-actions">
+        </colgroup>
+        <thead>
+          <tr>
+            <th scope="col" class="radar-col-nivel">Nivel</th>
+            <th scope="col" class="radar-col-score">Score</th>
+            <th scope="col" class="radar-col-rama">RAMA</th>
+            <th scope="col" class="radar-col-rx" title="Última Rx del día (dBm); hover para pico intradía">Rx</th>
+            <th scope="col" class="radar-col-trend" title="Pendiente peor Rx (dB/día) y delta baseline (dB)">
+              <span class="radar-th-timeline__label">Tend.</span>
+              <span class="radar-th-timeline__hint">pend / Δ</span>
+            </th>
+            <th scope="col" class="radar-col-timeline">
+              <span class="radar-th-timeline__label">Trayectoria</span>
+              <span class="radar-th-timeline__hint">ant. → hoy</span>
+            </th>
+            <th scope="col" class="radar-col-senales">Senales</th>
+            <th scope="col" class="radar-col-actions">Acciones</th>
+          </tr>
+        </thead>
+        <tbody id="radar-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{% from 'partials/noc_toast.html' import render as noc_toast %}
+{{ noc_toast('radar-toast') }}
+<script defer src="{{ url_for('static', filename='js/noc-tools.js') }}"></script>
+<script defer src="{{ url_for('static', filename='js/dashboard-radar-degradacion.js') }}?v=radar-trend1"></script>
+</body>
+</html>

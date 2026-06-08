@@ -1,60 +1,476 @@
 /* NOC: barra superior (metadatos; atajos en noc-tools.js) */
 
+
+
 .topbar .noc-topbar-right,
+
 .topbar-meta .noc-topbar-right {
+
   display: flex;
+
   flex-direction: column;
+
   align-items: flex-end;
+
   gap: 6px;
+
   flex-shrink: 0;
+
 }
+
+
 
 .noc-topbar-right__main {
+
   display: flex;
+
   flex-wrap: wrap;
+
   align-items: center;
+
   justify-content: flex-end;
+
   gap: 8px 12px;
+
 }
+
+
 
 @media (max-width: 720px) {
+
   .topbar {
+
     grid-template-columns: 1fr;
+
     grid-template-rows: auto auto auto;
+
   }
+
+
 
   .topbar .brand-row {
+
     grid-column: 1;
+
     grid-row: 1;
+
   }
+
+
 
   .topbar > .noc-topbar-right,
+
   .topbar > .topbar-meta {
+
     grid-column: 1;
+
     grid-row: 2;
+
   }
+
+
 
   .topbar .noc-topbar-right,
+
   .topbar-meta .noc-topbar-right {
+
     align-items: flex-start;
+
   }
+
+
 
   .topbar .page-lead,
+
   .topbar .page-lead--one-line,
+
   .topbar .brand > small,
+
   .topbar .brand-subtitle {
+
     grid-row: 3;
+
   }
+
 }
+
+
 
 .noc-meta {
+
   font-size: 11px;
+
   color: var(--fg-muted, rgba(255, 255, 255, 0.55));
+
   white-space: nowrap;
+
 }
 
+
+
 .theme-toggle-btn {
+
   min-width: 108px;
+
   padding: 6px 10px;
+
   font-size: 12px;
+
 }
+
+
+
+/* Burbuja de notificación (suite unificada; estilo reinyección Altiplano) */
+
+.noc-toast,
+
+.toast,
+
+.altiplano-consulta-toast {
+
+  position: fixed;
+
+  left: 50%;
+
+  bottom: 28px;
+
+  z-index: 12000;
+
+  display: flex;
+
+  align-items: flex-start;
+
+  gap: 12px;
+
+  max-width: min(520px, calc(100vw - 32px));
+
+  padding: 14px 16px 14px 14px;
+
+  border-radius: var(--radius-lg, 12px);
+
+  border: 1px solid var(--border-default);
+
+  background: var(--canvas-subtle);
+
+  box-shadow: var(--shadow-md), 0 16px 40px rgba(0, 0, 0, 0.45);
+
+  transform: translateX(-50%) translateY(14px);
+
+  opacity: 0;
+
+  pointer-events: none;
+
+  transition: opacity 0.22s ease, transform 0.22s ease;
+
+  box-sizing: border-box;
+
+}
+
+
+
+.noc-toast.is-visible,
+
+.toast.show,
+
+.altiplano-consulta-toast.is-visible {
+
+  opacity: 1;
+
+  transform: translateX(-50%) translateY(0);
+
+  pointer-events: auto;
+
+}
+
+
+
+.noc-toast--at-pointer,
+
+.toast.toast--at-pointer,
+
+.historico-toast--at-pointer {
+
+  left: auto;
+
+  bottom: auto;
+
+  transform: translateY(14px);
+
+}
+
+
+
+.noc-toast--at-pointer.is-visible,
+
+.toast.toast--at-pointer.show,
+
+.historico-toast--at-pointer.is-visible,
+
+.historico-toast--at-pointer.historico-toast--show {
+
+  transform: translateY(0);
+
+}
+
+
+
+.noc-toast--success,
+
+.altiplano-consulta-toast--success {
+
+  border-color: color-mix(in srgb, var(--success-text) 45%, var(--border-default));
+
+  background: linear-gradient(
+
+    180deg,
+
+    color-mix(in srgb, var(--success-text) 10%, var(--canvas-subtle)) 0%,
+
+    var(--canvas-subtle) 100%
+
+  );
+
+}
+
+
+
+.noc-toast--success .noc-toast__icon,
+
+.altiplano-consulta-toast--success .altiplano-consulta-toast__icon {
+
+  color: var(--success-text);
+
+  background: color-mix(in srgb, var(--success-text) 18%, transparent);
+
+  border-color: color-mix(in srgb, var(--success-text) 35%, var(--border-muted));
+
+}
+
+
+
+.noc-toast--success .noc-toast__text,
+
+.altiplano-consulta-toast--success .altiplano-consulta-toast__text {
+
+  color: var(--success-text);
+
+}
+
+
+
+.noc-toast--error,
+
+.altiplano-consulta-toast--error {
+
+  border-color: color-mix(in srgb, var(--danger-text) 45%, var(--border-default));
+
+  background: linear-gradient(
+
+    180deg,
+
+    color-mix(in srgb, var(--danger-text) 10%, var(--canvas-subtle)) 0%,
+
+    var(--canvas-subtle) 100%
+
+  );
+
+}
+
+
+
+.noc-toast--error .noc-toast__icon,
+
+.altiplano-consulta-toast--error .altiplano-consulta-toast__icon {
+
+  color: var(--danger-text);
+
+  background: color-mix(in srgb, var(--danger-text) 18%, transparent);
+
+  border-color: color-mix(in srgb, var(--danger-text) 35%, var(--border-muted));
+
+}
+
+
+
+.noc-toast--error .noc-toast__text,
+
+.altiplano-consulta-toast--error .altiplano-consulta-toast__text {
+
+  color: var(--danger-text);
+
+}
+
+
+
+.noc-toast--info {
+
+  border-color: var(--border-default);
+
+  background: var(--canvas-subtle);
+
+}
+
+
+
+.noc-toast--info .noc-toast__icon {
+
+  color: var(--fg-muted);
+
+  background: color-mix(in srgb, var(--fg-muted) 12%, transparent);
+
+  border-color: var(--border-muted);
+
+}
+
+
+
+.noc-toast--info .noc-toast__text {
+
+  color: var(--fg-default);
+
+}
+
+
+
+.noc-toast__icon,
+
+.altiplano-consulta-toast__icon {
+
+  flex-shrink: 0;
+
+  display: inline-flex;
+
+  align-items: center;
+
+  justify-content: center;
+
+  width: 28px;
+
+  height: 28px;
+
+  margin-top: 1px;
+
+  font-size: 15px;
+
+  font-weight: 700;
+
+  line-height: 1;
+
+  border-radius: 999px;
+
+  border: 1px solid var(--border-muted);
+
+}
+
+
+
+.noc-toast__text,
+
+.altiplano-consulta-toast__text {
+
+  flex: 1;
+
+  min-width: 0;
+
+  margin: 0;
+
+  padding-top: 4px;
+
+  font-size: 13.5px;
+
+  font-weight: 600;
+
+  line-height: 1.45;
+
+  color: var(--fg-default);
+
+  word-break: break-word;
+
+}
+
+
+
+.noc-toast__close,
+
+.altiplano-consulta-toast__close {
+
+  flex-shrink: 0;
+
+  display: inline-flex;
+
+  align-items: center;
+
+  justify-content: center;
+
+  width: 28px;
+
+  height: 28px;
+
+  margin: 0;
+
+  padding: 0;
+
+  border: none;
+
+  border-radius: var(--radius, 8px);
+
+  background: transparent;
+
+  color: var(--fg-muted);
+
+  font-size: 20px;
+
+  line-height: 1;
+
+  cursor: pointer;
+
+}
+
+
+
+.noc-toast__close:hover,
+
+.altiplano-consulta-toast__close:hover {
+
+  color: var(--fg-default);
+
+  background: rgba(255, 255, 255, 0.08);
+
+}
+
+
+
+html[data-theme="light"] .noc-toast__close:hover,
+
+html[data-theme="light"] .altiplano-consulta-toast__close:hover {
+
+  background: rgba(0, 0, 0, 0.06);
+
+}
+
+/* Toast dentro de mapas en pantalla completa (RAMA, Consulta, Camino óptico) */
+.noc-map-fs-toast {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  z-index: 1200;
+  transform: translateX(-50%);
+  max-width: min(92vw, 22rem);
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+  text-align: center;
+  color: #121826;
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  pointer-events: none;
+}
+
+.noc-map-fs-toast[hidden] {
+  display: none !important;
+}
+
+

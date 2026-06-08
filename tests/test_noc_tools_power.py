@@ -6,6 +6,32 @@ from services.domain import clasificar_rx_dbm, resumen_semaforo_desde_rx_values
 def test_noc_tools_js_exports_noc_power_api():
     js = Path("static/js/noc-tools.js").read_text(encoding="utf-8")
     assert "window.NocPower" in js
+    assert "window.NocMaps" in js
+    assert "window.NocClipboard" in js
+    assert "copyMountEl" in js
+    assert "ctoPopupHtml" in js
+    assert "wireCtoAddressPrefetch" in js
+    assert "ensureMapCtoWiring" in js
+    assert "wireCtoCircleMarker" in js
+    assert "ensureMapCoordCopy" in js
+    assert "rewireMarkerPopupCopy" in js
+    assert "bindTooltip" in js
+    assert "openTooltip" in js
+    assert "pinAndOpenCtoTooltip" in js
+    assert "disableCtoTooltipHoverOpen" in js
+    assert "dismissCtoTooltip" in js
+    assert "ensureMapCtoTooltipDismiss" in js
+    assert "patchCtoTooltipInstanceCloseGuard" in js
+    assert "_initTooltipInteractions" in js
+    assert "reinitCtoTooltipPinnedInteractions" in js
+    assert "leaflet-interactive" in js
+    assert "notifyMapCoordCopy" in js
+    assert "onCtoMarkerActivate" in js
+    assert "global.Noc" not in js
+    assert "window.NocClipboard" in js
+    assert "wireCtoTooltipMarker" in js
+    assert "Abrir en Maps" in js
+    assert "google.com/maps/search" in js
     assert "parseRxDbm" in js
     assert "clasificarRxDbm" in js
     assert "formatPowerDbm" in js

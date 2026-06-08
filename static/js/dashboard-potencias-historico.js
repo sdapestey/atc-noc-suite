@@ -13,22 +13,10 @@ function _historicoPanelVisible(el, visible) {
   el.classList.toggle("is-hidden", !visible);
 }
 
-function _historicoToast(msg) {
-  let el = document.getElementById("historico-toast");
-  if (!el) {
-    el = document.createElement("div");
-    el.id = "historico-toast";
-    el.className = "historico-toast";
-    el.setAttribute("role", "status");
-    el.setAttribute("aria-live", "polite");
-    document.body.appendChild(el);
-  }
-  el.textContent = msg;
-  el.classList.add("historico-toast--show");
-  clearTimeout(_historicoToast._t);
-  _historicoToast._t = setTimeout(function () {
-    el.classList.remove("historico-toast--show");
-  }, 2200);
+function _historicoToast(msg, opts) {
+  if (!window.NocToast) return;
+  const options = Object.assign({ durationMs: 2200, create: true, id: "historico-toast" }, opts || {});
+  window.NocToast.show("historico-toast", msg, options);
 }
 
 function _copyHistoricoAccessId(accessId) {
