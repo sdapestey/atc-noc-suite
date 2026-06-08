@@ -1,4 +1,6 @@
 """Dashboard prueba: camino óptico (FAT + cm_report_isp)."""
+from __future__ import annotations
+
 import logging
 import math
 import re
