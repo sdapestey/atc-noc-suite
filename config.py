@@ -388,6 +388,21 @@ def get_altiplano_power_workers(*, carga_masiva: bool = False) -> int:
     return _int_env_at_least("ALTIPLANO_POWER_WORKERS", 24, 1)
 
 
+def is_maintenance_mode_enabled() -> bool:
+    """
+    Modo mantenimiento global (pantalla de portada). ``1`` / ``true`` / ``yes`` activa;
+    ``0`` (default) deja la suite operativa tras reiniciar el contenedor.
+    """
+    raw = os.environ.get("MAINTENANCE_MODE", "0").strip().lower()
+    return raw in ("1", "true", "yes", "on")
+
+
+def get_maintenance_message() -> str:
+    """Texto principal del splash de mantenimiento. Default: «En mantenimiento»."""
+    raw = os.environ.get("MAINTENANCE_MESSAGE", "").strip()
+    return raw or "En mantenimiento"
+
+
 def get_noc_wiki_url() -> str:
     """URL del wiki NOC (pestaña externa en la barra de dashboards)."""
     default = "http://10.90.1.196:6875/"

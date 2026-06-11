@@ -1579,6 +1579,74 @@ def buscar_ont_connection_inp_via_gui_filter_search(
     return matches, truncated
 
 
+def contar_ont_connection_inp_search_intents(
+    nbi_bearer_token: str,
+    *,
+    filter_required_network_state: list[str] | None = None,
+    filter_alignment_state: list[str] | None = None,
+    timeout_s: float = 60.0,
+) -> dict:
+    """
+    Cuenta intents ``ont-connection`` vía ``ibn:search-intents`` leyendo ``total-count``.
+
+    Returns:
+        ``{ok, count, message}`` — ``count`` puede ser ``None`` si el AC no expone el total.
+    """
+    token = (nbi_bearer_token or "").strip()
+    if not token:
+        return {"ok": False, "count": None, "message": "Token requerido"}
+
+    host, port, base_url = get_altiplano_nbi_target("INP")
+    if not host or not port or not base_url:
+        return {"ok": False, "count": None, "message": "Entorno NBI INP no configurado"}
+
+    base_rest = f"https://{host}:{port}/{base_url}/rest/restconf/data"
+    url = _inp_search_intents_operation_url(base_rest)
+    if not url:
+        return {"ok": False, "count": None, "message": "Operación search-intents no disponible"}
+
+    body = _inp_gui_search_intents_filter_body(
+        filter_required_network_state=filter_required_network_state,
+        filter_alignment_state=filter_alignment_state,
+        page_number=0,
+        page_size=1,
+    )
+    post_headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/yang-data+json",
+        "Accept": "application/yang-data+json, application/json;q=0.9, */*;q=0.5",
+    }
+    try:
+        res = requests.post(
+            url,
+            headers=post_headers,
+            json=body,
+            verify=False,
+            timeout=timeout_s,
+        )
+    except requests.RequestException as ex:
+        return {"ok": False, "count": None, "message": f"Error de red hacia INP: {ex}"}
+
+    if res.status_code == 401:
+        return {"ok": False, "count": None, "message": "No autorizado en INP (token inválido o expirado)"}
+    if res.status_code != 200:
+        return {
+            "ok": False,
+            "count": None,
+            "message": _extract_altiplano_error_message(res) or f"HTTP {res.status_code}",
+        }
+
+    data = _json_loads_altiplano_http_response(res)
+    if not isinstance(data, dict) or isinstance(data.get("ietf-restconf:errors"), dict):
+        return {"ok": False, "count": None, "message": "Respuesta inválida de search-intents"}
+
+    total_count, _ps = _search_intents_output_meta(data)
+    if total_count is None:
+        rows = _extract_intent_list_from_search_intents_response(data)
+        total_count = len(rows)
+    return {"ok": True, "count": int(total_count), "message": ""}
+
+
 def _search_intent_row_to_ont_connection_entry(row: dict) -> dict:
     """Normaliza una fila de ``search-intents`` a un entry compatible con ``_match_entry_to_result_dict``."""
     if not isinstance(row, dict):
@@ -6842,8 +6910,29 @@ def _build_alarmas_activas_search_query(ne: str, object_name_raw: str) -> dict |
     }
 
 
+def _alarm_resource_raw_from_src(src: dict) -> str:
+    raw = src.get("alarmResource.raw")
+    if raw is not None and str(raw).strip():
+        return str(raw).strip()
+    ar = src.get("alarmResource")
+    if isinstance(ar, dict):
+        return str(ar.get("raw") or "").strip()
+    if ar is not None and str(ar).strip():
+        return str(ar).strip()
+    return ""
+
+
 def _parse_alarmas_activas_search_body(body: object) -> list[dict]:
-    """Normaliza hits de ``/rest/alarm/alarms/search`` (índice ``alarms-active``)."""
+    """Normaliza hits activos de ``/rest/alarm/alarms/search``."""
+    return _parse_alarmas_corte_pon_search_body(
+        body, allowed_statuses=frozenset({"active"})
+    )
+
+
+def _parse_alarmas_corte_pon_search_body(
+    body: object, *, allowed_statuses: frozenset[str]
+) -> list[dict]:
+    """Normaliza hits de ``/rest/alarm/alarms/search`` según estados permitidos."""
     if not isinstance(body, dict):
         return []
     hits_wrap = body.get("hits")
@@ -6859,7 +6948,8 @@ def _parse_alarmas_activas_search_body(body: object) -> list[dict]:
         src = item.get("_source")
         if not isinstance(src, dict):
             continue
-        if str(src.get("alarmStatus") or "").strip().lower() != "active":
+        status_norm = str(src.get("alarmStatus") or "").strip().lower()
+        if status_norm not in allowed_statuses:
             continue
         cleared_raw = src.get("clearedTime")
         cleared = ""
@@ -6875,6 +6965,7 @@ def _parse_alarmas_activas_search_body(body: object) -> list[dict]:
                 "resource": str(
                     src.get("alarmResourceUiName") or src.get("alarmResource") or ""
                 ).strip(),
+                "resource_raw": _alarm_resource_raw_from_src(src),
                 "text": str(
                     src.get("alarmText") or src.get("additionalInfo") or ""
                 ).strip(),
@@ -6887,7 +6978,9 @@ def _parse_alarmas_activas_search_body(body: object) -> list[dict]:
     return out
 
 
-def _inp_alarm_search_url() -> tuple[str, str, str, str] | None:
+def _inp_alarm_search_url(
+    *, estado: str = "activas"
+) -> tuple[str, str, str, str] | None:
     """URL y credenciales del buscador de alarmas en AC INP (como Network Views)."""
     host, port, base = get_altiplano_nbi_target("INP")
     if not host or not base:
@@ -6898,10 +6991,10 @@ def _inp_alarm_search_url() -> tuple[str, str, str, str] | None:
     if not user or not pwd:
         return None
     auth_url = f"https://{host}:{port}/{base}/rest/auth/login"
-    search_url = (
-        f"https://{host}:{port}/{base}/rest/alarm/alarms/search"
-        "?index=alarms-active"
-    )
+    estado_norm = _normalize_corte_pon_estado(estado)
+    search_url = f"https://{host}:{port}/{base}/rest/alarm/alarms/search"
+    if estado_norm == "activas":
+        search_url += "?index=alarms-active"
     return search_url, auth_url, user, pwd
 
 
@@ -6942,6 +7035,256 @@ def obtener_alarmas_ont_activas(
         password=pwd,
     )
     return _parse_alarmas_activas_search_body(body)
+
+
+_CORTE_PON_ALARM_TYPE = "channel-termination-loss-of-signal"
+_CORTE_PON_PAGE_SIZE = 200
+_CORTE_PON_MAX_ALARMS = 2000
+_CORTE_PON_ESTADOS = frozenset({"activas", "cleared", "todas"})
+
+
+def _normalize_corte_pon_estado(estado: str | None) -> str:
+    val = str(estado or "activas").strip().lower()
+    if val in ("cleared", "clear", "cleareds"):
+        return "cleared"
+    if val in ("todas", "all", "ambas", "both"):
+        return "todas"
+    return "activas"
+
+
+def _corte_pon_allowed_statuses(estado: str) -> frozenset[str]:
+    estado_norm = _normalize_corte_pon_estado(estado)
+    if estado_norm == "cleared":
+        return frozenset({"cleared"})
+    if estado_norm == "todas":
+        return frozenset({"active", "cleared"})
+    return frozenset({"active"})
+
+
+def _build_alarm_status_should(estado: str) -> list[dict]:
+    estado_norm = _normalize_corte_pon_estado(estado)
+    if estado_norm == "cleared":
+        terms = ("Cleared", "cleared")
+    elif estado_norm == "todas":
+        terms = ("Active", "active", "Cleared", "cleared")
+    else:
+        terms = ("Active", "active")
+    return [{"term": {"alarmStatus": term}} for term in terms]
+_CT_PON_RE = re.compile(
+    r"CT_(?P<olt>BA_OLTA_[A-Za-z0-9_]+)-(?P<lt>\d+)-(?P<pon>\d+)(?:[_-]\d+)?_GPON",
+    re.I,
+)
+_VX_PON_RE = re.compile(
+    r"v\d+~(?P<olt>BA_OLTA_[A-Za-z0-9_]+)-(?P<lt>\d+)-(?P<pon>\d+)(?:[_-]\d+)?_GPON",
+    re.I,
+)
+_INTERFACE_LT_PON_RE = re.compile(
+    r"(?P<olt>BA_OLTA_[A-Za-z0-9_]+)\.LT(?P<lt>\d+)[^:]*:.*-(?P<pon>\d+)(?:[_-]\d+)?_GPON",
+    re.I,
+)
+
+
+def _build_alarmas_corte_pon_search_query(
+    *,
+    page_from: int = 0,
+    page_size: int = _CORTE_PON_PAGE_SIZE,
+    estado: str = "activas",
+) -> dict:
+    """Consulta ES de alarmas CT loss-of-signal (Alarm Analyzer / HAR INP)."""
+    status_should = _build_alarm_status_should(estado)
+    return {
+        "size": max(1, min(int(page_size), _CORTE_PON_PAGE_SIZE)),
+        "from": max(0, int(page_from)),
+        "sort": [{"raisedTime": {"order": "desc"}}],
+        "query": {
+            "bool": {
+                "must": [
+                    {
+                        "bool": {
+                            "should": status_should,
+                            "minimum_should_match": 1,
+                        }
+                    },
+                    {
+                        "bool": {
+                            "should": [
+                                {"match_phrase": {"alarmType": _CORTE_PON_ALARM_TYPE}},
+                                {"wildcard": {"alarmType": f"*{_CORTE_PON_ALARM_TYPE}*"}},
+                                {"match": {"alarmType": _CORTE_PON_ALARM_TYPE}},
+                            ],
+                            "minimum_should_match": 1,
+                        }
+                    },
+                ]
+            }
+        },
+    }
+
+
+def _clasificar_causa_corte_pon(text: str) -> str:
+    t = str(text or "")
+    if "Dying Gasp" in t or "dying gasp" in t.lower():
+        return "DYING_GASP"
+    if "LOSi" in t or "LOBi" in t or "losi" in t.lower() or "lobi" in t.lower():
+        return "LOSI_LOBI"
+    return "OTRO"
+
+
+def _es_corte_todos_onus(text: str) -> bool:
+    t = str(text or "").lower()
+    if re.search(r"for\s+all\s+onu", t):
+        return True
+    if re.search(r"for\s+all\s+ont", t):
+        return True
+    return False
+
+
+def _es_corte_pon_masivo(*, text: str, alarm_type: str) -> bool:
+    """Corte masivo en PON: texto explícito o tipo CT loss-of-signal con indicio en alarmText."""
+    if _es_corte_todos_onus(text):
+        return True
+    type_l = str(alarm_type or "").lower()
+    if _CORTE_PON_ALARM_TYPE not in type_l:
+        return False
+    t = str(text or "").lower()
+    if not t.strip():
+        return True
+    return any(
+        needle in t
+        for needle in (
+            "channel termination",
+            "loss of signal",
+            "dying gasp",
+            "losi",
+            "lobi",
+        )
+    )
+
+
+def _pon_meta_from_match(m: re.Match) -> dict:
+    olt = m.group("olt")
+    lt = m.group("lt")
+    pon = m.group("pon")
+    return {
+        "olt": olt,
+        "lt": lt,
+        "pon": pon,
+        "lt_name": f"{olt}.LT{lt}",
+        "pon_key": f"{olt}-{lt}-{pon}",
+        "pon_label": f"PON {pon}",
+    }
+
+
+def _parse_pon_from_alarm_resource(resource: str, *, raw: str = "") -> dict | None:
+    """Deriva OLT/LT/PON desde ``alarmResourceUiName`` / ``alarmResource.raw``."""
+    haystack = "\n".join(str(x or "") for x in (resource, raw) if str(x or "").strip())
+    if not haystack:
+        return None
+    for pattern in (_CT_PON_RE, _VX_PON_RE, _INTERFACE_LT_PON_RE):
+        m = pattern.search(haystack)
+        if m:
+            return _pon_meta_from_match(m)
+    return None
+
+
+def _dedupe_cortes_pon_por_key(rows: list[dict]) -> list[dict]:
+    """Una fila por ``pon_key`` (activa preferida; si no, la más reciente)."""
+    best: dict[str, dict] = {}
+    for row in rows:
+        pk = str(row.get("pon_key") or "").strip()
+        if not pk:
+            continue
+        prev = best.get(pk)
+        if not prev:
+            best[pk] = row
+            continue
+        prev_active = str(prev.get("status") or "").strip().lower() == "active"
+        row_active = str(row.get("status") or "").strip().lower() == "active"
+        if row_active and not prev_active:
+            best[pk] = row
+        elif row_active == prev_active and str(row.get("raised") or "") > str(
+            prev.get("raised") or ""
+        ):
+            best[pk] = row
+    out = list(best.values())
+    out.sort(key=lambda a: a.get("raised") or "", reverse=True)
+    return out
+
+
+def _alarm_search_hits_page(body: object) -> list[dict]:
+    if not isinstance(body, dict):
+        return []
+    hits_wrap = body.get("hits")
+    if not isinstance(hits_wrap, dict):
+        return []
+    items = hits_wrap.get("hits")
+    return items if isinstance(items, list) else []
+
+
+def obtener_alarmas_corte_pon(estado: str = "activas") -> list[dict]:
+    """
+    Alarmas de corte masivo en PON (todos los ONUs) vía AC INP.
+
+    ``estado``: ``activas`` (índice ``alarms-active``), ``cleared`` o ``todas``
+    (sin índice, como Alarm Analyzer HAR INP).
+    """
+    estado_norm = _normalize_corte_pon_estado(estado)
+    ctx = _inp_alarm_search_url(estado=estado_norm)
+    if not ctx:
+        return []
+    search_url, auth_url, user, pwd = ctx
+    allowed = _corte_pon_allowed_statuses(estado_norm)
+    log_labels = {
+        "activas": "cortes PON activos INP",
+        "cleared": "cortes PON cleared INP",
+        "todas": "cortes PON activos+cleared INP",
+    }
+    out: list[dict] = []
+    page_from = 0
+    while page_from < _CORTE_PON_MAX_ALARMS:
+        query = _build_alarmas_corte_pon_search_query(
+            page_from=page_from, estado=estado_norm
+        )
+        body = _http_post_altiplano_json(
+            search_url,
+            auth_url,
+            query,
+            access_id="",
+            ne="INP",
+            log_label=log_labels.get(estado_norm, "cortes PON INP"),
+            username=user,
+            password=pwd,
+        )
+        page_hits = _alarm_search_hits_page(body)
+        if not page_hits:
+            break
+        parsed = _parse_alarmas_corte_pon_search_body(body, allowed_statuses=allowed)
+        for item in parsed:
+            text = str(item.get("text") or "")
+            alarm_type = str(item.get("type") or "")
+            if not _es_corte_pon_masivo(text=text, alarm_type=alarm_type):
+                continue
+            resource = str(item.get("resource") or "")
+            resource_raw = str(item.get("resource_raw") or "")
+            pon = _parse_pon_from_alarm_resource(resource, raw=resource_raw)
+            if not pon:
+                continue
+            out.append(
+                {
+                    **item,
+                    **pon,
+                    "causa": _clasificar_causa_corte_pon(text),
+                }
+            )
+        if len(page_hits) < query["size"]:
+            break
+        page_from += len(page_hits)
+    return _dedupe_cortes_pon_por_key(out)
+
+
+def obtener_alarmas_corte_pon_activas() -> list[dict]:
+    """Alias retrocompatible: solo alarmas activas."""
+    return obtener_alarmas_corte_pon("activas")
 
 
 def obtener_telemetry_ont(

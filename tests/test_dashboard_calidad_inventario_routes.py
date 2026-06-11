@@ -11,6 +11,8 @@ def test_dashboard_estadisticas_get_renders(client):
     assert "Inventario</button>" in html
     assert "Clientes ATC</button>" in html
     assert "Reglas de calidad</button>" in html
+    assert "Altiplano</button>" in html
+    assert 'data-tab="altiplano"' in html
     assert 'data-tab="inventario"' in html
     assert 'data-tab="altas-bajas"' in html
     assert 'aria-selected="true" data-tab="altas-bajas"' in html
@@ -26,7 +28,8 @@ def test_dashboard_estadisticas_get_renders(client):
     assert "dashboard-estadisticas-shared.js" in html
     assert "dashboard-estadisticas-altas-bajas.js" in html
     assert html.index('data-tab="altas-bajas"') < html.index('data-tab="inventario"')
-    assert html.index('data-tab="inventario"') < html.index('data-tab="reglas"')
+    assert html.index('data-tab="inventario"') < html.index('data-tab="altiplano"')
+    assert html.index('data-tab="altiplano"') < html.index('data-tab="reglas"')
 
 
 def test_dashboard_calidad_inventario_legacy_redirects(client):

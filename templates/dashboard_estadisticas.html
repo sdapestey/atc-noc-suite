@@ -10,10 +10,12 @@
 <script defer src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/es.js"></script>
 <script defer src="{{ url_for('static', filename='js/noc-tools.js') }}"></script>
+<script defer src="{{ url_for('static', filename='js/noc-estadisticas-flatpickr.js') }}"></script>
 <script defer src="{{ url_for('static', filename='js/dashboard-estadisticas-shared.js') }}"></script>
 <script defer src="{{ url_for('static', filename='js/dashboard-estadisticas-reglas.js') }}"></script>
 <script defer src="{{ url_for('static', filename='js/dashboard-estadisticas-inventario.js') }}"></script>
 <script defer src="{{ url_for('static', filename='js/dashboard-estadisticas-altas-bajas.js') }}"></script>
+<script defer src="{{ url_for('static', filename='js/dashboard-estadisticas-altiplano.js') }}"></script>
 </head>
 <body class="theme-devops page-dashboard page-estadisticas">
 <div class="container">
@@ -37,6 +39,7 @@
   <div class="calidad-tabs" role="tablist" aria-label="Secciones de estadisticas">
     <button type="button" class="calidad-tab is-active" role="tab" aria-selected="true" data-tab="altas-bajas" id="tab-altas-bajas">Clientes ATC</button>
     <button type="button" class="calidad-tab" role="tab" aria-selected="false" data-tab="inventario" id="tab-inventario">Inventario</button>
+    <button type="button" class="calidad-tab" role="tab" aria-selected="false" data-tab="altiplano" id="tab-altiplano">Altiplano</button>
     <button type="button" class="calidad-tab" role="tab" aria-selected="false" data-tab="reglas" id="tab-reglas">Reglas de calidad</button>
   </div>
 
@@ -68,7 +71,10 @@
       </div>
     </div>
     <div id="calidad-estadisticas-root" class="calidad-resumen-root" aria-live="polite">
-      <p class="muted calidad-resumen-loading">Cargando clientes ATC…</p>
+      <div class="calidad-resumen-loading" role="status" aria-live="polite" aria-busy="true">
+        <span class="calidad-resumen-spinner" aria-hidden="true"></span>
+        <span>Cargando clientes ATC…</span>
+      </div>
     </div>
   </section>
 
@@ -87,7 +93,29 @@
       </div>
     </div>
     <div id="calidad-resumen-root" class="calidad-resumen-root" aria-live="polite">
-      <p class="muted calidad-resumen-loading">Cargando inventario…</p>
+      <div class="calidad-resumen-loading" role="status" aria-live="polite" aria-busy="true">
+        <span class="calidad-resumen-spinner" aria-hidden="true"></span>
+        <span>Cargando inventario…</span>
+      </div>
+    </div>
+  </section>
+
+  <section id="panel-altiplano" class="panel calidad-panel calidad-panel--altiplano card suite-index-card" role="tabpanel" aria-labelledby="tab-altiplano" hidden>
+    <div class="calidad-resumen-toolbar suite-search-surface">
+      <div class="orquestador-panel-head suite-panel-head consulta-panel-head calidad-panel-head">
+        <p class="calidad-resumen-lead suite-search-lead consulta-search-lead muted orquestador-panel-head__main">
+          Altiplano INP · intents <code>ont-connection</code> · conteos por Required Network State y alineación
+        </p>
+      </div>
+      <div class="calidad-resumen-toolbar-actions">
+        <button type="button" class="btn btn-ghost" id="btn-refresh-estadisticas-altiplano">Actualizar</button>
+      </div>
+    </div>
+    <div id="calidad-estadisticas-altiplano-root" class="calidad-resumen-root" aria-live="polite">
+      <div class="calidad-resumen-loading" role="status" aria-live="polite" aria-busy="true">
+        <span class="calidad-resumen-spinner" aria-hidden="true"></span>
+        <span>Cargando Altiplano…</span>
+      </div>
     </div>
   </section>
 
@@ -100,7 +128,10 @@
       </div>
     </div>
     <div class="metrics-grid calidad-kpi-grid" id="calidad-kpi-grid" aria-live="polite">
-      <p class="muted calidad-kpi-loading">Cargando KPIs…</p>
+      <div class="calidad-kpi-loading" role="status" aria-live="polite" aria-busy="true">
+        <span class="calidad-resumen-spinner" aria-hidden="true"></span>
+        <span>Cargando KPIs…</span>
+      </div>
     </div>
 
     <div class="calidad-chart-wrap">

@@ -1,8 +1,15 @@
 from services.domain import (
     canonical_operador_consulta,
+    nombre_operador,
     operadores_consulta_coinciden,
     sort_operadores_consulta,
 )
+
+
+def test_nombre_operador_resuelve_ids_numericos_como_texto():
+    assert nombre_operador("4000") == "METROTEL"
+    assert nombre_operador("2800") == "ATC"
+    assert nombre_operador(3001) == "DIRECTV"
 
 
 def test_canonical_operador_consulta_mapea_codigos():

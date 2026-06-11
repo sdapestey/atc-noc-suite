@@ -18,6 +18,7 @@
   const _esc = CD.esc || ((v) => String(v || ""));
   const _opSlug = CD.opSlug || ((l) => String(l || ""));
   const _renderBigRow = CD.renderBigRow || ((html, cols) => `<div class="calidad-big-row calidad-big-row--${cols}">${html}</div>`);
+  const _loading = CD.renderLoadingStatus || ((msg) => `<p class="muted">${_esc(msg)}</p>`);
 
   function _granularityLabel() {
     return _estadisticasGranularity === "year" ? "Año" : "Mes";
@@ -59,286 +60,18 @@
     return document.getElementById("estadisticas-fecha")?.value || "";
   }
 
-  function _fpMonthNames(fp) {
-    const loc = fp.l10n || (flatpickr.l10ns && flatpickr.l10ns.es) || {};
-    return (loc.months && loc.months.longhand) || flatpickr.l10ns.default.months.longhand;
-  }
-
-  function _fpTodayParts() {
-    const t = new Date();
-    return { y: t.getFullYear(), m: t.getMonth() };
-  }
-
-  function _fpMaxDate() {
-    const t = new Date();
-    t.setHours(23, 59, 59, 999);
-    return t;
-  }
-
-  function _fpIsMonthDisabled(monthIdx, year) {
-    const { y, m } = _fpTodayParts();
-    if (year > y) return true;
-    if (year === y && monthIdx > m) return true;
-    return false;
-  }
-
-  function _fpIsYearDisabled(year) {
-    return year > _fpTodayParts().y;
-  }
-
-  function _fpYearBounds(fp) {
-    let minY = fp.currentYear - 8;
-    let maxY = _fpTodayParts().y;
-    const minD = fp.config.minDate;
-    const maxD = fp.config.maxDate;
-    if (minD instanceof Date) {
-      minY = minD.getFullYear();
-    }
-    if (maxD instanceof Date) {
-      maxY = Math.min(maxD.getFullYear(), maxY);
-    }
-    return { minY, maxY };
-  }
-
-  function _applyFpMonthDisabled(fp) {
-    const cal = fp.calendarContainer;
-    if (!cal) return;
-    cal.querySelectorAll(".noc-fp-month-grid .noc-fp-picker-opt").forEach((btn) => {
-      const idx = Number(btn.dataset.month);
-      const disabled = _fpIsMonthDisabled(idx, fp.currentYear);
-      btn.disabled = disabled;
-      btn.classList.toggle("is-disabled", disabled);
-      btn.setAttribute("aria-disabled", disabled ? "true" : "false");
-    });
-  }
-
-  function _closeFpPickerPanel(fp) {
-    const cal = fp.calendarContainer;
-    if (!cal) return;
-    const panel = cal.querySelector(".noc-fp-picker-panel");
-    if (panel) panel.hidden = true;
-    cal.querySelectorAll(".noc-fp-chip.is-open").forEach((el) => el.classList.remove("is-open"));
-  }
-
-  function _highlightFpMonthYear(fp) {
-    const cal = fp.calendarContainer;
-    if (!cal) return;
-    cal.querySelectorAll(".noc-fp-month-grid .noc-fp-picker-opt").forEach((btn) => {
-      btn.classList.toggle("is-active", Number(btn.dataset.month) === fp.currentMonth);
-    });
-    cal.querySelectorAll(".noc-fp-year-grid .noc-fp-picker-opt").forEach((btn) => {
-      const y = Number(btn.textContent);
-      btn.classList.toggle("is-active", y === fp.currentYear);
-      const disabled = _fpIsYearDisabled(y);
-      btn.disabled = disabled;
-      btn.classList.toggle("is-disabled", disabled);
-    });
-    _applyFpMonthDisabled(fp);
-  }
-
-  function _syncFpMonthYearTriggers(fp) {
-    const cal = fp.calendarContainer;
-    if (!cal) return;
-    const monthBtn = cal.querySelector(".noc-fp-month-trigger");
-    const yearBtn = cal.querySelector(".noc-fp-year-trigger");
-    if (!monthBtn || !yearBtn) return;
-    const months = _fpMonthNames(fp);
-    monthBtn.textContent = months[fp.currentMonth] || "";
-    yearBtn.textContent = String(fp.currentYear);
-    _highlightFpMonthYear(fp);
-  }
-
-  function _renderFpYearGrid(fp, yearGrid) {
-    yearGrid.innerHTML = "";
-    const { minY, maxY } = _fpYearBounds(fp);
-    for (let y = maxY; y >= minY; y -= 1) {
-      if (_fpIsYearDisabled(y)) continue;
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "noc-fp-picker-opt";
-      btn.textContent = String(y);
-      btn.setAttribute("role", "option");
-      btn.addEventListener("click", (ev) => {
-        ev.stopPropagation();
-        if (_fpIsYearDisabled(y)) return;
-        fp.changeYear(y);
-        _closeFpPickerPanel(fp);
-        _syncFpMonthYearTriggers(fp);
-      });
-      yearGrid.appendChild(btn);
-    }
-    _highlightFpMonthYear(fp);
-  }
-
-  function _enhanceFpMonthYear(fp) {
-    const cal = fp.calendarContainer;
-    if (!cal) return;
-
-    if (cal.dataset.nocFpEnhanced !== "1") {
-      cal.dataset.nocFpEnhanced = "1";
-      const currentMonth = cal.querySelector(".flatpickr-current-month");
-      if (!currentMonth) return;
-
-      currentMonth
-        .querySelectorAll(".flatpickr-monthDropdown-months, .numInput.cur-year, .cur-month")
-        .forEach((el) => {
-          el.style.display = "none";
-          el.setAttribute("aria-hidden", "true");
-        });
-
-      const row = document.createElement("div");
-      row.className = "noc-fp-current-row";
-
-      const monthBtn = document.createElement("button");
-      monthBtn.type = "button";
-      monthBtn.className = "noc-fp-chip noc-fp-month-trigger";
-      monthBtn.setAttribute("aria-haspopup", "listbox");
-
-      const yearBtn = document.createElement("button");
-      yearBtn.type = "button";
-      yearBtn.className = "noc-fp-chip noc-fp-year-trigger";
-      yearBtn.setAttribute("aria-haspopup", "listbox");
-
-      row.append(monthBtn, yearBtn);
-      currentMonth.appendChild(row);
-
-      const panel = document.createElement("div");
-      panel.className = "noc-fp-picker-panel";
-      panel.hidden = true;
-
-      const monthGrid = document.createElement("div");
-      monthGrid.className = "noc-fp-month-grid";
-      monthGrid.setAttribute("role", "listbox");
-
-      const yearGrid = document.createElement("div");
-      yearGrid.className = "noc-fp-year-grid";
-      yearGrid.hidden = true;
-      yearGrid.setAttribute("role", "listbox");
-
-      panel.append(monthGrid, yearGrid);
-      cal.querySelector(".flatpickr-months")?.appendChild(panel);
-
-      _fpMonthNames(fp).forEach((label, idx) => {
-        const btn = document.createElement("button");
-        btn.type = "button";
-        btn.className = "noc-fp-picker-opt";
-        btn.textContent = label;
-        btn.dataset.month = String(idx);
-        btn.setAttribute("role", "option");
-        btn.addEventListener("click", (ev) => {
-          ev.stopPropagation();
-          if (_fpIsMonthDisabled(idx, fp.currentYear)) return;
-          fp.changeMonth(idx, false);
-          _closeFpPickerPanel(fp);
-          _syncFpMonthYearTriggers(fp);
-        });
-        monthGrid.appendChild(btn);
-      });
-
-      monthBtn.addEventListener("click", (ev) => {
-        ev.stopPropagation();
-        const panelEl = cal.querySelector(".noc-fp-picker-panel");
-        const monthEl = cal.querySelector(".noc-fp-month-grid");
-        const yearEl = cal.querySelector(".noc-fp-year-grid");
-        if (!panelEl || !monthEl || !yearEl) return;
-        const showingMonth = !panelEl.hidden && !monthEl.hidden;
-        if (showingMonth) {
-          _closeFpPickerPanel(fp);
-          return;
-        }
-        panelEl.hidden = false;
-        monthEl.hidden = false;
-        yearEl.hidden = true;
-        monthBtn.classList.add("is-open");
-        yearBtn.classList.remove("is-open");
-        _highlightFpMonthYear(fp);
-        _applyFpMonthDisabled(fp);
-      });
-
-      yearBtn.addEventListener("click", (ev) => {
-        ev.stopPropagation();
-        const panelEl = cal.querySelector(".noc-fp-picker-panel");
-        const monthEl = cal.querySelector(".noc-fp-month-grid");
-        const yearEl = cal.querySelector(".noc-fp-year-grid");
-        if (!panelEl || !monthEl || !yearEl) return;
-        const showingYear = !panelEl.hidden && !yearEl.hidden;
-        if (showingYear) {
-          _closeFpPickerPanel(fp);
-          return;
-        }
-        _renderFpYearGrid(fp, yearEl);
-        panelEl.hidden = false;
-        monthEl.hidden = true;
-        yearEl.hidden = false;
-        yearBtn.classList.add("is-open");
-        monthBtn.classList.remove("is-open");
-      });
-
-      cal.addEventListener("mousedown", (ev) => ev.stopPropagation());
-    }
-
-    _syncFpMonthYearTriggers(fp);
-  }
-
   function _initFechaPicker() {
     const input = document.getElementById("estadisticas-fecha");
-    if (!input || typeof flatpickr === "undefined") {
+    const NFP = window.NocEstadisticasFlatpickr;
+    if (!input || !NFP || _fechaPicker) {
       return;
     }
-    if (_fechaPicker) {
-      return;
-    }
-    const locale =
-      flatpickr.l10ns && flatpickr.l10ns.es ? flatpickr.l10ns.es : flatpickr.l10ns.default;
-    _fechaPicker = flatpickr(input, {
-      locale,
-      dateFormat: "Y-m-d",
-      altInput: true,
-      altFormat: "j \\d\\e F \\d\\e Y",
-      allowInput: false,
-      disableMobile: true,
-      clickOpens: true,
-      monthSelectorType: "static",
-      maxDate: _fpMaxDate(),
+    _fechaPicker = NFP.create(input, {
       onChange(_selected, dateStr) {
         _fechaSeleccionada = dateStr || "";
         window.loadCalidadEstadisticas();
       },
-      onMonthChange() {
-        if (_fechaPicker) {
-          _syncFpMonthYearTriggers(_fechaPicker);
-          _applyFpMonthDisabled(_fechaPicker);
-        }
-      },
-      onYearChange() {
-        if (_fechaPicker) {
-          _syncFpMonthYearTriggers(_fechaPicker);
-          _applyFpMonthDisabled(_fechaPicker);
-        }
-      },
-      onOpen() {
-        if (_fechaPicker) {
-          _enhanceFpMonthYear(_fechaPicker);
-          _closeFpPickerPanel(_fechaPicker);
-        }
-      },
-      onClose() {
-        if (_fechaPicker) _closeFpPickerPanel(_fechaPicker);
-      },
-      onReady(_selected, _str, instance) {
-        instance.calendarContainer.classList.add("noc-estadisticas-cal");
-        if (instance.altInput) {
-          instance.altInput.classList.add("noc-estadisticas-fecha-visible");
-        }
-        _enhanceFpMonthYear(instance);
-      },
     });
-    if (_fechaPicker.calendarContainer) {
-      _fechaPicker.calendarContainer.classList.add("noc-estadisticas-cal");
-    }
-    if (_fechaPicker.altInput) {
-      _fechaPicker.altInput.classList.add("noc-estadisticas-fecha-visible");
-    }
   }
 
   function _syncFechaPicker(data) {
@@ -352,7 +85,7 @@
     if (min) {
       _fechaPicker.set("minDate", min);
     }
-    _fechaPicker.set("maxDate", _fpMaxDate());
+    _fechaPicker.set("maxDate", window.NocEstadisticasFlatpickr?.maxDateToday() || new Date());
     const input = document.getElementById("estadisticas-fecha");
     if (input) {
       input.max = data.data_date_max || "";
@@ -362,7 +95,7 @@
     if (next && _fechaPicker.input.value !== next) {
       _fechaPicker.setDate(next, false);
     }
-    _syncFpMonthYearTriggers(_fechaPicker);
+    window.NocEstadisticasFlatpickr?.syncMonthYear(_fechaPicker);
   }
 
   /** Misma estructura que Resumen; color por tipo alta/baja + acento por operador */
@@ -510,7 +243,7 @@
   window.loadCalidadEstadisticas = async function () {
     const root = document.getElementById("calidad-estadisticas-root");
     if (!root) return;
-    root.innerHTML = '<p class="muted calidad-resumen-loading">Cargando estadísticas…</p>';
+    root.innerHTML = _loading("Cargando estadísticas…");
     root.classList.remove("calidad-estadisticas-root--loaded");
     try {
       const params = new URLSearchParams({ granularity: _estadisticasGranularity });

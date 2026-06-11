@@ -113,7 +113,18 @@ OLT_PRESENCIA_FORZADA = [
 
 def nombre_operador(op_id: Any) -> str:
     """Mapea `operator_id` a nombre comercial legible."""
-    return OPERADORES.get(op_id, str(op_id))
+    if op_id is None:
+        return ""
+    if isinstance(op_id, int):
+        return OPERADORES.get(op_id, str(op_id))
+    s = str(op_id).strip()
+    if not s:
+        return ""
+    if s.isdigit():
+        n = int(s)
+        if n in OPERADORES:
+            return OPERADORES[n]
+    return OPERADORES.get(op_id, s)
 
 
 def _operador_consulta_key(op: str) -> str:

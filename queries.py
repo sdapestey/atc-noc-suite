@@ -295,6 +295,19 @@ QUERIES = {
           AND ("ont-pwr_rx" / 10.0)::float8 <> -100.0
         ORDER BY regexp_replace(objectname, '^v[0-9]+__t_', ''), "ont-pwr_rx_updated_on" DESC
     """,
+    "cortes_rama_inventario_por_pon": """
+        SELECT
+            regexp_replace(btrim(s.object_name), ':1-1', '-') AS obj_norm,
+            f.path_atc AS rama,
+            o.invocator_system
+        FROM cm.inventory_fat_occupation f
+        JOIN altiplano.serial s ON s.access_id = f.access_id
+        LEFT JOIN cm.inventory_olt_occupation o ON o.access_id = f.access_id
+        WHERE f.status = 'IN SERVICE'
+          AND s.object_name IS NOT NULL
+          AND btrim(s.object_name) <> ''
+          AND s.object_name LIKE ANY(%s)
+    """,
     "radar_degradacion_inventario": """
         SELECT
             f.path_atc AS rama,

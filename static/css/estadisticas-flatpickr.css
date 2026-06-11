@@ -1,27 +1,33 @@
 /* Calendario Estadísticas — tema DevOps (override Flatpickr CDN) */
 
-.page-estadisticas .calidad-estadisticas-fecha-wrap {
+.page-estadisticas .calidad-estadisticas-fecha-wrap,
+.page-cortes-rama .calidad-estadisticas-fecha-wrap {
   display: inline-flex;
   align-items: center;
   gap: 8px;
   font-size: 13px;
 }
 
-.page-estadisticas .calidad-estadisticas-fecha-label-text {
+.page-estadisticas .calidad-estadisticas-fecha-label-text,
+.page-cortes-rama .calidad-estadisticas-fecha-label-text {
   flex-shrink: 0;
   font-weight: 500;
   color: var(--fg-muted);
 }
 
-.page-estadisticas .calidad-estadisticas-fecha-wrap .flatpickr-wrapper {
+.page-estadisticas .calidad-estadisticas-fecha-wrap .flatpickr-wrapper,
+.page-cortes-rama .calidad-estadisticas-fecha-wrap .flatpickr-wrapper {
   position: relative;
   display: inline-block;
 }
 
 /* Campo visible (Flatpickr altInput o input único) */
 .page-estadisticas .calidad-estadisticas-fecha-wrap .flatpickr-wrapper input,
+.page-cortes-rama .calidad-estadisticas-fecha-wrap .flatpickr-wrapper input,
 .page-estadisticas .calidad-estadisticas-fecha-wrap input.noc-estadisticas-fecha-visible,
-.page-estadisticas .calidad-estadisticas-fecha-wrap input.calidad-estadisticas-fecha.flatpickr-input {
+.page-cortes-rama .calidad-estadisticas-fecha-wrap input.noc-estadisticas-fecha-visible,
+.page-estadisticas .calidad-estadisticas-fecha-wrap input.calidad-estadisticas-fecha.flatpickr-input,
+.page-cortes-rama .calidad-estadisticas-fecha-wrap input.calidad-estadisticas-fecha.flatpickr-input {
   width: 12.5rem !important;
   min-height: 32px;
   padding: 6px 36px 6px 12px !important;
@@ -38,18 +44,22 @@
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
-.page-estadisticas .calidad-estadisticas-fecha-wrap .flatpickr-wrapper input:hover {
+.page-estadisticas .calidad-estadisticas-fecha-wrap .flatpickr-wrapper input:hover,
+.page-cortes-rama .calidad-estadisticas-fecha-wrap .flatpickr-wrapper input:hover {
   border-color: var(--accent-border) !important;
 }
 
 .page-estadisticas .calidad-estadisticas-fecha-wrap .flatpickr-wrapper input:focus,
-.page-estadisticas .calidad-estadisticas-fecha-wrap .flatpickr-wrapper input:focus-visible {
+.page-cortes-rama .calidad-estadisticas-fecha-wrap .flatpickr-wrapper input:focus,
+.page-estadisticas .calidad-estadisticas-fecha-wrap .flatpickr-wrapper input:focus-visible,
+.page-cortes-rama .calidad-estadisticas-fecha-wrap .flatpickr-wrapper input:focus-visible {
   outline: none !important;
   border-color: var(--focus-border) !important;
   box-shadow: var(--focus-shadow) !important;
 }
 
-.page-estadisticas .calidad-estadisticas-fecha-wrap input.calidad-estadisticas-fecha[type="hidden"] {
+.page-estadisticas .calidad-estadisticas-fecha-wrap input.calidad-estadisticas-fecha[type="hidden"],
+.page-cortes-rama .calidad-estadisticas-fecha-wrap input.calidad-estadisticas-fecha[type="hidden"] {
   display: none !important;
   width: 0 !important;
   height: 0 !important;
@@ -59,7 +69,8 @@
   opacity: 0 !important;
 }
 
-.page-estadisticas .calidad-estadisticas-fecha-wrap .flatpickr-wrapper::after {
+.page-estadisticas .calidad-estadisticas-fecha-wrap .flatpickr-wrapper::after,
+.page-cortes-rama .calidad-estadisticas-fecha-wrap .flatpickr-wrapper::after {
   content: "";
   position: absolute;
   right: 10px;
@@ -346,7 +357,8 @@
   opacity: 0.35 !important;
 }
 
-html[data-theme="light"] .page-estadisticas .calidad-estadisticas-fecha-wrap .flatpickr-wrapper input {
+html[data-theme="light"] .page-estadisticas .calidad-estadisticas-fecha-wrap .flatpickr-wrapper input,
+html[data-theme="light"] .page-cortes-rama .calidad-estadisticas-fecha-wrap .flatpickr-wrapper input {
   box-shadow: none !important;
 }
 

@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Cortes de Rama · ATC NOC Suite</title>
+{% include 'partials/noc_head.html' %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/estadisticas-flatpickr.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard-cortes-rama.css') }}?v=cortes24">
+</head>
+<body class="theme-devops page-dashboard page-cortes-rama">
+<div class="container">
+  <div class="topbar">
+    <div class="brand">
+      <div class="brand-row">
+        {% include 'partials/brand_logo.html' %}
+        <h1>ATC NOC Suite</h1>
+      </div>
+      <p class="page-lead page-lead--one-line">
+        <strong>Cortes de Rama</strong> — PON con pérdida masiva (Dying Gasp / LOSi-LOBi) desde Altiplano INP
+      </p>
+    </div>
+    <div class="topbar-meta">
+      {% include 'partials/noc_topbar.html' %}
+    </div>
+  </div>
+
+  {% include 'partials/nav_dashboard.html' %}
+
+  <div class="card suite-index-card">
+    <div class="suite-search-surface suite-search-surface--cortes">
+      <div class="orquestador-panel-head suite-panel-head consulta-panel-head">
+        <p class="suite-search-lead consulta-search-lead orquestador-panel-head__main">
+          Alarmas <code class="inline-code">channel-termination-loss-of-signal</code> con <strong>todos los ONUs</strong> caídos — impacto por RAMA y VNO.
+        </p>
+      </div>
+      <form class="search suite-search-form" onsubmit="event.preventDefault(); fetchCortes({ fresh: true });">
+        <div class="suite-query-row consulta-query-row cortes-query-row">
+          <div class="suite-query-row__field">
+            <div class="field suite-field consulta-field" role="search">
+              <span class="search-icon" aria-hidden="true">⌕</span>
+              <label class="sr-only" for="cortes-q">Filtrar</label>
+              <input id="cortes-q" placeholder="Filtrar por OLT, PON, RAMA, VNO…" autocomplete="off">
+            </div>
+          </div>
+        </div>
+        <div class="cortes-filters-row" aria-label="Filtros">
+          <select id="cortes-estado" class="cortes-select" aria-label="Estado de alarma">
+            <option value="activas" selected>Activas</option>
+            <option value="cleared">Cleared</option>
+            <option value="todas">Activas + Cleared</option>
+          </select>
+          <select id="cortes-causa" class="cortes-select" aria-label="Causa del corte">
+            <option value="ALL">Todas las causas</option>
+            <option value="DYING_GASP">Dying Gasp</option>
+            <option value="LOSI_LOBI">LOSi / LOBi</option>
+            <option value="OTRO">Otro</option>
+          </select>
+          <select id="cortes-principal" class="cortes-select" aria-label="Sitio principal">
+            <option value="ALL">Todos los sitios</option>
+          </select>
+          <select id="cortes-vno" class="cortes-select" aria-label="VNO">
+            <option value="ALL">Todos los VNO</option>
+          </select>
+          <select id="cortes-sort" class="cortes-select" aria-label="Orden">
+            <option value="reciente" selected>Más reciente</option>
+            <option value="antiguo">Más antiguo</option>
+            <option value="clientes">Más clientes</option>
+          </select>
+          <div class="calidad-estadisticas-fecha-wrap">
+            <span class="calidad-estadisticas-fecha-label-text muted">Día</span>
+            <input
+              type="text"
+              class="calidad-estadisticas-fecha"
+              id="cortes-fecha-dia"
+              name="fecha"
+              value="{{ fecha_hoy_art }}"
+              placeholder="Seleccionar fecha"
+              autocomplete="off"
+              aria-label="Seleccionar día de cortes"
+              title="Por defecto: hoy (hora Argentina)"
+              readonly>
+          </div>
+          <select id="cortes-impacto" class="cortes-select" aria-label="Impacto">
+            <option value="ALL">Todo impacto</option>
+            <option value="EMERGENCIA">Emergencia (250+)</option>
+            <option value="URGENTE">Urgente (16–249)</option>
+            <option value="MODERADO">Moderado (0–15)</option>
+          </select>
+        </div>
+        <div class="cortes-toolbar-row" aria-label="Opciones y acciones">
+          <div class="cortes-toolbar-row__actions">
+            <label class="cortes-refresh-field" title="Consulta Altiplano INP en cada ciclo (sin caché)">
+              <span class="cortes-refresh-field__label">Auto-refresh</span>
+              <select id="cortes-refresh" class="cortes-select cortes-select--refresh" aria-label="Actualización automática">
+                <option value="0" selected>Off</option>
+                <option value="15000">15 segundos</option>
+                <option value="30000">30 segundos</option>
+                <option value="60000">1 minuto</option>
+                <option value="180000">3 minutos</option>
+                <option value="300000">5 minutos</option>
+                <option value="900000">15 minutos</option>
+                <option value="1800000">30 minutos</option>
+                <option value="3600000">1 hora</option>
+              </select>
+            </label>
+            <button class="btn btn-primary" type="submit" id="btn-cortes-search">Actualizar</button>
+            <button class="btn btn-ghost" type="button" id="btn-cortes-export" disabled>Exportar CSV</button>
+            <button class="btn btn-ghost" type="button" id="btn-cortes-limpiar">Limpiar</button>
+          </div>
+        </div>
+      </form>
+    </div>
+
+    <div class="metrics-grid" id="cortes-stats-grid">
+      <div class="metric-card">
+        <div class="label">Cortes activos</div>
+        <div class="value" id="kpi-total">—</div>
+        <div class="hint">PON masivos</div>
+      </div>
+      <div class="metric-card metric-card--critico">
+        <div class="label">LOSi / LOBi</div>
+        <div class="value" id="kpi-losi">—</div>
+        <div class="hint">fibra / óptica</div>
+      </div>
+      <div class="metric-card metric-card--atencion">
+        <div class="label">Dying Gasp</div>
+        <div class="value" id="kpi-dying">—</div>
+        <div class="hint">energía aguas arriba</div>
+      </div>
+      <div class="metric-card">
+        <div class="label">Clientes afectados</div>
+        <div class="value" id="kpi-clientes">—</div>
+        <div class="hint" id="kpi-impacto-hint">IN SERVICE inventario</div>
+      </div>
+      <div class="metric-card metric-card--estado">
+        <div class="label">Nuevos</div>
+        <div class="value status-neutral" id="kpi-nuevos">—</div>
+        <div class="hint" id="kpi-generated-hint">sin consulta</div>
+      </div>
+    </div>
+
+    <div id="cortes-eventos-banner" class="cortes-eventos-banner" hidden aria-live="polite" aria-label="Eventos masivos detectados">
+      <div class="cortes-eventos-banner__head">
+        <strong>Eventos masivos</strong>
+        <span class="muted">varios PON en la misma ventana de 2&nbsp;min (ART)</span>
+      </div>
+      <div id="cortes-eventos-list" class="cortes-eventos-list"></div>
+    </div>
+
+    <div id="cortes-vno-resumen" class="cortes-vno-resumen" hidden aria-label="Clientes por VNO">
+      <span class="cortes-vno-resumen__label muted">Clientes por VNO (filtro actual)</span>
+      <div id="cortes-vno-chips" class="cortes-vno-chips"></div>
+    </div>
+
+    <div class="controls-hint cortes-hint suite-note">
+      <div class="cortes-hint__text">
+        <strong class="hint-kicker">NOC</strong>
+        Impacto (solo eventos masivos): <strong>0–15</strong> moderado · <strong>16–249</strong> urgente · <strong>250+</strong> emergencia — varios PON en la misma ventana de 2&nbsp;min en una OLT suman clientes. Fechas en ART.
+        <button type="button" class="btn btn-ghost btn-sm" id="btn-cortes-marcar-vistos">Marcar todos como vistos</button>
+        <span id="kpi-sin-inv" class="cortes-sin-inv muted" hidden></span>
+      </div>
+      <div class="cortes-view-segment dash-segment" role="tablist" aria-label="Vista de tabla">
+        <button type="button" class="dash-segment__btn is-active" id="cortes-view-grupo" role="tab" aria-selected="true">Por sitio / LT</button>
+        <button type="button" class="dash-segment__btn" id="cortes-view-pon" role="tab" aria-selected="false">Por PON</button>
+      </div>
+      <div class="cortes-legend" aria-label="Leyenda causas">
+        <span class="cortes-legend__item"><span class="cortes-badge cortes-badge--losi">LOSi</span> Fibra</span>
+        <span class="cortes-legend__item"><span class="cortes-badge cortes-badge--dying">DG</span> Dying Gasp</span>
+        <span class="cortes-legend__item"><span class="cortes-badge cortes-badge--nuevo">N</span> Nuevo</span>
+        <span class="cortes-legend__item"><span class="cortes-badge cortes-badge--urgente cortes-badge--evento">URG<span class="cortes-badge__evento">Σ</span></span> Evento masivo</span>
+        <span class="cortes-legend__item muted">MOD/URG/EMG solo si varios PON suman clientes</span>
+      </div>
+      <div class="dashboard-tree-metrics" aria-label="Resultados visibles">
+        <span class="dashboard-metric-pill dashboard-metric-pill--ramas" title="Sitios en la página actual">
+          <span class="dashboard-metric-pill__n" id="cortes-visible-count">0</span>
+          <span class="dashboard-metric-pill__l">en página</span>
+        </span>
+        <span class="dashboard-metric-pill dashboard-metric-pill--cto" title="RAMAs impactadas">
+          <span class="dashboard-metric-pill__n" id="cortes-ramas-count">0</span>
+          <span class="dashboard-metric-pill__l">RAMAs</span>
+        </span>
+      </div>
+    </div>
+
+    <div class="table-wrap cortes-table-shell">
+      <div id="cortes-loading" class="cortes-loading" hidden aria-live="polite">
+        <span class="olt-txrx-cell-spin" aria-hidden="true"></span>
+        <span>Consultando alarmas en Altiplano INP… (luego queda en caché ~10 min)</span>
+      </div>
+      <div id="cortes-empty" class="cortes-empty" hidden>
+        <p class="hint">Sin cortes activos que coincidan con los filtros.</p>
+      </div>
+      <div class="cortes-pager consulta-masivo-pager" id="cortes-pager" aria-label="Paginación" hidden>
+        <div class="consulta-masivo-pager__nav">
+          <button type="button" class="btn btn-ghost btn-sm" id="cortes-page-prev" disabled>Anterior</button>
+          <span class="consulta-masivo-pager__info mono" id="cortes-page-info">Página 1</span>
+          <button type="button" class="btn btn-ghost btn-sm consulta-masivo-pager__next" id="cortes-page-next">Siguiente</button>
+        </div>
+        <div class="consulta-masivo-pager__size-row">
+          <span class="consulta-masivo-pager__label muted">Mostrar</span>
+          <select id="cortes-page-size" class="consulta-masivo-pager__size" aria-label="Filas por página">
+            <option value="10" selected>10</option>
+            <option value="20">20</option>
+            <option value="50">50</option>
+          </select>
+          <span class="consulta-masivo-pager__label muted">por página</span>
+        </div>
+      </div>
+      <table id="cortes-table" class="cortes-table cortes-table--compact">
+        <colgroup>
+          <col class="cortes-col-causa">
+          <col class="cortes-col-loc">
+          <col class="cortes-col-sitio">
+          <col class="cortes-col-estado">
+          <col class="cortes-col-raised">
+          <col class="cortes-col-cleared">
+          <col class="cortes-col-clientes">
+          <col class="cortes-col-vno">
+          <col class="cortes-col-ramas">
+          <col class="cortes-col-actions">
+        </colgroup>
+        <thead>
+          <tr>
+            <th scope="col" class="cortes-col-causa">Causa</th>
+            <th scope="col" class="cortes-col-loc" id="cortes-th-loc">OLT / LT / PON</th>
+            <th scope="col" class="cortes-col-sitio cortes-col-sitio--optional">Sitio</th>
+            <th scope="col" class="cortes-col-estado cortes-col-estado--optional">Estado</th>
+            <th scope="col" class="cortes-col-raised">Desde</th>
+            <th scope="col" class="cortes-col-cleared cortes-col-cleared--optional">Cleared</th>
+            <th scope="col" class="cortes-col-clientes">Clientes</th>
+            <th scope="col" class="cortes-col-vno">VNO</th>
+            <th scope="col" class="cortes-col-ramas">RAMAs</th>
+            <th scope="col" class="cortes-col-actions">Acciones</th>
+          </tr>
+        </thead>
+        <tbody id="cortes-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{% from 'partials/noc_toast.html' import render as noc_toast %}
+{{ noc_toast('cortes-toast') }}
+<script defer src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/es.js"></script>
+<script defer src="{{ url_for('static', filename='js/noc-tools.js') }}"></script>
+<script defer src="{{ url_for('static', filename='js/noc-estadisticas-flatpickr.js') }}"></script>
+<script defer src="{{ url_for('static', filename='js/dashboard-cortes-rama.js') }}?v=cortes24"></script>
+</body>
+</html>

@@ -38,6 +38,7 @@ from .exports import (
     export_index_query_csv,
 )
 from .inventario_estadisticas import dashboard_calidad_inventario_estadisticas
+from .estadisticas_altiplano import dashboard_estadisticas_altiplano_inp
 from .historico_potencias import (
     ALLOWED_HISTORICO_DAYS,
     consultar_potencias_altiplano_ahora_rama,
@@ -51,6 +52,7 @@ from .radar_degradacion import (
     consultar_radar_degradacion,
     export_csv_radar_degradacion,
 )
+from .cortes_rama import consultar_cortes_rama, export_csv_cortes_rama
 from .inventory import (
     consultar_access_id_desde_alias,
     consultar_access_id_baja_o_ausente,
@@ -90,6 +92,7 @@ __all__ = [
     "dashboard_calidad_inventario_historico",
     "dashboard_calidad_inventario_resumen_general",
     "dashboard_calidad_inventario_estadisticas",
+    "dashboard_estadisticas_altiplano_inp",
     "dashboard_calidad_dtv_sin_serial",
     "dashboard_calidad_aids_inconsistencia_datos",
     "dashboard_calidad_fat_sin_nfc_tabla",
@@ -112,6 +115,8 @@ __all__ = [
     "consultar_radar_degradacion",
     "export_csv_radar_degradacion",
     "ALLOWED_RADAR_DAYS",
+    "consultar_cortes_rama",
+    "export_csv_cortes_rama",
     "dashboard_camino_optico_cto",
     "dashboard_camino_optico_rama",
     "dashboard_camino_optico_fusion_planta",

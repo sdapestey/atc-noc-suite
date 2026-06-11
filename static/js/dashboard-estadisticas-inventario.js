@@ -377,9 +377,16 @@
     _renderHistoricoChart(document.getElementById("calidad-resumen-historico-chart"), data.historico);
   };
 
+  const _loading =
+    CD.renderLoadingStatus ||
+    function (msg) {
+      return `<p class="muted">${msg}</p>`;
+    };
+
   window.loadCalidadResumenGeneral = async function () {
     const root = document.getElementById("calidad-resumen-root");
     if (!root) return;
+    root.innerHTML = _loading("Cargando inventario…");
     try {
       const r = await fetch(`${CD.api.inventario}?days=${_resumenHistoricoDays}`);
       if (!r.ok) throw new Error("resumen");

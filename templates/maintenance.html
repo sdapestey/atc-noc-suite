@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ message }} — ATC NOC Suite</title>
+  <link rel="icon" href="{{ url_for('static', filename='img/favicon.ico') }}" type="image/x-icon">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/devops-dashboard.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/splash.css') }}">
+  <script>
+  (function () {
+    try {
+      var storedTheme = localStorage.getItem("theme");
+      var theme = (storedTheme === "dark" || storedTheme === "light")
+        ? storedTheme
+        : (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+      document.documentElement.setAttribute("data-theme", theme);
+    } catch (e) {
+      document.documentElement.setAttribute("data-theme", "dark");
+    }
+  })();
+  </script>
+</head>
+<body class="theme-devops noc-splash-open">
+  <div class="noc-splash noc-splash--visible noc-splash--in"
+       role="alert"
+       aria-live="polite">
+    <div class="noc-splash-inner">
+      <img class="noc-splash-logo"
+           src="{{ url_for('static', filename=config.SPLASH_LOGO_STATIC) }}"
+           alt=""
+           width="791"
+           height="593"
+           decoding="async">
+      <h1 class="noc-splash-title">{{ message }}</h1>
+      <p class="noc-splash-lead muted">La web no está disponible en este momento. Intente nuevamente más tarde.</p>
+    </div>
+  </div>
+</body>
+</html>

@@ -10,17 +10,17 @@
     </button>
     <div class="global-nav-dd-backdrop" hidden aria-hidden="true"></div>
     <div id="global-nav-dd-menu" class="global-nav-dd-menu" role="menu" aria-labelledby="global-nav-dd-btn" hidden aria-hidden="true">
-      <p class="global-nav-dd-section" role="presentation">Consulta</p>
-      <a class="global-nav-dd-link global-tab{% if nav_tab == 'index' %} global-nav-dd-link--current{% endif %}" role="menuitem" href="{{ url_for('index') }}">Potencias</a>
-      <a class="global-nav-dd-link global-tab{% if nav_tab == 'historico' %} global-nav-dd-link--current{% endif %}" role="menuitem" href="{{ url_for('dash_potencias_historico') }}">Historico Potencias</a>
-      <a class="global-nav-dd-link global-tab{% if nav_tab == 'radar' %} global-nav-dd-link--current{% endif %}" role="menuitem" href="{{ url_for('dash_radar_degradacion') }}">Radar Degradacion</a>
+      <a class="global-nav-dd-link global-tab{% if nav_tab == 'index' %} global-nav-dd-link--current{% endif %}" role="menuitem" href="{{ url_for('index') }}">Consulta Potencias</a>
       <p class="global-nav-dd-section" role="presentation">Inventario</p>
       <a class="global-nav-dd-link global-tab{% if nav_tab == 'rama' %} global-nav-dd-link--current{% endif %}" role="menuitem" href="{{ url_for('dash_rama') }}">RAMA / CTO</a>
       <a class="global-nav-dd-link global-tab{% if nav_tab == 'olt' %} global-nav-dd-link--current{% endif %}" role="menuitem" href="{{ url_for('dash_olt') }}">OLT / LT</a>
       <a class="global-nav-dd-link global-tab{% if nav_tab == 'camino' %} global-nav-dd-link--current{% endif %}" role="menuitem" href="{{ url_for('dash_camino_optico') }}">Camino Optico</a>
-      <p class="global-nav-dd-section" role="presentation">Monitoreo</p>
-      <a class="global-nav-dd-link global-tab{% if nav_tab == 'estadisticas' %} global-nav-dd-link--current{% endif %}" role="menuitem" href="{{ url_for('dash_estadisticas') }}">Estadisticas</a>
       <a class="global-nav-dd-link global-tab{% if nav_tab == 'altiplano' %} global-nav-dd-link--current{% endif %}" role="menuitem" href="{{ url_for('dash_altiplano') }}">Altiplano</a>
+      <p class="global-nav-dd-section" role="presentation">Monitoreo</p>
+      <a class="global-nav-dd-link global-tab{% if nav_tab == 'historico' %} global-nav-dd-link--current{% endif %}" role="menuitem" href="{{ url_for('dash_potencias_historico') }}">Historico Potencias</a>
+      <a class="global-nav-dd-link global-tab{% if nav_tab == 'radar' %} global-nav-dd-link--current{% endif %}" role="menuitem" href="{{ url_for('dash_radar_degradacion') }}">Radar Degradacion</a>
+      <a class="global-nav-dd-link global-tab{% if nav_tab == 'cortes' %} global-nav-dd-link--current{% endif %}" role="menuitem" href="{{ url_for('dash_cortes_rama') }}">Cortes de Rama</a>
+      <a class="global-nav-dd-link global-tab{% if nav_tab == 'estadisticas' %} global-nav-dd-link--current{% endif %}" role="menuitem" href="{{ url_for('dash_estadisticas') }}">Estadisticas</a>
       <p class="global-nav-dd-section" role="presentation">Referencia</p>
       <a
         class="global-nav-dd-link global-tab global-tab--external"
@@ -32,27 +32,13 @@
     </div>
   </div>
 
-  {# Desktop: grupos + enlace directo + wiki #}
+  {# Desktop: grupos + enlaces directos + wiki #}
   <div class="global-tabs-row">
     <nav class="global-tabs global-tabs--grouped" aria-label="Secciones de dashboard">
-      <div class="global-nav-group" data-nav-dropdown data-nav-desktop-group>
-        <button
-          type="button"
-          class="global-tab global-nav-group-trigger{% if nav_group == 'consulta' %} active{% endif %}"
-          aria-haspopup="true"
-          aria-expanded="false"
-        >
-          <span>Consulta</span>
-          <svg class="global-nav-group-chevron" viewBox="0 0 12 12" width="12" height="12" aria-hidden="true" focusable="false">
-            <path d="M2.5 4.25L6 7.75L9.5 4.25" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
-          </svg>
-        </button>
-        <div class="global-nav-group-menu global-nav-dd-menu" role="menu" hidden aria-hidden="true">
-          <a class="global-nav-dd-link global-tab{% if nav_tab == 'index' %} global-nav-dd-link--current{% endif %}" role="menuitem" href="{{ url_for('index') }}">Potencias</a>
-          <a class="global-nav-dd-link global-tab{% if nav_tab == 'historico' %} global-nav-dd-link--current{% endif %}" role="menuitem" href="{{ url_for('dash_potencias_historico') }}">Historico Potencias</a>
-          <a class="global-nav-dd-link global-tab{% if nav_tab == 'radar' %} global-nav-dd-link--current{% endif %}" role="menuitem" href="{{ url_for('dash_radar_degradacion') }}">Radar Degradacion</a>
-        </div>
-      </div>
+      <a
+        class="global-tab{% if nav_tab == 'index' %} active{% endif %}"
+        href="{{ url_for('index') }}"
+      >Consulta Potencias</a>
 
       <div class="global-nav-group" data-nav-dropdown data-nav-desktop-group>
         <button
@@ -70,6 +56,7 @@
           <a class="global-nav-dd-link global-tab{% if nav_tab == 'rama' %} global-nav-dd-link--current{% endif %}" role="menuitem" href="{{ url_for('dash_rama') }}">RAMA / CTO</a>
           <a class="global-nav-dd-link global-tab{% if nav_tab == 'olt' %} global-nav-dd-link--current{% endif %}" role="menuitem" href="{{ url_for('dash_olt') }}">OLT / LT</a>
           <a class="global-nav-dd-link global-tab{% if nav_tab == 'camino' %} global-nav-dd-link--current{% endif %}" role="menuitem" href="{{ url_for('dash_camino_optico') }}">Camino Optico</a>
+          <a class="global-nav-dd-link global-tab{% if nav_tab == 'altiplano' %} global-nav-dd-link--current{% endif %}" role="menuitem" href="{{ url_for('dash_altiplano') }}">Altiplano</a>
         </div>
       </div>
 
@@ -86,10 +73,16 @@
           </svg>
         </button>
         <div class="global-nav-group-menu global-nav-dd-menu" role="menu" hidden aria-hidden="true">
-          <a class="global-nav-dd-link global-tab{% if nav_tab == 'estadisticas' %} global-nav-dd-link--current{% endif %}" role="menuitem" href="{{ url_for('dash_estadisticas') }}">Estadisticas</a>
-          <a class="global-nav-dd-link global-tab{% if nav_tab == 'altiplano' %} global-nav-dd-link--current{% endif %}" role="menuitem" href="{{ url_for('dash_altiplano') }}">Altiplano</a>
+          <a class="global-nav-dd-link global-tab{% if nav_tab == 'historico' %} global-nav-dd-link--current{% endif %}" role="menuitem" href="{{ url_for('dash_potencias_historico') }}">Historico Potencias</a>
+          <a class="global-nav-dd-link global-tab{% if nav_tab == 'radar' %} global-nav-dd-link--current{% endif %}" role="menuitem" href="{{ url_for('dash_radar_degradacion') }}">Radar Degradacion</a>
+          <a class="global-nav-dd-link global-tab{% if nav_tab == 'cortes' %} global-nav-dd-link--current{% endif %}" role="menuitem" href="{{ url_for('dash_cortes_rama') }}">Cortes de Rama</a>
         </div>
       </div>
+
+      <a
+        class="global-tab{% if nav_tab == 'estadisticas' %} active{% endif %}"
+        href="{{ url_for('dash_estadisticas') }}"
+      >Estadisticas</a>
     </nav>
     <a
       class="global-tab global-tab--external global-tab--wiki"

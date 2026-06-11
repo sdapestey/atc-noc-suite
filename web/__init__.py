@@ -64,41 +64,46 @@ def create_app() -> Flask:
             tab = "historico"
         elif p.startswith("/dashboard/radar-degradacion"):
             tab = "radar"
+        elif p.startswith("/dashboard/cortes-rama"):
+            tab = "cortes"
         elif p.startswith("/dashboard/estadisticas") or p.startswith("/dashboard/calidad-inventario"):
             tab = "estadisticas"
         else:
             tab = "index"
         labels = {
-            "index": "Potencias",
+            "index": "Consulta Potencias",
             "rama": "RAMA / CTO",
             "olt": "OLT / LT",
             "camino": "Camino Optico",
             "historico": "Historico Potencias",
             "radar": "Radar Degradacion",
+            "cortes": "Cortes de Rama",
             "estadisticas": "Estadisticas",
             "altiplano": "Altiplano",
         }
         groups = {
             "index": "consulta",
-            "historico": "consulta",
-            "radar": "consulta",
+            "historico": "monitoreo",
+            "radar": "monitoreo",
+            "cortes": "monitoreo",
             "rama": "inventario",
             "olt": "inventario",
             "camino": "inventario",
-            "estadisticas": "monitoreo",
-            "altiplano": "monitoreo",
+            "altiplano": "inventario",
+            "estadisticas": "estadisticas",
         }
         group_labels = {
-            "consulta": "Consulta",
+            "consulta": "Consulta Potencias",
             "inventario": "Inventario",
             "monitoreo": "Monitoreo",
+            "estadisticas": "Estadisticas",
         }
         nav_group = groups.get(tab, "consulta")
         return {
             "nav_tab": tab,
             "nav_group": nav_group,
-            "nav_group_label": group_labels.get(nav_group, "Consulta"),
-            "nav_tab_label": labels.get(tab, "Consulta"),
+            "nav_group_label": group_labels.get(nav_group, "Consulta Potencias"),
+            "nav_tab_label": labels.get(tab, "Consulta Potencias"),
             "noc_wiki_url": get_noc_wiki_url(),
             "consulta_altiplano_ui_cache_seconds": get_consulta_altiplano_ui_cache_seconds(),
             "consulta_potencias_parallel_max": get_consulta_potencias_parallel_max(),

@@ -290,9 +290,14 @@ function switchTab(tabId) {
   document.getElementById("panel-reglas").hidden = tabId !== "reglas";
   const panelAltasBajas = document.getElementById("panel-altas-bajas");
   if (panelAltasBajas) panelAltasBajas.hidden = tabId !== "altas-bajas";
+  const panelAltiplano = document.getElementById("panel-altiplano");
+  if (panelAltiplano) panelAltiplano.hidden = tabId !== "altiplano";
 
   if (tabId === "altas-bajas" && typeof window.loadCalidadEstadisticas === "function") {
     window.loadCalidadEstadisticas();
+  }
+  if (tabId === "altiplano" && typeof window.loadCalidadEstadisticasAltiplano === "function") {
+    window.loadCalidadEstadisticasAltiplano({ refresh: true });
   }
   if (tabId === "inventario" && typeof window.loadCalidadResumenGeneral === "function") {
     window.loadCalidadResumenGeneral();

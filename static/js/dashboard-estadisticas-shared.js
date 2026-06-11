@@ -32,12 +32,20 @@
     return `<h2 class="calidad-superset-title" ${id ? `id="${esc(id)}"` : ""}>${esc(text)}</h2>`;
   }
 
+  function renderLoadingStatus(message) {
+    return `<div class="calidad-resumen-loading" role="status" aria-live="polite" aria-busy="true">
+      <span class="calidad-resumen-spinner" aria-hidden="true"></span>
+      <span>${esc(message)}</span>
+    </div>`;
+  }
+
   global.CalidadDashboard = {
     apiBase: API_BASE,
     api: {
       inventario: `${API_BASE}/inventario.json`,
       inventarioTabla: `${API_BASE}/inventario/tabla.json`,
       altasBajas: `${API_BASE}/altas-bajas.json`,
+      altiplano: `${API_BASE}/altiplano.json`,
       reglasResumen: `${API_BASE}/reglas/resumen.json`,
       reglasHallazgos: `${API_BASE}/reglas/hallazgos.json`,
       reglasExportCsv: `${API_BASE}/reglas/export.csv`,
@@ -47,5 +55,6 @@
     opSlug,
     renderBigRow,
     sectionTitle,
+    renderLoadingStatus,
   };
 })(typeof window !== "undefined" ? window : globalThis);

@@ -10,9 +10,14 @@ import re
 import unicodedata
 from uuid import uuid4
 
-from config import Config, get_consulta_potencias_batch_workers
+from config import (
+    Config,
+    get_consulta_potencias_batch_workers,
+    get_maintenance_message,
+    is_maintenance_mode_enabled,
+)
 
-from flask import Response, current_app, g, jsonify, redirect, render_template, request, session, url_for
+from flask import Response, current_app, g, jsonify, make_response, redirect, render_template, request, session, url_for
 
 logger = logging.getLogger(__name__)
 from urllib.parse import quote_plus
@@ -82,6 +87,7 @@ from services import (
     dashboard_calidad_inventario_resumen,
     dashboard_calidad_inventario_resumen_general,
     dashboard_calidad_inventario_estadisticas,
+    dashboard_estadisticas_altiplano_inp,
     dashboard_olts,
     dashboard_rama_bundle,
     buscar_intents_ont_connection_inp,
@@ -97,6 +103,8 @@ from services import (
     consultar_potencias_historico_rama,
     consultar_radar_degradacion,
     export_csv_radar_degradacion,
+    consultar_cortes_rama,
+    export_csv_cortes_rama,
     semaforo_historico_por_lts,
     semaforo_historico_por_ramas,
 )
@@ -808,6 +816,42 @@ def register(app):
         g.request_id = request.headers.get("X-Request-Id", "").strip() or str(uuid4())[:12]
 
     @app.before_request
+    def block_if_maintenance():
+        if not is_maintenance_mode_enabled():
+            return None
+        path = request.path or ""
+        if path.startswith("/static/") or path == "/health":
+            return None
+
+        message = get_maintenance_message()
+        is_json = (
+            path.startswith("/api/")
+            or path.endswith("/consultar")
+            or path.endswith("/gis-por-lt")
+            or path.endswith(".json")
+            or (
+                request.accept_mimetypes.best == "application/json"
+                and request.accept_mimetypes[request.accept_mimetypes.best]
+                > request.accept_mimetypes["text/html"]
+            )
+        )
+        if is_json:
+            return (
+                jsonify(
+                    {
+                        "error": message,
+                        "maintenance": True,
+                        "request_id": getattr(g, "request_id", "-"),
+                    }
+                ),
+                503,
+            )
+
+        resp = make_response(render_template("maintenance.html", message=message), 503)
+        resp.headers["Cache-Control"] = "no-store"
+        return resp
+
+    @app.before_request
     def ensure_db_ready():
         # Evita checks en assets/health y durante tests; en runtime previene 500 por conexión stale.
         if current_app.config.get("TESTING"):
@@ -853,6 +897,8 @@ def register(app):
             return redirect(url_for("dash_potencias_historico"))
         if tab in ("radar", "radar-degradacion", "degradacion"):
             return redirect(url_for("dash_radar_degradacion"))
+        if tab in ("cortes", "cortes-rama", "cortes_rama"):
+            return redirect(url_for("dash_cortes_rama"))
         if tab in ("calidad", "calidad-inventario", "estadisticas"):
             return redirect(url_for("dash_estadisticas"))
         return redirect(url_for("index"))
@@ -1509,6 +1555,92 @@ def register(app):
         filename = f"radar_degradacion_{payload.get('days', days)}d.csv"
         return _csv_download_response(payload.get("csv", ""), filename)
 
+    @app.route("/dashboard/cortes-rama")
+    def dash_cortes_rama():
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+
+        fecha_hoy_art = datetime.now(ZoneInfo("America/Argentina/Buenos_Aires")).date().isoformat()
+        return render_template("dashboard_cortes_rama.html", fecha_hoy_art=fecha_hoy_art)
+
+    @app.route("/api/cortes-rama")
+    def api_cortes_rama():
+        causa = (request.args.get("causa") or "").strip() or None
+        principal = (request.args.get("principal") or "").strip() or None
+        vno = (request.args.get("vno") or "").strip() or None
+        q = (request.args.get("q") or "").strip() or None
+        solo_con_rama = request.args.get("solo_rama", "").strip().lower() in (
+            "1",
+            "true",
+            "yes",
+            "on",
+        )
+        sort_by = (request.args.get("sort") or "").strip() or None
+        fecha = (request.args.get("fecha") or "").strip() or None
+        impacto = (request.args.get("impacto") or "").strip() or None
+        estado = (request.args.get("estado") or "").strip() or None
+        fresh = request.args.get("fresh", "").strip().lower() in ("1", "true", "yes", "on")
+        limit = request.args.get("limit", default=500, type=int)
+        try:
+            payload = consultar_cortes_rama(
+                causa=causa,
+                principal=principal,
+                vno=vno,
+                q=q,
+                solo_con_rama=solo_con_rama,
+                limit=limit,
+                sort_by=sort_by,
+                fecha=fecha,
+                impacto=impacto,
+                estado=estado or "activas",
+                fresh=fresh,
+            )
+        except Exception:
+            return _log_and_internal_error("Error interno consultando cortes de rama")
+        if not payload.get("ok"):
+            return jsonify({"error": payload.get("error", "Error de consulta")}), int(
+                payload.get("status_code", 500)
+            )
+        return jsonify(payload)
+
+    @app.route("/dashboard/cortes-rama/export.csv")
+    def dash_cortes_rama_export_csv():
+        causa = (request.args.get("causa") or "").strip() or None
+        principal = (request.args.get("principal") or "").strip() or None
+        vno = (request.args.get("vno") or "").strip() or None
+        q = (request.args.get("q") or "").strip() or None
+        solo_con_rama = request.args.get("solo_rama", "").strip().lower() in (
+            "1",
+            "true",
+            "yes",
+            "on",
+        )
+        sort_by = (request.args.get("sort") or "").strip() or None
+        fecha = (request.args.get("fecha") or "").strip() or None
+        impacto = (request.args.get("impacto") or "").strip() or None
+        estado = (request.args.get("estado") or "").strip() or None
+        limit = request.args.get("limit", default=2000, type=int)
+        try:
+            payload = export_csv_cortes_rama(
+                causa=causa,
+                principal=principal,
+                vno=vno,
+                q=q,
+                solo_con_rama=solo_con_rama,
+                sort_by=sort_by,
+                fecha=fecha,
+                impacto=impacto,
+                estado=estado or "activas",
+                limit=limit,
+            )
+        except Exception:
+            return _log_and_internal_error("Error interno exportando cortes de rama")
+        if not payload.get("ok"):
+            return jsonify({"error": payload.get("error", "Error de exportación")}), int(
+                payload.get("status_code", 500)
+            )
+        return _csv_download_response(payload.get("csv", ""), "cortes_rama.csv")
+
     @app.route("/dashboard/estadisticas")
     def dash_estadisticas():
         return render_template("dashboard_estadisticas.html")
@@ -1560,6 +1692,22 @@ def register(app):
     @app.route("/dashboard/calidad-inventario/tabla.json")
     def dash_calidad_inventario_tabla_legacy():
         return _estadisticas_redirect_legacy("inventario/tabla.json")
+
+    @app.route("/dashboard/estadisticas/altiplano.json")
+    def dash_estadisticas_altiplano_json():
+        sess_token = _orquestador_session_token()
+        refresh = request.args.get("refresh", default=0, type=int) == 1
+        try:
+            payload = dashboard_estadisticas_altiplano_inp(
+                sess_token=sess_token,
+                refresh=refresh,
+            )
+        except Exception:
+            return _log_and_internal_error(
+                "Error interno consultando estadísticas Altiplano INP"
+            )
+        code = 200 if payload.get("ok") else 502
+        return jsonify(payload), code
 
     @app.route("/dashboard/estadisticas/altas-bajas.json")
     def dash_estadisticas_altas_bajas_json():

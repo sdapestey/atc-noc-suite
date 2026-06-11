@@ -2703,6 +2703,40 @@ html[data-theme="light"] .page-estadisticas .calidad-big-card--clickable:hover {
   font-size: 13px;
 }
 
+.page-estadisticas .calidad-resumen-loading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 4px;
+  margin: 0;
+  color: var(--fg-muted);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.page-estadisticas .calidad-resumen-spinner,
+.page-estadisticas .calidad-kpi-loading .calidad-resumen-spinner {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid var(--border-default);
+  border-top-color: var(--accent);
+  animation: devops-spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+.page-estadisticas .calidad-kpi-loading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  grid-column: 1 / -1;
+  padding: 12px 4px;
+  margin: 0;
+  color: var(--fg-muted);
+  font-size: 13px;
+  font-weight: 500;
+}
+
 .page-estadisticas .calidad-resumen-shell {
   display: flex;
   flex-direction: column;
@@ -2797,6 +2831,19 @@ html[data-theme="light"] .page-estadisticas .calidad-big-card--clickable:hover {
 .page-estadisticas .calidad-big-card--stat-baja .calidad-big-card__value,
 .page-estadisticas .calidad-big-card--stat-baja .calidad-big-card__foot {
   color: #f85149;
+}
+
+.page-estadisticas .calidad-estadisticas-altiplano-notes {
+  margin: 1rem 0 0;
+  padding-left: 1.25rem;
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+
+.page-estadisticas .calidad-superset-block--altiplano .calidad-superset-title {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.8rem;
 }
 
 .page-estadisticas .calidad-big-card--stat-alta.calidad-big-card--op .calidad-big-card__foot,
