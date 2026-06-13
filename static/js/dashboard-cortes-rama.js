@@ -89,7 +89,23 @@ function _saveSeenPonKeys() {
   }
 }
 
+function _isConsultaHoy() {
+  const dia = _cortesFechaIso();
+  return !dia || dia === _todayArtIso();
+}
+
+function _nuevosTrackingEnabled() {
+  const estado = _getCortesEstado();
+  if (estado === "cleared") return false;
+  if (!_isConsultaHoy()) return false;
+  return true;
+}
+
 function _isNuevo(row) {
+  if (!_nuevosTrackingEnabled()) return false;
+  const estado = _getCortesEstado();
+  const status = String(row?.status || "").toLowerCase();
+  if (estado === "todas" && status === "cleared") return false;
   const pk = String(row?.pon_key || "").trim();
   return pk && !seenPonKeys.has(pk);
 }
@@ -342,7 +358,10 @@ function _updateKpis(payload, displayItems) {
   set("kpi-losi", t.LOSI_LOBI ?? 0);
   set("kpi-dying", t.DYING_GASP ?? 0);
   set("kpi-clientes", t.CLIENTES_AFECTADOS ?? 0);
-  set("kpi-nuevos", _countNuevos(payload?.items || []));
+  const nuevosEnabled = _nuevosTrackingEnabled();
+  set("kpi-nuevos", nuevosEnabled ? _countNuevos(payload?.items || []) : "—");
+  const marcarVistos = document.getElementById("btn-cortes-marcar-vistos");
+  if (marcarVistos) marcarVistos.hidden = !nuevosEnabled;
   const impactoHint = document.getElementById("kpi-impacto-hint");
   if (impactoHint) {
     const emg = t.EMERGENCIA ?? 0;
@@ -399,24 +418,41 @@ function _eventoTipo(ev) {
   return "otro";
 }
 
-function _renderEventoMasivoCard(ev) {
+function _buildOltUrlFromPonKeys(keys) {
+  const valid = (keys || []).map((k) => String(k || "").trim()).filter(Boolean);
+  if (!valid.length) return "/dashboard/olt";
+  return "/dashboard/olt?select_pon=" + encodeURIComponent(valid.join(","));
+}
+
+function _renderEventoMasivoCard(ev, idx) {
   const imp = ev.impacto || "MODERADO";
   const badgeCls = _IMPACTO_BADGE_CLASS[imp] || "cortes-badge--moderado";
   const badgeTxt = _IMPACTO_SHORT[imp] || imp;
   const sitio = ev.principal || ev.olt || "";
-  const tipo = _eventoTipo(ev);
-  const tipoMeta = _EVENTO_TIPO_META[tipo] || _EVENTO_TIPO_META.otro;
+  const olts = Array.isArray(ev.olts) ? ev.olts : ev.olt ? [ev.olt] : [];
+  const oltHint =
+    olts.length > 1
+      ? "<span class=\"muted\">" + _esc(olts.length) + " OLT · </span>"
+      : "";
+  const showReporte = imp === "EMERGENCIA" || imp === "URGENTE";
+  const ponKeys = (ev && (ev.pon_keys || ev.pons)) || [];
+  let actionBtns = "";
+  if (showReporte) {
+    const oltUrl = _buildOltUrlFromPonKeys(ponKeys);
+    actionBtns =
+      '<span class="cortes-evento-card__actions">' +
+      '<a class="btn btn-sm btn-ghost cortes-evento-olt-btn" href="' +
+      _esc(oltUrl) +
+      '" target="_blank" rel="noopener noreferrer" title="Abrir OLT/LT con todos los PON del evento seleccionados">OLT</a>' +
+      '<button type="button" class="btn btn-sm btn-ghost cortes-evento-reporte-btn" title="Exportar clientes IN SERVICE (PON, RAMA, CTO, AID)">Reporte</button>' +
+      "</span>";
+  }
   return (
     '<div class="cortes-evento-card cortes-evento-card--' +
     imp.toLowerCase() +
+    '" data-evento-idx="' +
+    String(idx) +
     '">' +
-    '<span class="cortes-badge ' +
-    tipoMeta.badgeCls +
-    '" title="' +
-    _esc(ev.tipo_label || tipoMeta.label) +
-    '">' +
-    _esc(tipoMeta.badgeTxt) +
-    "</span>" +
     '<span class="cortes-badge ' +
     badgeCls +
     '">' +
@@ -424,6 +460,7 @@ function _renderEventoMasivoCard(ev) {
     "</span>" +
     '<span class="cortes-evento-card__body">' +
     (sitio ? "<strong>" + _esc(sitio) + "</strong> · " : "") +
+    oltHint +
     "<strong>" +
     _esc(ev.cortes) +
     " PON</strong> · <span class=\"mono\">" +
@@ -431,7 +468,9 @@ function _renderEventoMasivoCard(ev) {
     "</span> · <strong>" +
     _esc(ev.clientes) +
     "</strong> clientes" +
-    "</span></div>"
+    "</span>" +
+    actionBtns +
+    "</div>"
   );
 }
 
@@ -446,6 +485,8 @@ function _renderEventosMasivos(eventos) {
     return;
   }
   banner.hidden = false;
+  list._eventosData = rows.slice();
+  let globalIdx = 0;
   const byTipo = {};
   rows.forEach((ev) => {
     const tipo = _eventoTipo(ev);
@@ -479,7 +520,7 @@ function _renderEventosMasivos(eventos) {
       "</span>" +
       "</div>" +
       '<div class="cortes-eventos-section__list">' +
-      sectionRows.map(_renderEventoMasivoCard).join("") +
+      sectionRows.map((ev) => _renderEventoMasivoCard(ev, globalIdx++)).join("") +
       "</div></section>";
   });
   list.innerHTML = html;
@@ -791,28 +832,28 @@ function _renderRamasCell(row) {
 }
 
 function _renderActions(row, compact) {
-  const lt = row.lt_name || "";
-  const oltUrl = "/dashboard/olt?lt=" + encodeURIComponent(lt);
-  const caminoUrl =
-    row.ramas && row.ramas[0] ? "/dashboard/camino-optico?q=" + encodeURIComponent(row.ramas[0]) : null;
+  const pk = String(row.pon_key || "").trim();
+  const oltUrl = pk ? _buildOltUrlFromPonKeys([pk]) : "/dashboard/olt";
   const cls = compact ? " cortes-actions--compact" : "";
   let html =
     '<div class="cortes-actions' +
     cls +
-    '"><a class="btn btn-ghost btn-sm" href="' +
+    '"><a class="btn btn-ghost btn-sm cortes-evento-olt-btn" href="' +
     _esc(oltUrl) +
-    '" target="_blank" rel="noopener noreferrer">OLT</a>';
-  if (caminoUrl) {
+    '" target="_blank" rel="noopener noreferrer" title="Abrir OLT/LT con este PON seleccionado">OLT</a>';
+  if (pk) {
     html +=
-      '<a class="btn btn-ghost btn-sm" href="' +
-      _esc(caminoUrl) +
-      '" target="_blank" rel="noopener noreferrer">Camino</a>';
+      '<button type="button" class="btn btn-ghost btn-sm cortes-evento-reporte-btn" data-pon-key="' +
+      _esc(pk) +
+      '" data-principal="' +
+      _esc(row.principal || row.olt || "") +
+      '" title="Exportar clientes IN SERVICE (PON, RAMA, CTO, AID)">Reporte</button>';
   }
   if (row.ramas && row.ramas[0]) {
     html +=
       '<a class="btn btn-ghost btn-sm" href="/?q=' +
       encodeURIComponent(row.ramas[0]) +
-      '" target="_blank" rel="noopener noreferrer">Potencias</a>';
+      '" target="_blank" rel="noopener noreferrer" title="Consultar potencias RX">RX</a>';
   }
   html += "</div>";
   return html;
@@ -920,10 +961,10 @@ function _renderDataRow(row, opts) {
     '<td class="cortes-col-estado--optional">' +
     _renderEstadoCell(row) +
     "</td>" +
-    '<td class="mono cortes-raised" title="Hora Argentina (ART)">' +
+    '<td class="mono cortes-raised">' +
     _esc(_formatRaised(row.raised)) +
     "</td>" +
-    '<td class="mono cortes-cleared cortes-col-cleared--optional" title="Hora Argentina (ART)">' +
+    '<td class="mono cortes-cleared cortes-col-cleared--optional">' +
     _esc(row.cleared ? _formatRaised(row.cleared) : "—") +
     "</td>" +
     '<td class="cortes-col-clientes ' +
@@ -1211,7 +1252,6 @@ function fetchCortes(opts) {
   _fetchInFlight = true;
   _fetchPending = null;
 
-  const exportBtn = document.getElementById("btn-cortes-export");
   const empty = document.getElementById("cortes-empty");
   if (!silent) _setLoading(true);
   else _setRefreshBusy(true);
@@ -1225,12 +1265,11 @@ function fetchCortes(opts) {
   }
 
   const params = _buildFetchParams({ fresh: fresh });
-  return fetch("/api/cortes-rama?" + params.toString())
+  return fetch("/api/alarm-analyzer?" + params.toString())
     .then((r) => r.json().then((data) => ({ ok: r.ok, data })))
     .then(({ ok, data }) => {
       if (!ok || data.error) {
         _showCortesError(data.error || "Error consultando cortes");
-        if (exportBtn) exportBtn.disabled = true;
         return;
       }
       lastPayload = data;
@@ -1243,7 +1282,6 @@ function fetchCortes(opts) {
       _updateKpis(data, allItems);
       _renderVnoResumen(data.vno_resumen);
       _renderTablePage();
-      if (exportBtn) exportBtn.disabled = !allItems.length;
       if (!silent && allItems.length) {
         const nuevos = _countNuevos(allItems);
         const t = data.totales || {};
@@ -1278,10 +1316,68 @@ function fetchCortes(opts) {
 
 window.fetchCortes = fetchCortes;
 
-function exportCortesCsv() {
-  const params = _buildFetchParams();
-  params.set("limit", "2000");
-  window.location.href = "/dashboard/cortes-rama/export.csv?" + params.toString();
+function _downloadBlobCsv(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename || "reporte_evento.csv";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function exportEventoReporte(ev, btn) {
+  const keys = (ev && (ev.pon_keys || ev.pons)) || [];
+  if (!keys.length) {
+    _cortesToast("Sin PON asociados a este evento", { variant: "warning" });
+    return;
+  }
+  if (btn) {
+    btn.disabled = true;
+    btn.setAttribute("aria-busy", "true");
+  }
+  fetch("/dashboard/alarm-analyzer/evento-reporte.csv", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "text/csv" },
+    credentials: "same-origin",
+    body: JSON.stringify({
+      pon_keys: keys,
+      principal: ev.principal || ev.olt || "",
+      ventana: ev.ventana || ev.minute || "",
+    }),
+  })
+    .then(function (res) {
+      if (res.status === 401) {
+        window.location.reload();
+        return null;
+      }
+      if (!res.ok) {
+        return res.text().then(function (txt) {
+          throw new Error(txt || "No se pudo generar el reporte");
+        });
+      }
+      const cd = res.headers.get("Content-Disposition") || "";
+      const m = /filename=\"?([^\";]+)\"?/i.exec(cd);
+      const fname = m ? m[1] : "pones_seleccionados.csv";
+      return res.blob().then(function (blob) {
+        return { blob: blob, filename: fname };
+      });
+    })
+    .then(function (out) {
+      if (!out) return;
+      _downloadBlobCsv(out.blob, out.filename);
+      _cortesToast("Reporte exportado (" + keys.length + " PON)", { variant: "success" });
+    })
+    .catch(function (err) {
+      _cortesToast(err.message || "Error al exportar reporte", { variant: "error" });
+    })
+    .finally(function () {
+      if (btn) {
+        btn.disabled = false;
+        btn.removeAttribute("aria-busy");
+      }
+    });
 }
 
 function _onCortesFilterChange() {
@@ -1290,11 +1386,40 @@ function _onCortesFilterChange() {
   fetchCortes({ fresh: true });
 }
 
+function _onCortesReporteButtonClick(ev) {
+  const btn = ev.target.closest(".cortes-evento-reporte-btn");
+  if (!btn || btn.disabled) return;
+  ev.preventDefault();
+  ev.stopPropagation();
+  const pk = (btn.getAttribute("data-pon-key") || "").trim();
+  if (pk) {
+    exportEventoReporte(
+      {
+        pon_keys: [pk],
+        principal: (btn.getAttribute("data-principal") || "").trim(),
+      },
+      btn
+    );
+    return;
+  }
+  const card = btn.closest("[data-evento-idx]");
+  const list = document.getElementById("cortes-eventos-list");
+  const idx = card ? parseInt(card.getAttribute("data-evento-idx") || "", 10) : NaN;
+  const rows = list && list._eventosData ? list._eventosData : [];
+  const row = Number.isFinite(idx) ? rows[idx] : null;
+  if (!row) {
+    _cortesToast("Evento no disponible", { variant: "warning" });
+    return;
+  }
+  exportEventoReporte(row, btn);
+}
+
 function initCortesRamaDashboard() {
   if (_cortesPageReady) return;
   _cortesPageReady = true;
 
-  document.getElementById("btn-cortes-export")?.addEventListener("click", exportCortesCsv);
+  document.getElementById("cortes-eventos-list")?.addEventListener("click", _onCortesReporteButtonClick);
+  document.getElementById("cortes-tbody")?.addEventListener("click", _onCortesReporteButtonClick);
   document.getElementById("btn-cortes-limpiar")?.addEventListener("click", resetCortes);
   document.getElementById("btn-cortes-search")?.addEventListener("click", (ev) => {
     ev.preventDefault();

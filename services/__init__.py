@@ -52,7 +52,7 @@ from .radar_degradacion import (
     consultar_radar_degradacion,
     export_csv_radar_degradacion,
 )
-from .cortes_rama import consultar_cortes_rama, export_csv_cortes_rama
+from .cortes_rama import consultar_cortes_rama, export_csv_cortes_rama, export_csv_evento_reporte_pon
 from .inventory import (
     consultar_access_id_desde_alias,
     consultar_access_id_baja_o_ausente,
@@ -117,6 +117,7 @@ __all__ = [
     "ALLOWED_RADAR_DAYS",
     "consultar_cortes_rama",
     "export_csv_cortes_rama",
+    "export_csv_evento_reporte_pon",
     "dashboard_camino_optico_cto",
     "dashboard_camino_optico_rama",
     "dashboard_camino_optico_fusion_planta",

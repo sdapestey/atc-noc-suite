@@ -777,7 +777,7 @@ function _consultaSectionOnt(pre) {
   return byPrefix ? String(byPrefix.getAttribute("data-nv-ont") || "").trim() : "";
 }
 
-/** Actualiza filas ONT Postgres / Altiplano (una sola si coinciden). */
+/** Actualiza filas ONT (Postgres) / ONT (INP); una sola si coinciden. */
 function _applyConsultaOntCompareRows(root, pfx, data) {
   if (!root || !pfx || !data) return;
   const dash = "—";
@@ -795,22 +795,40 @@ function _applyConsultaOntCompareRows(root, pfx, data) {
   const pgVal = document.getElementById(pfx + "ont-postgres-value");
   const altVal = document.getElementById(pfx + "ont-altiplano-value");
 
+  const finishOntCell = (el, text) => {
+    if (!el) return;
+    el.innerText = text;
+    el.classList.remove("consulta-potencia-loading");
+    el.removeAttribute("aria-busy");
+    el.removeAttribute("aria-label");
+  };
+
   if (match && pgRaw) {
     if (singleRow) singleRow.hidden = false;
     if (pgRow) pgRow.hidden = true;
     if (altRow) altRow.hidden = true;
     if (singleVal) singleVal.innerText = pgRaw;
-  } else {
+  } else if (pgRaw && altRaw) {
     if (singleRow) singleRow.hidden = true;
     if (pgRow) pgRow.hidden = false;
     if (altRow) altRow.hidden = false;
-    if (pgVal) pgVal.innerText = pgShow;
-    if (altVal) {
-      altVal.innerText = altShow;
-      altVal.classList.remove("consulta-potencia-loading");
-      altVal.removeAttribute("aria-busy");
-      altVal.removeAttribute("aria-label");
-    }
+    finishOntCell(pgVal, pgShow);
+    finishOntCell(altVal, altShow);
+  } else if (pgRaw) {
+    if (singleRow) singleRow.hidden = true;
+    if (pgRow) pgRow.hidden = false;
+    if (altRow) altRow.hidden = true;
+    finishOntCell(pgVal, pgShow);
+  } else if (altRaw) {
+    if (singleRow) singleRow.hidden = true;
+    if (pgRow) pgRow.hidden = true;
+    if (altRow) altRow.hidden = false;
+    finishOntCell(altVal, altShow);
+  } else {
+    if (singleRow) singleRow.hidden = true;
+    if (pgRow) pgRow.hidden = false;
+    if (altRow) altRow.hidden = true;
+    finishOntCell(pgVal, dash);
   }
 
   if (ontTarget) {
@@ -818,6 +836,69 @@ function _applyConsultaOntCompareRows(root, pfx, data) {
     root.querySelectorAll("[data-ont-target]").forEach((btn) => {
       btn.setAttribute("data-ont-target", ontTarget);
     });
+  }
+}
+
+function _applyConsultaVnoRows(pfx, data) {
+  const dash = "—";
+  const vno = data && data.ALTIPLANO_VNO != null ? String(data.ALTIPLANO_VNO).trim() : "";
+  const tasa =
+    data && data.ALTIPLANO_TASA_COMPOSITE != null
+      ? String(data.ALTIPLANO_TASA_COMPOSITE).trim()
+      : "";
+  const operador =
+    data && data.OPERADOR != null ? String(data.OPERADOR).trim().toUpperCase() : "";
+  const aid = data && data.AID != null ? String(data.AID).trim() : "";
+  const tasaMultiple = data && data.ALTIPLANO_TASA_COMPOSITE_MULTIPLE === true;
+  const tasaHsi =
+    data && data.ALTIPLANO_TASA_HSI && typeof data.ALTIPLANO_TASA_HSI === "object"
+      ? data.ALTIPLANO_TASA_HSI
+      : null;
+  const vnoRow = document.getElementById(pfx + "altiplano-vno-row");
+  const tasaRow = document.getElementById(pfx + "altiplano-tasa-row");
+  const vnoVal = document.getElementById(pfx + "altiplano-vno-value");
+  const tasaVal = document.getElementById(pfx + "altiplano-tasa-value");
+  const finishCell = (el, text, show) => {
+    if (!el) return;
+    el.classList.remove("consulta-potencia-loading");
+    el.removeAttribute("aria-busy");
+    el.removeAttribute("aria-label");
+    el.textContent = text || dash;
+    const row = el.closest("tr");
+    if (row) row.hidden = !show;
+  };
+  finishCell(vnoVal, vno || dash, Boolean(vno));
+  if (vnoRow && !vno) vnoRow.hidden = true;
+
+  const showTasa = Boolean(vno && tasa);
+  if (tasaRow) tasaRow.hidden = !showTasa;
+  if (tasaVal) {
+    tasaVal.classList.remove("consulta-potencia-loading");
+    tasaVal.removeAttribute("aria-busy");
+    tasaVal.removeAttribute("aria-label");
+    const targetSpan = tasaVal.querySelector(".consulta-tasa-composite-target");
+    const actionsEl = tasaVal.querySelector(".consulta-tasa-composite-actions");
+    if (targetSpan) targetSpan.textContent = tasa || dash;
+    const canAct =
+      showTasa &&
+      operador === "TASA" &&
+      !tasaMultiple &&
+      tasa.indexOf(" · ") < 0 &&
+      window.ConsultaTasaCompositeActions;
+    if (actionsEl) {
+      if (canAct) {
+        actionsEl.hidden = false;
+        window.ConsultaTasaCompositeActions.mount(actionsEl, {
+          target: tasa,
+          accessId: aid,
+          operator: operador,
+          tasaHsi: tasaHsi,
+        });
+      } else {
+        actionsEl.hidden = true;
+        actionsEl.innerHTML = "";
+      }
+    }
   }
 }
 
@@ -1485,6 +1566,12 @@ function cargarPotenciasSeccion(valor, root, scopeEl, opts) {
           Object.prototype.hasOwnProperty.call(data, "ONT_ALTIPLANO")
         ) {
           _applyConsultaOntCompareRows(root, pfx, data);
+        }
+        if (
+          Object.prototype.hasOwnProperty.call(data, "ALTIPLANO_VNO") ||
+          Object.prototype.hasOwnProperty.call(data, "ALTIPLANO_TASA_COMPOSITE")
+        ) {
+          _applyConsultaVnoRows(pfx, data);
         }
         const opEl = document.getElementById(pfx + "operador-value");
         if (opEl && data.OPERADOR) {

@@ -350,13 +350,21 @@ def get_altiplano_token_cache_max_age_seconds() -> int:
     return _int_env_positive_or_zero("ALTIPLANO_TOKEN_CACHE_MAX_AGE_SECONDS", 3300)
 
 
+def get_orquestador_session_ttl_seconds() -> int:
+    """
+    TTL de la sesión Flask del panel Altiplano (``/dashboard/altiplano``).
+    Default 3600 s (1 h); mínimo 60 s.
+    """
+    return _int_env_at_least("ORQUESTADOR_SESSION_TTL_SECONDS", 3600, 60)
+
+
 def get_consulta_altiplano_ui_cache_seconds() -> int:
     """
-    TTL de la sesión Altiplano en el navegador (consulta índice: bajar PON, cambiar SN).
+    TTL de la sesión Altiplano en el navegador (consulta índice: bajar PON, cambiar SN, perfiles HSI).
     Se guarda en ``sessionStorage`` tras validar usuario/contraseña contra el NBI.
-    Default 1800 s (30 min); mínimo 60 s.
+    Default 600 s (10 min); mínimo 60 s.
     """
-    return _int_env_at_least("CONSULTA_ALTIPLANO_UI_CACHE_SECONDS", 1800, 60)
+    return _int_env_at_least("CONSULTA_ALTIPLANO_UI_CACHE_SECONDS", 600, 60)
 
 
 def get_consulta_potencias_parallel_max() -> int:

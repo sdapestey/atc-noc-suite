@@ -9,7 +9,7 @@
 <script defer src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/es.js"></script>
-<script defer src="{{ url_for('static', filename='js/noc-tools.js') }}"></script>
+<script defer src="{{ url_for('static', filename='js/noc-tools.js') }}?v=noc13"></script>
 <script defer src="{{ url_for('static', filename='js/noc-estadisticas-flatpickr.js') }}"></script>
 <script defer src="{{ url_for('static', filename='js/dashboard-estadisticas-shared.js') }}"></script>
 <script defer src="{{ url_for('static', filename='js/dashboard-estadisticas-reglas.js') }}"></script>
@@ -76,6 +76,13 @@
         <span>Cargando clientes ATC…</span>
       </div>
     </div>
+    <details class="calidad-data-sources muted">
+      <summary>Fuentes de datos (referencia)</summary>
+      <ul>
+        <li><code>aux.bajada_inventario</code> — altas por <code>provided_date</code> / <code>reserved_date</code></li>
+        <li><code>aux.bajas_de_inventario</code> / <code>aux.bajas_inventario</code> — bajas por <code>cancellation_date</code> / <code>reserved_date</code></li>
+      </ul>
+    </details>
   </section>
 
   <section id="panel-inventario" class="panel calidad-panel calidad-panel--inventario card suite-index-card" role="tabpanel" aria-labelledby="tab-inventario" hidden>
@@ -98,6 +105,15 @@
         <span>Cargando inventario…</span>
       </div>
     </div>
+    <details class="calidad-data-sources muted">
+      <summary>Fuentes de datos (referencia)</summary>
+      <ul>
+        <li><code>aux.bajada_inventario</code> — activos y reserved en Connect Master</li>
+        <li><code>altiplano.serial</code> — activos Altiplano por VNO</li>
+        <li><code>aux.conciliaciones</code> — histórico de diferencias CM vs Nokia</li>
+        <li><code>aux.bajada_inventario</code> — casos rotos (rack <code>1_1__</code>)</li>
+      </ul>
+    </details>
   </section>
 
   <section id="panel-altiplano" class="panel calidad-panel calidad-panel--altiplano card suite-index-card" role="tabpanel" aria-labelledby="tab-altiplano" hidden>
@@ -117,6 +133,13 @@
         <span>Cargando Altiplano…</span>
       </div>
     </div>
+    <details class="calidad-data-sources muted">
+      <summary>Fuentes de datos (referencia)</summary>
+      <ul>
+        <li>Altiplano INP (NBI) — <code>ibn:search-intents</code> sobre intents <code>ont-connection</code></li>
+        <li>Conteos en vivo por Required Network State y Alignment State (sin réplica Postgres)</li>
+      </ul>
+    </details>
   </section>
 
   <section id="panel-reglas" class="panel calidad-panel card suite-index-card" role="tabpanel" aria-labelledby="tab-reglas" hidden>
@@ -191,18 +214,16 @@
       <span class="calidad-page-info" id="calidad-page-info">—</span>
       <button type="button" class="btn btn-ghost" id="btn-page-next" disabled>Siguiente</button>
     </div>
+    <details class="calidad-data-sources muted">
+      <summary>Fuentes de datos (referencia)</summary>
+      <ul>
+        <li><code>cm.inventory_fat_occupation</code> — status, path ATC, TAG NFC y ubicación</li>
+        <li><code>altiplano.serial</code> — presencia y valor de serial number</li>
+        <li><code>cm.inventory_olt_occupation</code> — match OLT e <code>invocator_system</code></li>
+        <li><code>aux.bajada_inventario</code> — casos rotos (rack <code>1_1__</code>)</li>
+      </ul>
+    </details>
   </section>
-
-  <details class="calidad-data-sources muted">
-    <summary>Fuentes de datos (referencia)</summary>
-    <ul>
-      <li><code>aux.bajada_inventario</code> — activos IN SERVICE en Connect Master</li>
-      <li><code>altiplano.serial</code> — activos Altiplano</li>
-      <li><code>cm.inventory_olt_occupation</code> — ocupación OLT / inconsistencias</li>
-      <li><code>cm.inventory_fat_occupation</code> — FAT y TAG NFC</li>
-      <li><code>aux.conciliaciones</code> — histórico de diferencias entre bases</li>
-    </ul>
-  </details>
 </div>
 {% from 'partials/noc_toast.html' import render as noc_toast %}
 {{ noc_toast('toast') }}

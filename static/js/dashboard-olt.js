@@ -783,6 +783,181 @@ function _getLtMetaFromUid(uid) {
   return { lt, row };
 }
 
+const _OLT_PON_KEY_RE = /^(BA_OLTA_[A-Za-z0-9_]+)-(\d+)-(\d+)$/;
+
+function _parseOltPonKey(pk) {
+  const m = String(pk || "").trim().match(_OLT_PON_KEY_RE);
+  if (!m) return null;
+  const ltName = m[1] + ".LT" + m[2];
+  return {
+    olt: m[1],
+    lt: m[2],
+    pon: m[3],
+    lt_name: ltName,
+    uid: ltName.replace(/\./g, "_"),
+    pon_label: "PON " + m[3],
+  };
+}
+
+function _ltUidFromName(ltName) {
+  return String(ltName || "").trim().replace(/\./g, "_");
+}
+
+function _openLtAncestors(uid) {
+  const row = document.getElementById("lt-row-" + uid);
+  if (!row) return false;
+  const pb = row.closest(".principal-block");
+  if (pb) {
+    const pid = pb.getAttribute("data-pid");
+    if (pid) ensureNodeOpen(pid, false);
+  }
+  const oltSection = row.closest(".olt-section");
+  if (oltSection) {
+    const oid = oltSection.getAttribute("data-node-id");
+    if (oid) ensureNodeOpen(oid, false);
+  }
+  return true;
+}
+
+function _oltUrlDeepLinkParams() {
+  const params = new URLSearchParams(window.location.search);
+  const selectPonRaw = params.get("select_pon") || params.get("pon_keys") || "";
+  const ponKeys = selectPonRaw
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const ltParam = (params.get("lt") || "").trim();
+  const ponParam = (params.get("pon") || "").trim();
+  const qParam = (params.get("q") || "").trim();
+  return { ponKeys, ltParam, ponParam, qParam };
+}
+
+function _oltUrlHasDeepLink() {
+  const { ponKeys, ltParam } = _oltUrlDeepLinkParams();
+  return ponKeys.length > 0 || !!ltParam;
+}
+
+async function _ensureLtInventarioLoaded(uid) {
+  const ltMeta = _getLtMetaFromUid(uid);
+  if (!ltMeta) return null;
+  const { lt, row } = ltMeta;
+  if (!ltInventarioCargado[uid] && !ltCargando[uid]) {
+    ltCargando[uid] = true;
+    try {
+      await cargarInventarioLT(lt, uid, row);
+      ltInventarioCargado[uid] = true;
+    } catch (_err) {
+      return null;
+    } finally {
+      ltCargando[uid] = false;
+      hideLtLoading(uid);
+    }
+  }
+  ensureNodeOpen(uid, false);
+  return document.getElementById("detail-" + uid);
+}
+
+function _selectPonCheckboxesInDetail(detailRow, labels, selectAll) {
+  if (!detailRow) return 0;
+  let n = 0;
+  if (selectAll) {
+    detailRow.querySelectorAll("input.pon-select").forEach((cb) => {
+      cb.checked = true;
+      n += 1;
+    });
+    return n;
+  }
+  const want = labels instanceof Set ? labels : new Set(labels || []);
+  detailRow.querySelectorAll("input.pon-select").forEach((cb) => {
+    const lbl = (cb.getAttribute("data-pon-label") || "").trim();
+    if (want.has(lbl)) {
+      cb.checked = true;
+      n += 1;
+    }
+  });
+  return n;
+}
+
+function _showOltDeepLinkLoading(show) {
+  const el = document.getElementById("olt-deep-link-status");
+  const summary = document.getElementById("pon-selection-summary");
+  const stack = summary?.closest(".olt-selection-summary-stack");
+  if (el) {
+    el.hidden = !show;
+    el.setAttribute("aria-busy", show ? "true" : "false");
+  }
+  if (summary) summary.hidden = !!show;
+  if (stack) stack.classList.toggle("olt-selection-summary-stack--loading", !!show);
+}
+
+async function applyOltUrlDeepLink() {
+  const { ponKeys, ltParam, ponParam, qParam } = _oltUrlDeepLinkParams();
+  if (!ponKeys.length && !ltParam) return false;
+
+  _showOltDeepLinkLoading(true);
+
+  const input = document.getElementById("bus-olt");
+  if (qParam && input) {
+    input.value = qParam;
+  } else if (ponKeys.length === 1) {
+    const parsed = _parseOltPonKey(ponKeys[0]);
+    if (parsed && input && !input.value.trim()) {
+      input.value = parsed.olt;
+    }
+  } else if (ltParam && input && !input.value.trim()) {
+    input.value = ltParam.split(".")[0] || ltParam;
+  }
+  aplicarBusquedaOlt();
+
+  const byLt = new Map();
+  for (const pk of ponKeys) {
+    const parsed = _parseOltPonKey(pk);
+    if (!parsed) continue;
+    if (!byLt.has(parsed.uid)) {
+      byLt.set(parsed.uid, { labels: new Set() });
+    }
+    byLt.get(parsed.uid).labels.add(parsed.pon_label);
+  }
+
+  if (!ponKeys.length && ltParam) {
+    const uid = _ltUidFromName(ltParam);
+    const labels = new Set();
+    if (ponParam) labels.add(/^PON\s/i.test(ponParam) ? ponParam : "PON " + ponParam);
+    byLt.set(uid, { labels, selectAll: !ponParam });
+  }
+
+  if (!byLt.size) {
+    _showOltDeepLinkLoading(false);
+    return false;
+  }
+
+  let selectedCount = 0;
+  _restoringOltState = true;
+  try {
+    document.querySelectorAll("input.pon-select, input.pon-select-all").forEach((cb) => {
+      cb.checked = false;
+    });
+    for (const [uid, spec] of byLt) {
+      _openLtAncestors(uid);
+      const detailRow = await _ensureLtInventarioLoaded(uid);
+      selectedCount += _selectPonCheckboxesInDetail(detailRow, spec.labels, spec.selectAll);
+    }
+    updatePonesSelectionSummary();
+    const firstUid = byLt.keys().next().value;
+    const firstRow = firstUid ? document.getElementById("lt-row-" + firstUid) : null;
+    if (firstRow) {
+      firstRow.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  } finally {
+    _restoringOltState = false;
+    _showOltDeepLinkLoading(false);
+  }
+  if (selectedCount > 0) {
+    toastOlt("Completado", { variant: "success" });
+  }
+  return selectedCount > 0;
+}
+
 async function _openNodeForRestore(nodeId) {
   if (!nodeId || state[nodeId]) return;
 
@@ -1959,6 +2134,12 @@ window.addEventListener("load", () => {
   window.addEventListener("beforeunload", () => persistOltDashboardState());
   window.addEventListener("scroll", _saveOltStateSoon, { passive: true });
 
-  restoreOltDashboardState();
-  updatePonesSelectionSummary();
+  (async function bootOltDashboard() {
+    if (_oltUrlHasDeepLink()) {
+      await applyOltUrlDeepLink();
+    } else {
+      await restoreOltDashboardState();
+    }
+    updatePonesSelectionSummary();
+  })();
 });

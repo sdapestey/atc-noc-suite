@@ -224,8 +224,9 @@ def test_camino_optico_template_cto_loads_map():
     assert "ctoMarkerFocalOpts" in tpl
     assert "focal" in tpl
     assert "wireCaminoCtoMarker" in tpl
-    assert "camino-cto-hover-tip" in tpl
-    assert "bindTooltip" in tpl
+    noc_tools = Path("static/js/noc-tools.js").read_text(encoding="utf-8")
+    assert "camino-cto-hover-tip" in noc_tools
+    assert "wireCtoCircleMarker" in noc_tools
     assert "caminoMapsLinkHtml" in tpl
     assert "caminoFoscPopupHtml" in tpl
     assert "caminoFusionPopupHtml" in tpl
@@ -266,7 +267,7 @@ def test_dashboard_camino_optico_lt_jerarquia_includes_equipo_pasos(monkeypatch)
     out = co.dashboard_camino_optico_lt("BA_OLTA_MR01_01.LT1")
     pasos = (out.get("jerarquia_nav") or {}).get("pasos") or []
     tipos = [p["tipo"] for p in pasos]
-    assert tipos[:4] == ["sitio", "equipo", "equipo", "lt"]
+    assert tipos[:3] == ["sitio", "equipo", "lt"]
     assert pasos[1].get("titulo") == "MR01_01"
     assert pasos[1]["valor"] == "BA_OLTA_MR01_01"
 

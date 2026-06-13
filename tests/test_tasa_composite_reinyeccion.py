@@ -92,7 +92,7 @@ def test_reinyectar_tasa_composite_nbi(monkeypatch):
     monkeypatch.setattr(ap, "borrar_intent_nbi", lambda *_a, **_kw: {"ok": True})
     monkeypatch.setattr(
         "services.tasa_postman_execute.execute_tasa_postman_api",
-        lambda api_id, variables: calls.append((api_id, variables))
+        lambda api_id, variables, **_kw: calls.append((api_id, variables))
         or {"ok": True, "message": "created"},
     )
     monkeypatch.setattr(

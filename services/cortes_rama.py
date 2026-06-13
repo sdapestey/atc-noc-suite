@@ -15,6 +15,7 @@ from queries import QUERIES
 
 from .dashboard_cache import get_cached_historico_potencias
 from .domain import (
+    OPERADORES_CONSULTA_ORDEN,
     canonical_operador_consulta,
     nombre_operador,
     principal_y_sitio_desde_olt,
@@ -205,7 +206,7 @@ def _raised_local_minute_label(iso: str | None) -> str:
     if not dt:
         return ""
     local = dt.astimezone(_TZ_NOC)
-    return local.strftime("%Y-%m-%d %H:%M ART")
+    return local.strftime("%Y-%m-%d %H:%M")
 
 
 def _ventana_corte_simultaneo(
@@ -218,16 +219,18 @@ def _ventana_corte_simultaneo(
     local = dt.astimezone(_TZ_NOC)
     bucket_min = (local.minute // ventana_min) * ventana_min
     inicio = local.replace(minute=bucket_min, second=0, microsecond=0)
-    return inicio.strftime("%Y-%m-%d %H:%M ART")
+    return inicio.strftime("%Y-%m-%d %H:%M")
 
 
 def _cluster_evento_simultaneo_key(item: dict) -> str:
-    olt = str(item.get("olt") or "").strip()
+    """Sitio principal + ventana ART + causa (varias OLT del mismo sitio suman)."""
     ventana = _ventana_corte_simultaneo(item.get("raised"))
     causa = str(item.get("causa") or "OTRO").strip().upper()
-    if not olt or not ventana:
+    sitio = str(item.get("principal") or "").strip()
+    scope = sitio or str(item.get("olt") or "").strip()
+    if not scope or not ventana:
         return ""
-    return f"{olt}|{ventana}|{causa}"
+    return f"{scope}|{ventana}|{causa}"
 
 
 def _tipo_evento_desde_causa(causa: str | None) -> str:
@@ -286,9 +289,9 @@ def _build_clusters_simultaneos(items: list[dict]) -> dict[str, dict]:
             {
                 "cluster_key": key,
                 "ventana": ventana,
-                "olt": str(item.get("olt") or ""),
                 "causa": causa,
                 "principal": "",
+                "olts": set(),
                 "cortes": 0,
                 "clientes": 0,
                 "pons": [],
@@ -299,6 +302,9 @@ def _build_clusters_simultaneos(items: list[dict]) -> dict[str, dict]:
         pk = str(item.get("pon_key") or "")
         if pk:
             bucket["pons"].append(pk)
+        olt = str(item.get("olt") or "").strip()
+        if olt:
+            bucket["olts"].add(olt)
         principal = str(item.get("principal") or "").strip()
         if principal and not bucket["principal"]:
             bucket["principal"] = principal
@@ -310,7 +316,7 @@ def _build_clusters_simultaneos(items: list[dict]) -> dict[str, dict]:
 
 
 def _aplicar_impacto_cortes_simultaneos(items: list[dict]) -> list[dict]:
-    """Suma clientes de cortes en la misma ventana/OLT para nivel de impacto NOC."""
+    """Suma clientes de cortes en la misma ventana/sitio para nivel de impacto NOC."""
     clusters = _build_clusters_simultaneos(items)
     multi = {k: v for k, v in clusters.items() if int(v.get("cortes") or 0) >= 2}
     for item in items:
@@ -369,18 +375,20 @@ def _compute_totales(items: list[dict]) -> dict:
 
 
 def _detect_eventos_masivos(items: list[dict]) -> list[dict]:
-    """Cortes simultáneos: misma OLT en ventana ART de 2 minutos."""
+    """Cortes simultáneos: mismo sitio en ventana ART de 2 minutos."""
     eventos: list[dict] = []
     for bucket in _build_clusters_simultaneos(items).values():
         if int(bucket.get("cortes") or 0) < 2:
             continue
         causa = str(bucket.get("causa") or "OTRO").strip().upper()
         tipo = _tipo_evento_desde_causa(causa)
+        olts = sorted(bucket.get("olts") or [])
         eventos.append(
             {
                 "minute": bucket["ventana"],
                 "ventana": bucket["ventana"],
-                "olt": bucket.get("olt") or "",
+                "olt": olts[0] if len(olts) == 1 else "",
+                "olts": olts,
                 "principal": bucket.get("principal") or "",
                 "causa": causa,
                 "causa_label": _CAUSA_LABELS.get(causa, causa),
@@ -388,6 +396,7 @@ def _detect_eventos_masivos(items: list[dict]) -> list[dict]:
                 "tipo_label": _TIPO_EVENTO_LABELS.get(tipo, "Otro"),
                 "cortes": bucket["cortes"],
                 "clientes": bucket["clientes"],
+                "pon_keys": list(bucket.get("pons") or []),
                 "pons": (bucket.get("pons") or [])[:12],
                 "impacto": bucket["impacto"],
                 "impacto_label": bucket["impacto_label"],
@@ -607,10 +616,10 @@ def _cortes_rama_uncached(
     estado: str = "activas",
 ) -> dict:
     estado_norm = _normalize_corte_pon_estado(estado)
-    alarmas = obtener_alarmas_corte_pon(estado_norm)
+    fecha_d = _parse_fecha_filtro(fecha)
+    alarmas = obtener_alarmas_corte_pon(estado_norm, raised_on=fecha_d)
     pon_keys = [str(a.get("pon_key") or "") for a in alarmas if a.get("pon_key")]
     inv_by_pon = _batch_inventario_por_pon_keys(pon_keys)
-    fecha_d = _parse_fecha_filtro(fecha)
 
     items: list[dict] = []
     principals: set[str] = set()
@@ -693,7 +702,7 @@ def _cortes_rama_uncached(
         "vno_resumen": _totales_vno(filtered),
         "principals": sorted(principals, key=str.lower),
         "vnos": sort_operadores_consulta(vnos_globales),
-        "generated_at": datetime.now(_TZ_NOC).strftime("%Y-%m-%d %H:%M:%S ART"),
+        "generated_at": datetime.now(_TZ_NOC).strftime("%Y-%m-%d %H:%M:%S"),
     }
 
 
@@ -745,7 +754,7 @@ def consultar_cortes_rama(
     )
     return get_cached_historico_potencias(
         get_dashboard_historico_cache_seconds(),
-        f"cortes_rama|v6|{cache_key}",
+        f"cortes_rama|v8|{cache_key}",
         lambda: _cortes_rama_uncached(
             causa=causa,
             principal=principal,
@@ -839,3 +848,139 @@ def export_csv_cortes_rama(
             ]
         )
     return {**payload, "csv": out.getvalue()}
+
+
+def _pon_label_from_key(pon_key: str) -> str:
+    m = _PON_KEY_RE.match(str(pon_key or "").strip())
+    if not m:
+        return str(pon_key or "").strip()
+    return f"PON {m.group(3)}"
+
+
+def _format_pon_export_flat_sparse_csv(rows: list[dict[str, str]]) -> list[list[str]]:
+    """Mismo layout sparse que ``_formatPonExportFlatSparse`` en ``dashboard-olt.js``."""
+    out: list[list[str]] = [["PON", "RAMA", "CTO", "ACCESS ID", "OPERADOR", "ONT"]]
+    prev_pon = prev_rama = prev_cto = None
+    for row in rows:
+        pon = row["pon"]
+        rama = row["rama"]
+        cto = row["cto"]
+        pon_col = pon if pon != prev_pon else ""
+        rama_col = rama if pon != prev_pon or rama != prev_rama else ""
+        cto_col = cto if pon != prev_pon or rama != prev_rama or cto != prev_cto else ""
+        out.append([pon_col, rama_col, cto_col, row["aid"], row["operador"], row["ont"]])
+        prev_pon, prev_rama, prev_cto = pon, rama, cto
+    return out
+
+
+def _pon_export_resumen_csv_rows(
+    pon_count: int,
+    ramas: set[str],
+    ctos: set[tuple[str, str]],
+    ont_count: int,
+    operador_counts: dict[str, int],
+) -> list[list[str]]:
+    """Pie de resumen alineado con ``_ponExportResumenLines`` en ``dashboard-olt.js``."""
+    lines: list[list[str]] = [[], ["RESUMEN:"]]
+    lines.append([f"PON: {pon_count}"])
+    lines.append([f"RAMAS: {len(ramas)}"])
+    lines.append([f"CTO: {len(ctos)}"])
+    lines.append([f"ONT: {ont_count}"])
+    for op in OPERADORES_CONSULTA_ORDEN:
+        n = int(operador_counts.get(op) or 0)
+        if n > 0:
+            lines.append([f"{op}: {n}"])
+    return lines
+
+
+def export_csv_evento_reporte_pon(
+    pon_keys: list[str] | None,
+    *,
+    principal: str | None = None,
+    ventana: str | None = None,
+) -> dict:
+    """
+    Reporte de clientes IN SERVICE por PON (mismo layout que export OLT/LT):
+    columnas sparse PON/RAMA/CTO + resumen PON/RAMAS/CTO/ONT/operadores.
+    """
+    _ = principal, ventana  # reservado para API; el CSV replica solo el export OLT/LT
+    keys = sorted({str(k or "").strip() for k in (pon_keys or []) if str(k or "").strip()})
+    if not keys:
+        return {"ok": False, "message": "Indicá al menos un PON", "status_code": 400}
+
+    obj_patterns, valid_keys = _pon_patterns_for_keys(keys)
+    if not obj_patterns:
+        return {
+            "ok": False,
+            "message": "Ningún PON válido para el reporte",
+            "status_code": 400,
+        }
+
+    rows_data: list[dict[str, str]] = []
+    ramas_set: set[str] = set()
+    ctos_set: set[tuple[str, str]] = set()
+    operador_counts: dict[str, int] = defaultdict(int)
+
+    with db_cursor() as cur:
+        cur.execute(QUERIES["cortes_rama_reporte_inventario_pon"], (obj_patterns,))
+        for obj_norm, rama, cto, access_id, invocator in cur.fetchall():
+            pk = _pon_key_from_object_name(str(obj_norm or ""))
+            if not pk or pk not in valid_keys:
+                continue
+            aid = str(access_id or "").strip()
+            if not aid:
+                continue
+            rama_s = str(rama or "").strip()
+            cto_s = str(cto or "").strip()
+            op_raw = nombre_operador(invocator) or ""
+            op_canon = canonical_operador_consulta(op_raw)
+            if op_canon:
+                operador_counts[op_canon] += 1
+            ramas_set.add(rama_s)
+            ctos_set.add((rama_s, cto_s))
+            rows_data.append(
+                {
+                    "pon": _pon_label_from_key(pk),
+                    "rama": rama_s,
+                    "cto": cto_s,
+                    "aid": aid,
+                    "operador": op_raw,
+                    "ont": str(obj_norm or "").strip() or "—",
+                }
+            )
+
+    if not rows_data:
+        return {
+            "ok": False,
+            "message": "Sin clientes IN SERVICE en inventario para esos PON",
+            "status_code": 404,
+        }
+
+    rows_data.sort(key=lambda r: (r["pon"], r["rama"], r["cto"], r["aid"]))
+
+    csv_rows = _format_pon_export_flat_sparse_csv(rows_data)
+    csv_rows.extend(
+        _pon_export_resumen_csv_rows(
+            len(valid_keys),
+            ramas_set,
+            ctos_set,
+            len(rows_data),
+            operador_counts,
+        )
+    )
+
+    out = StringIO()
+    w = csv.writer(out, lineterminator="\r\n", quoting=csv.QUOTE_ALL)
+    for row in csv_rows:
+        w.writerow(row)
+
+    stamp = datetime.now(_TZ_NOC).strftime("%Y-%m-%d")
+    filename = f"pones_seleccionados_{stamp}.csv"
+
+    return {
+        "ok": True,
+        "csv": out.getvalue(),
+        "filename": filename,
+        "row_count": len(rows_data),
+        "pon_count": len(valid_keys),
+    }

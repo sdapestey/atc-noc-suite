@@ -5,6 +5,7 @@ import logging
 import math
 import re
 from collections import defaultdict
+from typing import Any
 from urllib.parse import quote_plus
 
 from db import db_cursor

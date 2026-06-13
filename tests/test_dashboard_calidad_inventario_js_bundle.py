@@ -42,6 +42,9 @@ def test_dashboard_calidad_js_contains_core_handlers():
     assert "data-granularity=\"day\"" not in html
     assert "estadisticas-fecha" in est_js
     assert "sftp_backup_latest" not in est_js
+    assert html.count("Fuentes de datos (referencia)") == 4
+    assert "ibn:search-intents" in html
+    assert "aux.bajas_de_inventario" in html
 
 
 def test_dashboard_calidad_resumen_js_bundle():

@@ -8,7 +8,6 @@ from services.domain import (
     CALIDAD_OPERATORS,
     all_calidad_operator_member_ids as all_operator_member_ids,
     calidad_operator_member_ids as operator_member_ids,
-    canonical_calidad_operator_id as canonical_operator_id,
 )
 
 from .dashboard_cache import get_cached_calidad_conciliacion, get_cached_calidad_resumen

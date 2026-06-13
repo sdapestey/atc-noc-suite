@@ -11,7 +11,6 @@ from .camino_fusion_export import (
     _owner_etiqueta,
     color_desde_puerto_out,
     destino_cable_reporte,
-    fibra_display,
 )
 
 _OUT_PAD_58 = {5: "GRIS", 6: "BLANCO", 7: "ROJO", 8: "NEGRO"}

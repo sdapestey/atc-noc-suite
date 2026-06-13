@@ -5,8 +5,8 @@
 <title>OLT / LT · ATC NOC Suite</title>
 {% include 'partials/noc_head.html' %}
 
-<script defer src="{{ url_for('static', filename='js/noc-tools.js') }}"></script>
-<script defer src="{{ url_for('static', filename='js/dashboard-olt.js') }}"></script>
+<script defer src="{{ url_for('static', filename='js/noc-tools.js') }}?v=noc13"></script>
+<script defer src="{{ url_for('static', filename='js/dashboard-olt.js') }}?v=oltpon3"></script>
 </head>
 
 <body class="theme-devops page-tree-dashboard page-olt">
@@ -46,8 +46,8 @@
             <option value="">Todos los operadores</option>
           </select>
         </div>
-        <button type="button" class="btn" onclick="copiarPonesSeleccionados()" title="Copiar filas IN SERVICE (TSV): solo Access ID en estado IN SERVICE">Copiar PON seleccionados</button>
-        <button type="button" class="btn" onclick="exportarPonesSeleccionadosCsv()" title="CSV local UTF-8: solo Access ID en estado IN SERVICE">Exportar PON seleccionados CSV</button>
+        <button type="button" class="btn" onclick="copiarPonesSeleccionados()" title="Copiar filas IN SERVICE (TSV): solo Access ID en estado IN SERVICE">Copiar seleccionados</button>
+        <button type="button" class="btn" onclick="exportarPonesSeleccionadosCsv()" title="CSV local UTF-8: solo Access ID en estado IN SERVICE">Exportar seleccionados</button>
         <button type="button" class="btn btn-ghost" onclick="colapsarTodoOlt()" title="Colapsar sitios, limpiar búsqueda, operador y desmarcar PON">Colapsar todo</button>
         </div>
       </div>
@@ -58,7 +58,13 @@
         Marcá PON (o “Seleccionar todos los PON de este LT”) y usá copiar / exportar CSV (solo Access ID <strong>IN SERVICE</strong>; descarga local UTF‑8). Clic en <strong>RAMAs</strong>, <strong>CTO</strong>, <strong>ONT</strong> u operador del resumen para copiar solo esa lista.
       </div>
       <div class="dashboard-tree-metrics">
-        <p class="dashboard-tree-selection" id="pon-selection-summary"><span class="olt-selection-summary-label">Seleccionados:</span> <span class="olt-pon-selected-kicker olt-pon-selected-kicker--empty" title="PON marcados; copiar/exportar incluye solo AID IN SERVICE"><span class="olt-pon-selected-count">0</span> <span class="olt-pon-selected-label">PON</span></span> <span class="olt-summary-sep" aria-hidden="true">·</span> <span class="dashboard-metric-pill olt-metric-pill olt-metric-pill--ramas olt-metric-pill--empty" title="RAMAs únicas con al menos un AID IN SERVICE en la selección"><span class="dashboard-metric-pill__n olt-metric-pill__n">0</span> <span class="dashboard-metric-pill__l olt-metric-pill__l">RAMAs</span></span> <span class="olt-summary-sep" aria-hidden="true">·</span> <span class="dashboard-metric-pill olt-metric-pill olt-metric-pill--cto olt-metric-pill--empty" title="CTO únicas con al menos un AID IN SERVICE en la selección"><span class="dashboard-metric-pill__n olt-metric-pill__n">0</span> <span class="dashboard-metric-pill__l olt-metric-pill__l">CTO</span></span> <span class="olt-summary-sep" aria-hidden="true">·</span> <span class="dashboard-metric-pill olt-metric-pill olt-metric-pill--ont olt-metric-pill--empty" title="Filas de inventario con estado IN SERVICE (copiar / exportar)"><span class="dashboard-metric-pill__n olt-metric-pill__n">0</span> <span class="dashboard-metric-pill__l olt-metric-pill__l">ONT</span></span></p>
+        <div class="olt-selection-summary-stack">
+          <p class="dashboard-tree-selection" id="pon-selection-summary"><span class="olt-selection-summary-label">Seleccionados:</span> <span class="olt-pon-selected-kicker olt-pon-selected-kicker--empty" title="PON marcados; copiar/exportar incluye solo AID IN SERVICE"><span class="olt-pon-selected-count">0</span> <span class="olt-pon-selected-label">PON</span></span> <span class="olt-summary-sep" aria-hidden="true">·</span> <span class="dashboard-metric-pill olt-metric-pill olt-metric-pill--ramas olt-metric-pill--empty" title="RAMAs únicas con al menos un AID IN SERVICE en la selección"><span class="dashboard-metric-pill__n olt-metric-pill__n">0</span> <span class="dashboard-metric-pill__l olt-metric-pill__l">RAMAs</span></span> <span class="olt-summary-sep" aria-hidden="true">·</span> <span class="dashboard-metric-pill olt-metric-pill olt-metric-pill--cto olt-metric-pill--empty" title="CTO únicas con al menos un AID IN SERVICE en la selección"><span class="dashboard-metric-pill__n olt-metric-pill__n">0</span> <span class="dashboard-metric-pill__l olt-metric-pill__l">CTO</span></span> <span class="olt-summary-sep" aria-hidden="true">·</span> <span class="dashboard-metric-pill olt-metric-pill olt-metric-pill--ont olt-metric-pill--empty" title="Filas de inventario con estado IN SERVICE (copiar / exportar)"><span class="dashboard-metric-pill__n olt-metric-pill__n">0</span> <span class="dashboard-metric-pill__l olt-metric-pill__l">ONT</span></span></p>
+          <p id="olt-deep-link-status" class="olt-deep-link-status" hidden role="status" aria-live="polite" aria-busy="false">
+            <span class="lt-detail-spinner" aria-hidden="true"></span>
+            <span>Cargando</span>
+          </p>
+        </div>
       </div>
     </div>
 

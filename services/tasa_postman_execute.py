@@ -90,6 +90,8 @@ def _execute_ont_plus_services(
     variables: dict[str, str],
     *,
     collection_path: Path | None = None,
+    nbi_username: str | None = None,
+    nbi_password: str | None = None,
 ) -> dict[str, Any]:
     """POST Create ONT y luego Create Services con el mismo mapa de variables."""
     steps = (TASA_ONT_API_ID, TASA_SERVICES_API_ID)
@@ -98,7 +100,13 @@ def _execute_ont_plus_services(
     last_url = ""
     last_status: int | None = None
     for i, sid in enumerate(steps, start=1):
-        part = execute_tasa_postman_api(sid, variables, collection_path=collection_path)
+        part = execute_tasa_postman_api(
+            sid,
+            variables,
+            collection_path=collection_path,
+            nbi_username=nbi_username,
+            nbi_password=nbi_password,
+        )
         label = "Create ONT" if sid == TASA_ONT_API_ID else "Create Services"
         block = (
             f"=== Paso {i}: {label} ({sid}) ===\n"
@@ -160,24 +168,38 @@ def execute_tasa_postman_api(
     *,
     collection_path: Path | None = None,
     allow_absent: bool = False,
+    nbi_username: str | None = None,
+    nbi_password: str | None = None,
 ) -> dict[str, Any]:
     """
     Autentica en NBI TASA, sustituye variables de la colección y ejecuta la request.
 
     ``variables`` son las del formulario (nombres con espacios, ej. «Device Name»).
+    Si ``nbi_username`` / ``nbi_password`` vienen informados, autentican en lugar de ``.env``.
     """
     aid = (api_id or "").strip()
     if not aid or not _API_ID_RE.match(aid):
         return {"ok": False, "message": "api_id inválido"}
 
     if aid == TASA_ONT_PLUS_SERVICES_API_ID:
-        return _execute_ont_plus_services(variables, collection_path=collection_path)
+        return _execute_ont_plus_services(
+            variables,
+            collection_path=collection_path,
+            nbi_username=nbi_username,
+            nbi_password=nbi_password,
+        )
 
     spec = get_tasa_postman_api_by_id(aid, collection_path)
     if not spec:
         return {"ok": False, "message": "API no encontrada en la colección TASA"}
 
-    user, pwd = get_altiplano_operator_credentials("TASA")
+    ui_user = (nbi_username or "").strip() if nbi_username else ""
+    ui_pwd = nbi_password if isinstance(nbi_password, str) else (nbi_password or "")
+    ui_pwd = ui_pwd if isinstance(ui_pwd, str) else str(ui_pwd)
+    if ui_user and ui_pwd != "":
+        user, pwd = ui_user, ui_pwd
+    else:
+        user, pwd = get_altiplano_operator_credentials("TASA")
     if not user or not pwd:
         return {"ok": False, "message": "Credenciales Altiplano TASA no configuradas (env / .env)"}
 
@@ -185,7 +207,7 @@ def execute_tasa_postman_api(
     if not host or not port or not base_url:
         return {"ok": False, "message": "Destino NBI TASA no configurado"}
 
-    token = obtener_token_entorno_nbi("TASA", user, pwd)
+    token = obtener_token_entorno_nbi("TASA", user, pwd, force_refresh=bool(ui_user))
     if not token:
         return {"ok": False, "message": "No se pudo obtener token en Altiplano (TASA)"}
 

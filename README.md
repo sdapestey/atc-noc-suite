@@ -61,7 +61,8 @@ Altiplano (solo si usás acciones/potencias relacionadas):
 
 - `ALTIPLANO_USER`, `ALTIPLANO_PASSWORD`
 - credenciales por operador (`ALTIPLANO_TASA_USER`, `ALTIPLANO_TASA_PASSWORD`, etc.)
-- `CONSULTA_ALTIPLANO_UI_CACHE_SECONDS` — cuánto tiempo el navegador recuerda el login Altiplano tras validar en consulta (bajar PON, cambiar SN; default 1800)
+- `ORQUESTADOR_SESSION_TTL_SECONDS` — duración de la sesión del panel Altiplano (`/dashboard/altiplano`; default 3600)
+- `CONSULTA_ALTIPLANO_UI_CACHE_SECONDS` — cuánto tiempo el navegador recuerda el login Altiplano tras validar en consulta (bajar PON, cambiar SN, perfiles HSI; default 600)
 
 ## 3) Correr tests
 

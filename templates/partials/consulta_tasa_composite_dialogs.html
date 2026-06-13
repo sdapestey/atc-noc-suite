@@ -1,0 +1,57 @@
+<dialog
+  id="altiplano-confirm-dialog"
+  class="altiplano-confirm-dialog"
+  aria-labelledby="altiplano-confirm-title"
+>
+  <div class="altiplano-confirm-dialog-inner">
+    <h2 id="altiplano-confirm-title" class="altiplano-confirm-dialog-title"></h2>
+    <p id="altiplano-confirm-message" class="altiplano-confirm-dialog-message"></p>
+    <ul id="altiplano-confirm-list" class="altiplano-confirm-dialog-list" hidden></ul>
+    <p id="altiplano-confirm-detail" class="altiplano-confirm-dialog-detail muted" hidden></p>
+    <div class="altiplano-confirm-dialog-actions">
+      <button type="button" id="altiplano-confirm-cancel" class="btn btn-ghost altiplano-confirm-dialog-btn-cancel">Cancelar</button>
+      <button type="button" id="altiplano-confirm-ok" class="btn btn-primary altiplano-confirm-dialog-btn-ok">Confirmar</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog
+  id="consulta-tasa-hsi-dialog"
+  class="altiplano-rn-dialog altiplano-tasa-hsi-dialog"
+  aria-labelledby="consulta-tasa-hsi-dialog-title"
+  aria-modal="true"
+>
+  <div class="altiplano-rn-dialog-inner altiplano-tasa-hsi-dialog__inner">
+    <header class="altiplano-tasa-hsi-dialog__head">
+      <div class="altiplano-tasa-hsi-dialog__head-text">
+        <p class="altiplano-tasa-hsi-dialog__eyebrow">VNO TASA · Modify Profiles</p>
+        <h2 id="consulta-tasa-hsi-dialog-title" class="altiplano-tasa-hsi-dialog__title">Perfiles HSI</h2>
+      </div>
+      <span class="altiplano-tasa-hsi-dialog__badge">tasa-composite</span>
+    </header>
+    <p id="consulta-tasa-hsi-dialog-target" class="altiplano-tasa-hsi-dialog__target"></p>
+    <div class="altiplano-tasa-hsi-dialog__form">
+      <div class="altiplano-tasa-hsi-field">
+        <label for="consulta-tasa-hsi-upstream" class="altiplano-tasa-hsi-field__label">Traffic Descriptor Profile</label>
+        <p id="consulta-tasa-hsi-upstream-current" class="altiplano-tasa-hsi-field__current">—</p>
+        <div class="altiplano-tasa-hsi-input-wrap">
+          <input type="text" id="consulta-tasa-hsi-upstream" class="altiplano-tasa-hsi-input" autocomplete="off" spellcheck="false" placeholder="Buscar o seleccionar perfil…" aria-autocomplete="list" aria-controls="consulta-tasa-hsi-upstream-suggest" aria-expanded="false">
+          <ul id="consulta-tasa-hsi-upstream-suggest" class="altiplano-tasa-hsi-suggest" role="listbox" hidden></ul>
+        </div>
+      </div>
+      <div class="altiplano-tasa-hsi-field">
+        <label for="consulta-tasa-hsi-downstream" class="altiplano-tasa-hsi-field__label">Shaper Profile</label>
+        <p id="consulta-tasa-hsi-downstream-current" class="altiplano-tasa-hsi-field__current">—</p>
+        <div class="altiplano-tasa-hsi-input-wrap">
+          <input type="text" id="consulta-tasa-hsi-downstream" class="altiplano-tasa-hsi-input" autocomplete="off" spellcheck="false" placeholder="Buscar o seleccionar perfil…" aria-autocomplete="list" aria-controls="consulta-tasa-hsi-downstream-suggest" aria-expanded="false">
+          <ul id="consulta-tasa-hsi-downstream-suggest" class="altiplano-tasa-hsi-suggest" role="listbox" hidden></ul>
+        </div>
+      </div>
+    </div>
+    <p class="altiplano-tasa-hsi-dialog__note">Sugerencias desde el NBI TASA. Al aplicar se sincroniza el intent (PATCH HSI).</p>
+    <div class="altiplano-rn-dialog-actions altiplano-tasa-hsi-dialog__actions">
+      <button type="button" id="consulta-tasa-hsi-dialog-cancel" class="btn btn-ghost altiplano-rn-dialog-btn-cancel">Cancelar</button>
+      <button type="button" id="consulta-tasa-hsi-dialog-apply" class="btn btn-primary altiplano-rn-dialog-btn-apply">Aplicar cambios</button>
+    </div>
+  </div>
+</dialog>

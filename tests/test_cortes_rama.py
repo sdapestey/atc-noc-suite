@@ -108,6 +108,7 @@ def test_clasificar_causa_corte_pon():
 
 def test_build_alarmas_corte_pon_search_query():
     import altiplano
+    from datetime import date
 
     q = altiplano._build_alarmas_corte_pon_search_query(page_from=10, page_size=50)
     assert q["from"] == 10
@@ -115,12 +116,28 @@ def test_build_alarmas_corte_pon_search_query():
     must = q["query"]["bool"]["must"]
     status_should = must[0]["bool"]["should"]
     assert any(s.get("term", {}).get("alarmStatus") == "Active" for s in status_should)
-    type_should = must[1]["bool"]["should"]
-    assert any(
-        s.get("match_phrase", {}).get("alarmType")
-        == altiplano._CORTE_PON_ALARM_TYPE
-        for s in type_should
+    assert must[1] == {
+        "match_phrase": {"alarmType": altiplano._CORTE_PON_ALARM_TYPE}
+    }
+    assert len(must) == 2
+
+    q_day = altiplano._build_alarmas_corte_pon_search_query(
+        estado="cleared", raised_on=date(2026, 6, 5)
     )
+    must_day = q_day["query"]["bool"]["must"]
+    assert len(must_day) == 3
+    rng = must_day[2]["range"]["raisedTime"]
+    assert rng["gte"] == "2026-06-05T03:00:00.000Z"
+    assert rng["lt"] == "2026-06-06T03:00:00.000Z"
+
+
+def test_art_day_raised_time_bounds():
+    import altiplano
+    from datetime import date
+
+    gte, lt = altiplano._art_day_raised_time_bounds(date(2026, 6, 5))
+    assert gte == "2026-06-05T03:00:00.000Z"
+    assert lt == "2026-06-06T03:00:00.000Z"
 
 
 def test_build_alarmas_corte_pon_search_query_todas():
@@ -360,7 +377,7 @@ def test_cortes_rama_uncached_enriquece(monkeypatch):
     monkeypatch.setattr(
         cr,
         "obtener_alarmas_corte_pon",
-        lambda estado="activas": [
+        lambda estado="activas", raised_on=None: [
             {
                 "severity": "major",
                 "status": "Active",
@@ -415,7 +432,7 @@ def test_cortes_rama_no_filtra_por_ultimo_sitio_sin_param(monkeypatch):
     monkeypatch.setattr(
         cr,
         "obtener_alarmas_corte_pon",
-        lambda estado="activas": [
+        lambda estado="activas", raised_on=None: [
             {
                 "severity": "major",
                 "status": "Active",
@@ -542,6 +559,117 @@ def test_detect_eventos_masivos():
     assert eventos[0]["impacto"] == "EMERGENCIA"
     assert eventos[0]["tipo"] == "fibra"
     assert eventos[0]["tipo_label"] == "Corte de fibra"
+    assert eventos[0]["pon_keys"] == ["A", "B"]
+    assert eventos[0]["pons"] == ["A", "B"]
+
+
+def test_export_csv_evento_reporte_pon(monkeypatch):
+    from services import cortes_rama as cr
+
+    class FakeCur:
+        def execute(self, sql, params):
+            self.params = params
+
+        def fetchall(self):
+            return [
+                (
+                    "BA_OLTA_TG02_02-13-3-1",
+                    "TG02-RATC-0-001047",
+                    "CTO-A",
+                    "1051234567",
+                    1001,
+                ),
+                (
+                    "BA_OLTA_TG02_02-13-3-2",
+                    "TG02-RATC-0-001047",
+                    "CTO-A",
+                    "1051234568",
+                    1001,
+                ),
+                (
+                    "BA_OLTA_TG02_02-13-3-3",
+                    "TG02-RATC-0-001047",
+                    "CTO-B",
+                    "1051234569",
+                    3001,
+                ),
+            ]
+
+    class FakeCtx:
+        def __enter__(self):
+            return FakeCur()
+
+        def __exit__(self, *args):
+            return False
+
+    monkeypatch.setattr(cr, "db_cursor", lambda: FakeCtx())
+
+    out = cr.export_csv_evento_reporte_pon(
+        ["BA_OLTA_TG02_02-13-3"],
+        principal="Tigre",
+        ventana="2026-05-26 11:34",
+    )
+    assert out["ok"] is True
+    csv = out["csv"]
+    assert '"PON","RAMA","CTO","ACCESS ID","OPERADOR","ONT"' in csv
+    assert '"PON 3","TG02-RATC-0-001047","CTO-A","1051234567","TASA"' in csv
+    assert '","","","1051234568"' in csv
+    assert '","","CTO-B","1051234569"' in csv
+    assert '"BA_OLTA_TG02_02-13-3",' not in csv.split("RESUMEN:")[0]
+    assert "RESUMEN:" in csv
+    assert "PON: 1" in csv
+    assert "RAMAS: 1" in csv
+    assert "CTO: 2" in csv
+    assert "ONT: 3" in csv
+    assert "TASA: 2" in csv
+    assert "DIRECTV: 1" in csv
+    assert "# resumen" not in csv
+    assert out["row_count"] == 3
+    assert out["filename"].startswith("pones_seleccionados_")
+    assert out["filename"].endswith(".csv")
+
+
+def test_format_pon_export_flat_sparse_csv():
+    from services.cortes_rama import _format_pon_export_flat_sparse_csv
+
+    rows = [
+        {"pon": "PON 3", "rama": "R1", "cto": "C1", "aid": "1", "operador": "TASA", "ont": "O1"},
+        {"pon": "PON 3", "rama": "R1", "cto": "C1", "aid": "2", "operador": "TASA", "ont": "O2"},
+        {"pon": "PON 3", "rama": "R1", "cto": "C2", "aid": "3", "operador": "TASA", "ont": "O3"},
+    ]
+    out = _format_pon_export_flat_sparse_csv(rows)
+    assert out[1] == ["PON 3", "R1", "C1", "1", "TASA", "O1"]
+    assert out[2] == ["", "", "", "2", "TASA", "O2"]
+    assert out[3] == ["", "", "C2", "3", "TASA", "O3"]
+
+
+def test_export_csv_evento_reporte_pon_sin_pon_400():
+    from services.cortes_rama import export_csv_evento_reporte_pon
+
+    out = export_csv_evento_reporte_pon([])
+    assert out["ok"] is False
+    assert out["status_code"] == 400
+
+
+def test_dashboard_alarm_analyzer_evento_reporte_csv(client, monkeypatch):
+    import web.routes as routes
+
+    monkeypatch.setattr(
+        routes,
+        "export_csv_evento_reporte_pon",
+        lambda keys, **kw: {
+            "ok": True,
+            "csv": "\ufeffPON\tRAMA\n",
+            "filename": "reporte_test.csv",
+        },
+    )
+    r = client.post(
+        "/dashboard/alarm-analyzer/evento-reporte.csv",
+        json={"pon_keys": ["BA_OLTA_TG02_02-13-3"], "principal": "Tigre"},
+    )
+    assert r.status_code == 200
+    assert "attachment" in (r.headers.get("Content-Disposition") or "")
+    assert "reporte_test.csv" in (r.headers.get("Content-Disposition") or "")
 
 
 def test_detect_eventos_masivos_separa_fibra_y_luz():
@@ -588,6 +716,30 @@ def test_detect_eventos_masivos_separa_fibra_y_luz():
     luz = next(e for e in eventos if e["tipo"] == "luz")
     assert fibra["cortes"] == 2 and fibra["clientes"] == 18
     assert luz["cortes"] == 2 and luz["clientes"] == 18
+
+
+def test_detect_eventos_masivos_suma_varias_olt_mismo_sitio():
+    """Tigre: varias OLT en la misma ventana → un solo evento con clientes sumados."""
+    from services.cortes_rama import _detect_eventos_masivos
+
+    base = {
+        "raised": "2026-05-26T14:34:00.000Z",
+        "principal": "Tigre",
+        "causa": "LOSI_LOBI",
+    }
+    items = [
+        {**base, "ont_total": 144, "pon_key": "A", "olt": "BA_OLTA_TG01_01"},
+        {**base, "ont_total": 144, "pon_key": "B", "olt": "BA_OLTA_TG01_01"},
+        {**base, "ont_total": 31, "pon_key": "C", "olt": "BA_OLTA_TG02_02"},
+        {**base, "ont_total": 31, "pon_key": "D", "olt": "BA_OLTA_TG02_02"},
+    ]
+    eventos = _detect_eventos_masivos(items)
+    assert len(eventos) == 1
+    assert eventos[0]["principal"] == "Tigre"
+    assert eventos[0]["cortes"] == 4
+    assert eventos[0]["clientes"] == 350
+    assert eventos[0]["impacto"] == "EMERGENCIA"
+    assert len(eventos[0]["olts"]) == 2
 
 
 def test_aplicar_impacto_cortes_simultaneos_suma_clientes():
@@ -654,11 +806,12 @@ def test_filter_items_por_vno():
     assert out[0]["ramas"] == ["A"]
 
 
-def test_dashboard_cortes_rama_get_renders(client):
-    r = client.get("/dashboard/cortes-rama")
+def test_dashboard_alarm_analyzer_get_renders(client):
+    r = client.get("/dashboard/alarm-analyzer")
     assert r.status_code == 200
     html = r.get_data(as_text=True)
-    assert "Cortes de Rama" in html
+    assert "Alarm Analyzer" in html
+    assert "Cortes de Rama" not in html
     assert 'id="cortes-table"' in html
     assert "Clientes afectados" in html
     assert "cortes-vno-resumen" in html
@@ -694,6 +847,15 @@ def test_dashboard_cortes_rama_get_renders(client):
     assert "cortes-estado" in js
     assert "_initCortesFechaPicker" in js
     assert "NocEstadisticasFlatpickr" in js
+    assert "/api/alarm-analyzer" in js
+    assert "cortes-evento-reporte-btn" in js
+    assert "cortes-evento-olt-btn" in js
+    assert "_buildOltUrlFromPonKeys" in js
+    assert "select_pon=" in js
+    assert "cortes-tbody" in js
+    assert "data-pon-key" in js
+    assert "_onCortesReporteButtonClick" in js
+    assert "exportEventoReporte" in js
     assert "_stateStore.load" not in js
     assert "cortes-fecha-preset" not in js
 
@@ -727,11 +889,17 @@ def test_api_cortes_rama_success(client, monkeypatch):
             "vnos": ["TASA"],
         },
     )
-    r = client.get("/api/cortes-rama")
+    r = client.get("/api/alarm-analyzer")
     assert r.status_code == 200
     payload = r.get_json()
     assert payload["ok"] is True
     assert payload["items"][0]["ont_total"] == 5
+
+
+def test_api_alarm_analyzer_legacy_redirect(client):
+    r = client.get("/api/cortes-rama", follow_redirects=False)
+    assert r.status_code == 308
+    assert r.headers["Location"].endswith("/api/alarm-analyzer")
 
 
 def test_export_cortes_rama_csv(client, monkeypatch):
@@ -745,9 +913,11 @@ def test_export_cortes_rama_csv(client, monkeypatch):
             "csv": "CAUSA,OLT\nLOSi,BA_OLTA_X\n",
         },
     )
-    r = client.get("/dashboard/cortes-rama/export.csv")
+    r = client.get("/dashboard/alarm-analyzer/export.csv")
     assert r.status_code == 200
     assert "LOSi" in r.get_data(as_text=True)
+    assert "attachment" in (r.headers.get("Content-Disposition") or "")
+    assert "alarm_analyzer.csv" in (r.headers.get("Content-Disposition") or "")
 
 
 def test_cortes_rama_inventario_query_exists():
@@ -758,7 +928,13 @@ def test_cortes_rama_inventario_query_exists():
     assert "LIKE ANY(%s)" in sql
 
 
-def test_dashboard_entry_redirect_cortes(client):
-    r = client.get("/dashboard?tab=cortes-rama", follow_redirects=False)
+def test_dashboard_entry_redirect_alarm_analyzer(client):
+    r = client.get("/dashboard?tab=alarm-analyzer", follow_redirects=False)
     assert r.status_code == 302
-    assert r.headers["Location"].endswith("/dashboard/cortes-rama")
+    assert r.headers["Location"].endswith("/dashboard/alarm-analyzer")
+
+
+def test_dashboard_cortes_rama_legacy_redirect(client):
+    r = client.get("/dashboard/cortes-rama", follow_redirects=False)
+    assert r.status_code == 308
+    assert r.headers["Location"].endswith("/dashboard/alarm-analyzer")

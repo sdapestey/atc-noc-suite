@@ -6,7 +6,6 @@ from services.camino_fusion_export import (
     color_grupo_buffer,
     consultar_reporte_fusion_export,
     destino_cable_reporte,
-    es_codigo_fusion_planta,
     fusion_codigo_corto,
     grupo_desde_fibra,
 )

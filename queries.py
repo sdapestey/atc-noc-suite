@@ -308,6 +308,22 @@ QUERIES = {
           AND btrim(s.object_name) <> ''
           AND s.object_name LIKE ANY(%s)
     """,
+    "cortes_rama_reporte_inventario_pon": """
+        SELECT
+            regexp_replace(btrim(s.object_name), ':1-1', '-') AS obj_norm,
+            f.path_atc AS rama,
+            f.location_description AS cto,
+            f.access_id,
+            o.invocator_system
+        FROM cm.inventory_fat_occupation f
+        JOIN altiplano.serial s ON s.access_id = f.access_id
+        LEFT JOIN cm.inventory_olt_occupation o ON o.access_id = f.access_id
+        WHERE f.status = 'IN SERVICE'
+          AND s.object_name IS NOT NULL
+          AND btrim(s.object_name) <> ''
+          AND s.object_name LIKE ANY(%s)
+        ORDER BY obj_norm, rama, cto, access_id
+    """,
     "radar_degradacion_inventario": """
         SELECT
             f.path_atc AS rama,

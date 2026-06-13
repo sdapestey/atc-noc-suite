@@ -50,3 +50,7 @@ def test_consulta_index_uses_external_js_bundle():
     assert 'data-consulta-masivo-copy="operador"' in html
     assert "bindMasivoTotalsCopy" in masivo_ui
     assert "window.togglePonAdminDesdeUIBtn = togglePonAdminDesdeUIBtn" in js
+    assert "consulta-tasa-composite-actions.js" in html
+    assert "partials/consulta_tasa_composite_dialogs.html" in html
+    tasa_js = Path("static/js/consulta-tasa-composite-actions.js").read_text(encoding="utf-8")
+    assert "actualizar-tasa-composite-profiles" in tasa_js or "tasa-composite" in tasa_js

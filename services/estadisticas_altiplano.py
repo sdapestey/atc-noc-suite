@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 
 from altiplano import contar_ont_connection_inp_search_intents, obtener_token_entorno_nbi
-from config import get_altiplano_inp_search_http_timeout_s, get_altiplano_operator_credentials
+from config import get_altiplano_credentials, get_altiplano_inp_search_http_timeout_s
 from services.dashboard_cache import get_cached_estadisticas_altiplano
 
 _SECTIONS: tuple[dict, ...] = (
@@ -110,13 +110,11 @@ _SECTIONS: tuple[dict, ...] = (
 )
 
 
-def _inp_bearer_token(sess_token: str | None = None) -> tuple[str | None, str | None]:
-    token = (sess_token or "").strip()
-    if token:
-        return token, None
-    user, pwd = get_altiplano_operator_credentials("INP")
+def _inp_bearer_token() -> tuple[str | None, str | None]:
+    """Token INP para estadísticas: siempre ``ALTIPLANO_USER`` / ``ALTIPLANO_PASSWORD`` del entorno."""
+    user, pwd = get_altiplano_credentials()
     if not user or not pwd:
-        return None, "Credenciales INP no configuradas (ALTIPLANO_INP_USER / ALTIPLANO_PASSWORD)"
+        return None, "Credenciales no configuradas (ALTIPLANO_USER / ALTIPLANO_PASSWORD)"
     token = obtener_token_entorno_nbi("INP", user, pwd)
     if not token:
         return None, "No se pudo autenticar contra Altiplano INP"
@@ -138,8 +136,8 @@ def _count_one(
     )
 
 
-def _compute_estadisticas_altiplano(sess_token: str | None = None) -> dict:
-    token, auth_err = _inp_bearer_token(sess_token)
+def _compute_estadisticas_altiplano() -> dict:
+    token, auth_err = _inp_bearer_token()
     if not token:
         return {
             "ok": False,
@@ -225,15 +223,14 @@ def _compute_estadisticas_altiplano(sess_token: str | None = None) -> dict:
 
 def dashboard_estadisticas_altiplano_inp(
     *,
-    sess_token: str | None = None,
     cache_seconds: int = 300,
     refresh: bool = False,
 ) -> dict:
     """Payload JSON para la pestaña Altiplano en Estadísticas."""
     if refresh or cache_seconds <= 0:
-        return _compute_estadisticas_altiplano(sess_token=sess_token)
+        return _compute_estadisticas_altiplano()
     return get_cached_estadisticas_altiplano(
         cache_seconds,
-        (sess_token or "").strip() or "server",
-        lambda: _compute_estadisticas_altiplano(sess_token=sess_token),
+        "env",
+        lambda: _compute_estadisticas_altiplano(),
     )

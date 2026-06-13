@@ -118,9 +118,9 @@
 {% include 'partials/noc_head.html' %}
 {% set leaflet_rama_map_css = true %}
 {% include 'partials/head_leaflet.html' %}
-<script src="{{ url_for('static', filename='js/noc-tools.js') }}?v=noc12"></script>
+<script src="{{ url_for('static', filename='js/noc-tools.js') }}?v=noc13"></script>
 <script src="{{ url_for('static', filename='js/consulta-index-map.js') }}?v=pon40"></script>
-<script src="{{ url_for('static', filename='js/consulta-altiplano-auth.js') }}?v=pon8"></script>
+<script src="{{ url_for('static', filename='js/consulta-altiplano-auth.js') }}?v=pon9"></script>
 <script>
 window.__CONSULTA_INDEX_CFG__ = {
   clearUrlInd: {{ url_for("index") | tojson }},
@@ -136,7 +136,8 @@ window.__CONSULTA_INDEX_CFG__ = {
 {% if consulta_row_counts %}
 <script defer src="{{ url_for('static', filename='js/consulta-masivo-ui.js') }}?v=7"></script>
 {% endif %}
-<script defer src="{{ url_for('static', filename='js/consulta-index.js') }}?v=pon29"></script>
+<script defer src="{{ url_for('static', filename='js/consulta-tasa-composite-actions.js') }}?v=4"></script>
+<script defer src="{{ url_for('static', filename='js/consulta-index.js') }}?v=pon33"></script>
 </head>
 
 <body class="theme-devops page-consulta-index">
@@ -558,7 +559,7 @@ window.__CONSULTA_INDEX_CFG__ = {
         {% endif %}
         <div class="section-title section-title--detalle">
           <div class="section-title__head">
-            <h2>Detalle{% if c.resultado.get('fuente_detalle') == 'bajada_inventario' %} <span class="muted source-note">(aux.bajada_inventario)</span>{% endif %}</h2>
+            <h2>Detalle</h2>
             <div class="section-title__detalle-meta">
               {% if c.resultado.Status != 'FREE' %}
               <div class="consulta-nv-status" id="{{ sec }}-nv-status" hidden>
@@ -574,8 +575,8 @@ window.__CONSULTA_INDEX_CFG__ = {
               </div>
               {% endif %}
               <span class="pill"><span class="dot good"></span> TX/RX via Altiplano</span>
-              {% if c.resultado.get('fuente_detalle') == 'bajada_inventario' %}
-              <span class="muted muted-caption">(si el AID está en inventario activo)</span>
+              {% if c.resultado.Status == 'Registro aux.bajada_inventario' %}
+              <span class="consulta-detalle-aviso-cm muted-caption">Sin registro en inventario CM activo</span>
               {% endif %}
             </div>
           </div>
@@ -587,9 +588,11 @@ window.__CONSULTA_INDEX_CFG__ = {
           <tr><th>Status</th><td id="{{ sec }}-status-value">{{ c.resultado.Status }}</td></tr>
           <tr><th>CTO</th><td class="mono">{{ c.resultado.CTO }}</td></tr>
           <tr><th>RAMA</th><td class="mono">{{ c.resultado.RAMA or "—" }}</td></tr>
-          <tr id="{{ sec }}-ont-single-row" hidden><th>ONT</th><td id="{{ sec }}-ont-value" class="mono">{{ c.resultado.ONT or "—" }}</td></tr>
-          <tr id="{{ sec }}-ont-postgres-row"><th>ONT Postgres</th><td id="{{ sec }}-ont-postgres-value" class="mono">{{ c.resultado.ONT or "—" }}</td></tr>
-          <tr id="{{ sec }}-ont-altiplano-row"><th>ONT Altiplano</th><td id="{{ sec }}-ont-altiplano-value" class="mono{% if c.resultado.Status != 'FREE' %} consulta-potencia-loading{% endif %}"{% if c.resultado.Status != 'FREE' %} aria-busy="true" aria-label="Cargando"{% endif %}>{% if c.resultado.Status == 'FREE' %}—{% else %}{{ consulta_potencia_spinner }}{% endif %}</td></tr>
+          <tr id="{{ sec }}-ont-single-row" hidden><th>ONT (INP)</th><td id="{{ sec }}-ont-value" class="mono">{{ c.resultado.ONT or "—" }}</td></tr>
+          <tr id="{{ sec }}-ont-postgres-row"><th>ONT (Postgres)</th><td id="{{ sec }}-ont-postgres-value" class="mono">{{ c.resultado.ONT or "—" }}</td></tr>
+          <tr id="{{ sec }}-ont-altiplano-row"><th>ONT (INP)</th><td id="{{ sec }}-ont-altiplano-value" class="mono{% if c.resultado.Status != 'FREE' %} consulta-potencia-loading{% endif %}"{% if c.resultado.Status != 'FREE' %} aria-busy="true" aria-label="Cargando ONT INP"{% endif %}>{% if c.resultado.Status == 'FREE' %}—{% else %}{{ consulta_potencia_spinner }}{% endif %}</td></tr>
+          <tr id="{{ sec }}-altiplano-vno-row"{% if c.resultado.Status == 'FREE' %} hidden{% endif %}><th>VNO</th><td id="{{ sec }}-altiplano-vno-value" class="mono{% if c.resultado.Status != 'FREE' %} consulta-potencia-loading{% endif %}"{% if c.resultado.Status != 'FREE' %} aria-busy="true" aria-label="Cargando VNO"{% endif %}>{% if c.resultado.Status == 'FREE' %}—{% else %}{{ consulta_potencia_spinner }}{% endif %}</td></tr>
+          <tr id="{{ sec }}-altiplano-tasa-row" class="consulta-vno-subrow"{% if c.resultado.Status == 'FREE' %} hidden{% endif %}><th><span class="consulta-vno-subrow-marker" aria-hidden="true">↳</span> tasa-composite</th><td id="{{ sec }}-altiplano-tasa-value" class="mono consulta-vno-subvalue consulta-tasa-composite-cell{% if c.resultado.Status != 'FREE' %} consulta-potencia-loading{% endif %}"{% if c.resultado.Status != 'FREE' %} aria-busy="true" aria-label="Cargando tasa-composite"{% endif %}><span class="consulta-tasa-composite-target">{% if c.resultado.Status == 'FREE' %}—{% else %}{{ consulta_potencia_spinner }}{% endif %}</span><span class="consulta-tasa-composite-actions" hidden></span></td></tr>
           <tr>
             <th>SN</th>
             <td class="mono">
@@ -886,6 +889,8 @@ window.__CONSULTA_INDEX_CFG__ = {
     </div>
   </div>
 </dialog>
+
+{% include 'partials/consulta_tasa_composite_dialogs.html' %}
 
 {% from 'partials/noc_toast.html' import render as noc_toast %}
 {{ noc_toast('toast') }}

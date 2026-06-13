@@ -198,6 +198,11 @@ def test_access_id_potencias_prefiere_device_name_inp_sobre_postgres(monkeypatch
             "target": "BA_OLTA_SM02_05-5-3-12#1001#gpon",
         },
     )
+    monkeypatch.setattr(
+        ap,
+        "buscar_ont_connection_operador_por_target_exact",
+        lambda *_a, **_k: {"ok": True, "matches": []},
+    )
 
     seen = {}
 
@@ -224,7 +229,125 @@ def test_access_id_potencias_prefiere_device_name_inp_sobre_postgres(monkeypatch
     assert out["ONT_ALTIPLANO"] == "BA_OLTA_SM02_05-5-3-12"
     assert out["ONT_MATCH"] is False
     assert out["ONT"] == "BA_OLTA_SM02_05-5-3-12"
+    assert out["ALTIPLANO_VNO"] == "BA_OLTA_SM02_05-5-3-12#1001#gpon"
+    assert out["ALTIPLANO_TASA_COMPOSITE"] is None
     assert out["RX"] == -18.0
+
+
+def test_altiplano_vno_payload_desde_inp_hit():
+    from services.inventory import _altiplano_vno_payload
+
+    out = _altiplano_vno_payload(
+        {
+            "inp_device_name": "BA_OLTA_TG02_03-2-12-9",
+            "target": "BA_OLTA_TG02_03-2-12-9#1001#gpon",
+        },
+        operator="DTV",
+    )
+    assert out["ALTIPLANO_VNO"] == "BA_OLTA_TG02_03-2-12-9#1001#gpon"
+    assert out["ALTIPLANO_TASA_COMPOSITE"] is None
+
+
+def test_altiplano_tasa_composite_desde_operador(monkeypatch):
+    from services.inventory import _fetch_tasa_composite_detail
+
+    import altiplano as ap
+
+    monkeypatch.setattr(
+        ap,
+        "buscar_ont_connection_operador_por_target_exact",
+        lambda op, head, access_id=None: {
+            "ok": True,
+            "matches": [
+                {
+                    "intent_type": "tasa-composite",
+                    "target": "BA_OLTA_TG02_03-2-12-9#HSI-1501",
+                    "intent-specific-data": {
+                        "tasa-composite:hsi": {
+                            "downstream-profile": "TASA_SH300MB_DN",
+                            "upstream-profile": "TASA_BW300MB_UP",
+                        }
+                    },
+                }
+            ],
+        },
+    )
+    monkeypatch.setattr(
+        ap,
+        "_hsi_from_ibn_row",
+        lambda row: {
+            "downstream_profile": "TASA_SH300MB_DN",
+            "upstream_profile": "TASA_BW300MB_UP",
+        },
+    )
+    detail = _fetch_tasa_composite_detail(
+        "TASA",
+        "BA_OLTA_TG02_03-2-12-9",
+        access_id="1059164760",
+    )
+    assert detail["target"] == "BA_OLTA_TG02_03-2-12-9#HSI-1501"
+    assert detail["tasa_hsi"]["downstream_profile"] == "TASA_SH300MB_DN"
+
+
+def test_altiplano_tasa_composite_hsi_desde_tasa_hsi_key(monkeypatch):
+    from services.inventory import _fetch_tasa_composite_detail
+
+    import altiplano as ap
+
+    monkeypatch.setattr(
+        ap,
+        "buscar_ont_connection_operador_por_target_exact",
+        lambda op, head, access_id=None: {
+            "ok": True,
+            "matches": [
+                {
+                    "intent_type": "tasa-composite",
+                    "target": "BA_OLTA_TG02_03-2-12-9#HSI-1501",
+                    "tasa_hsi": {
+                        "downstream_profile": "TASA_SH10MB_DN",
+                        "upstream_profile": "TASA_BW10MB_UP",
+                    },
+                }
+            ],
+        },
+    )
+    detail = _fetch_tasa_composite_detail(
+        "TASA",
+        "BA_OLTA_TG02_03-2-12-9",
+        access_id="1059164760",
+    )
+    assert detail["target"] == "BA_OLTA_TG02_03-2-12-9#HSI-1501"
+    assert detail["tasa_hsi"]["upstream_profile"] == "TASA_BW10MB_UP"
+
+
+def test_altiplano_tasa_composite_hsi_restconf_fallback(monkeypatch):
+    from services.inventory import _fetch_tasa_composite_detail
+
+    import altiplano as ap
+
+    monkeypatch.setattr(
+        ap,
+        "buscar_ont_connection_operador_por_target_exact",
+        lambda op, head, access_id=None: {
+            "ok": True,
+            "matches": [
+                {
+                    "intent_type": "tasa-composite",
+                    "target": "BA_OLTA_TG02_03-2-12-9#HSI-1501",
+                }
+            ],
+        },
+    )
+    monkeypatch.setattr(
+        ap,
+        "fetch_tasa_composite_hsi_nbi",
+        lambda op, tgt: {
+            "downstream_profile": "TASA_SH100MB_DN",
+            "upstream_profile": "TASA_BW100MB_UP",
+        },
+    )
+    detail = _fetch_tasa_composite_detail("TASA", "BA_OLTA_TG02_03-2-12-9")
+    assert detail["tasa_hsi"]["downstream_profile"] == "TASA_SH100MB_DN"
 
 
 def test_ont_compare_payload_match():

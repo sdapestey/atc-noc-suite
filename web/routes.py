@@ -7,26 +7,27 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 import logging
 import re
+import time
 import unicodedata
+from urllib.parse import quote_plus
 from uuid import uuid4
 
 from config import (
     Config,
     get_consulta_potencias_batch_workers,
     get_maintenance_message,
+    get_orquestador_session_ttl_seconds,
     is_maintenance_mode_enabled,
 )
 
 from flask import Response, current_app, g, jsonify, make_response, redirect, render_template, request, session, url_for
-
-logger = logging.getLogger(__name__)
-from urllib.parse import quote_plus
 
 from altiplano import (
     _access_id_match_mode_for_inp_consult,
     actualizar_required_network_state_nbi,
     actualizar_required_network_state_ont_connection_inp,
     actualizar_tasa_composite_profiles_nbi,
+    fetch_tasa_composite_hsi_nbi,
     tasa_composite_profile_suggestions_nbi,
     borrar_intent_nbi,
     reinyectar_tasa_composite_nbi,
@@ -105,6 +106,7 @@ from services import (
     export_csv_radar_degradacion,
     consultar_cortes_rama,
     export_csv_cortes_rama,
+    export_csv_evento_reporte_pon,
     semaforo_historico_por_lts,
     semaforo_historico_por_ramas,
 )
@@ -114,6 +116,8 @@ from services.tasa_postman_execute import execute_tasa_postman_api
 from services.ftth_toolbox import enviar_cto_ftth_toolbox
 from services.camino_gis import consultar_cto_coordenadas_desde_sfat
 from services.inventory import resolver_target_ont_connection_por_access_id, _access_lookup_token_ok
+
+logger = logging.getLogger(__name__)
 
 _ALTIPLANO_INTENT_UUID_RE = re.compile(
     r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
@@ -897,8 +901,8 @@ def register(app):
             return redirect(url_for("dash_potencias_historico"))
         if tab in ("radar", "radar-degradacion", "degradacion"):
             return redirect(url_for("dash_radar_degradacion"))
-        if tab in ("cortes", "cortes-rama", "cortes_rama"):
-            return redirect(url_for("dash_cortes_rama"))
+        if tab in ("cortes", "cortes-rama", "cortes_rama", "alarm-analyzer", "alarm_analyzer"):
+            return redirect(url_for("dash_alarm_analyzer"))
         if tab in ("calidad", "calidad-inventario", "estadisticas"):
             return redirect(url_for("dash_estadisticas"))
         return redirect(url_for("index"))
@@ -1387,10 +1391,23 @@ def register(app):
     def dash_camino_optico():
         return render_template("dashboard_camino_optico.html")
 
+    def _orquestador_clear_session() -> None:
+        for key in (
+            "orquestador_ok",
+            "orquestador_user",
+            "orquestador_inp_token",
+            "orquestador_expires_at",
+        ):
+            session.pop(key, None)
+
     def _orquestador_session_token():
-        if session.get("orquestador_ok") and session.get("orquestador_inp_token"):
-            return session.get("orquestador_inp_token")
-        return None
+        if not session.get("orquestador_ok") or not session.get("orquestador_inp_token"):
+            return None
+        exp = session.get("orquestador_expires_at")
+        if exp is not None and time.time() >= float(exp):
+            _orquestador_clear_session()
+            return None
+        return session.get("orquestador_inp_token")
 
     @app.route("/dashboard/altiplano")
     def dash_altiplano():
@@ -1434,6 +1451,7 @@ def register(app):
         session["orquestador_ok"] = True
         session["orquestador_user"] = user
         session["orquestador_inp_token"] = token
+        session["orquestador_expires_at"] = time.time() + get_orquestador_session_ttl_seconds()
         return jsonify({"ok": True, "message": "Sesión iniciada"})
 
     @app.route("/dashboard/altiplano/vno/tasa/ejecutar", methods=["POST"])
@@ -1495,9 +1513,7 @@ def register(app):
 
     @app.route("/dashboard/altiplano/logout", methods=["POST"])
     def dash_altiplano_logout():
-        session.pop("orquestador_ok", None)
-        session.pop("orquestador_user", None)
-        session.pop("orquestador_inp_token", None)
+        _orquestador_clear_session()
         return jsonify({"ok": True})
 
     @app.route("/dashboard/potencias-historico")
@@ -1555,16 +1571,20 @@ def register(app):
         filename = f"radar_degradacion_{payload.get('days', days)}d.csv"
         return _csv_download_response(payload.get("csv", ""), filename)
 
-    @app.route("/dashboard/cortes-rama")
-    def dash_cortes_rama():
+    @app.route("/dashboard/alarm-analyzer")
+    def dash_alarm_analyzer():
         from datetime import datetime
         from zoneinfo import ZoneInfo
 
         fecha_hoy_art = datetime.now(ZoneInfo("America/Argentina/Buenos_Aires")).date().isoformat()
         return render_template("dashboard_cortes_rama.html", fecha_hoy_art=fecha_hoy_art)
 
-    @app.route("/api/cortes-rama")
-    def api_cortes_rama():
+    @app.route("/dashboard/cortes-rama")
+    def dash_cortes_rama_legacy():
+        return redirect(url_for("dash_alarm_analyzer"), code=308)
+
+    @app.route("/api/alarm-analyzer")
+    def api_alarm_analyzer():
         causa = (request.args.get("causa") or "").strip() or None
         principal = (request.args.get("principal") or "").strip() or None
         vno = (request.args.get("vno") or "").strip() or None
@@ -1596,15 +1616,21 @@ def register(app):
                 fresh=fresh,
             )
         except Exception:
-            return _log_and_internal_error("Error interno consultando cortes de rama")
+            return _log_and_internal_error("Error interno consultando Alarm Analyzer")
         if not payload.get("ok"):
             return jsonify({"error": payload.get("error", "Error de consulta")}), int(
                 payload.get("status_code", 500)
             )
         return jsonify(payload)
 
-    @app.route("/dashboard/cortes-rama/export.csv")
-    def dash_cortes_rama_export_csv():
+    @app.route("/api/cortes-rama")
+    def api_cortes_rama_legacy():
+        qs = request.query_string.decode("utf-8") if request.query_string else ""
+        target = url_for("api_alarm_analyzer") + (f"?{qs}" if qs else "")
+        return redirect(target, code=308)
+
+    @app.route("/dashboard/alarm-analyzer/export.csv")
+    def dash_alarm_analyzer_export_csv():
         causa = (request.args.get("causa") or "").strip() or None
         principal = (request.args.get("principal") or "").strip() or None
         vno = (request.args.get("vno") or "").strip() or None
@@ -1634,12 +1660,45 @@ def register(app):
                 limit=limit,
             )
         except Exception:
-            return _log_and_internal_error("Error interno exportando cortes de rama")
+            return _log_and_internal_error("Error interno exportando Alarm Analyzer")
         if not payload.get("ok"):
             return jsonify({"error": payload.get("error", "Error de exportación")}), int(
                 payload.get("status_code", 500)
             )
-        return _csv_download_response(payload.get("csv", ""), "cortes_rama.csv")
+        return _csv_download_response(payload.get("csv", ""), "alarm_analyzer.csv")
+
+    @app.route("/dashboard/alarm-analyzer/evento-reporte.csv", methods=["POST"])
+    def dash_alarm_analyzer_evento_reporte_csv():
+        """Reporte IN SERVICE por PON (evento masivo EMG/URG), layout OLT/LT."""
+        data = request.get_json(silent=True) or {}
+        raw_keys = data.get("pon_keys") or data.get("pons") or []
+        if isinstance(raw_keys, str):
+            raw_keys = [k.strip() for k in raw_keys.split(",") if k.strip()]
+        pon_keys = [str(k).strip() for k in raw_keys if str(k).strip()]
+        principal = (data.get("principal") or "").strip() or None
+        ventana = (data.get("ventana") or data.get("minute") or "").strip() or None
+        try:
+            payload = export_csv_evento_reporte_pon(
+                pon_keys,
+                principal=principal,
+                ventana=ventana,
+            )
+        except Exception:
+            return _log_and_internal_error("Error interno generando reporte de evento")
+        if not payload.get("ok"):
+            return jsonify({"error": payload.get("message", "Error de exportación")}), int(
+                payload.get("status_code", 502)
+            )
+        return _csv_download_response(
+            payload.get("csv", ""),
+            payload.get("filename") or "reporte_evento.csv",
+        )
+
+    @app.route("/dashboard/cortes-rama/export.csv")
+    def dash_cortes_rama_export_csv_legacy():
+        qs = request.query_string.decode("utf-8") if request.query_string else ""
+        target = url_for("dash_alarm_analyzer_export_csv") + (f"?{qs}" if qs else "")
+        return redirect(target, code=308)
 
     @app.route("/dashboard/estadisticas")
     def dash_estadisticas():
@@ -1695,13 +1754,9 @@ def register(app):
 
     @app.route("/dashboard/estadisticas/altiplano.json")
     def dash_estadisticas_altiplano_json():
-        sess_token = _orquestador_session_token()
         refresh = request.args.get("refresh", default=0, type=int) == 1
         try:
-            payload = dashboard_estadisticas_altiplano_inp(
-                sess_token=sess_token,
-                refresh=refresh,
-            )
+            payload = dashboard_estadisticas_altiplano_inp(refresh=refresh)
         except Exception:
             return _log_and_internal_error(
                 "Error interno consultando estadísticas Altiplano INP"
@@ -2441,6 +2496,39 @@ def register(app):
             code = _http_code_for_borrado_payload(out)
         return jsonify(out), code
 
+    @app.route("/dashboard/altiplano/tasa-composite-hsi", methods=["POST"])
+    def dash_altiplano_tasa_composite_hsi():
+        """Perfiles HSI actuales del intent ``tasa-composite`` (RESTCONF GET)."""
+        data = request.get_json(silent=True) or {}
+        target = (data.get("target") or "").strip()
+        operator = (data.get("operator") or "TASA").strip().upper()
+        if not target:
+            vno = _vno_mutacion_from_request(data)
+            if vno and not vno.get("error") and vno.get("vno"):
+                target = (vno.get("target") or "").strip()
+                operator = (vno.get("operator") or operator).strip().upper()
+        if not target:
+            return (
+                jsonify(
+                    {
+                        "ok": False,
+                        "message": "Indicá target tasa-composite",
+                        "tasa_hsi": None,
+                    }
+                ),
+                400,
+            )
+        hsi = fetch_tasa_composite_hsi_nbi(operator, target)
+        return jsonify(
+            {
+                "ok": bool(hsi),
+                "message": "ok" if hsi else "No se encontraron perfiles HSI",
+                "tasa_hsi": hsi,
+                "operator": operator,
+                "target": target,
+            }
+        )
+
     @app.route("/dashboard/altiplano/tasa-composite-profile-suggestions", methods=["POST"])
     def dash_altiplano_tasa_composite_profile_suggestions():
         """Sugerencias GUI TASA (autocomplete) para perfiles HSI tasa-composite."""
@@ -2519,11 +2607,21 @@ def register(app):
             or hsi.get("upstream_profile")
             or ""
         )
+        alt_user, alt_pwd = _extract_altiplano_ui_credentials(data)
+        operator = (vno.get("operator") or "TASA").strip().upper()
+        if alt_user and alt_pwd is not None and str(alt_pwd) != "":
+            auth_err = _validate_altiplano_ui_credentials(
+                _nbi_entorno_for_operador(operator), alt_user, alt_pwd
+            )
+            if auth_err:
+                return jsonify(auth_err[0]), auth_err[1]
         out = actualizar_tasa_composite_profiles_nbi(
-            vno["operator"],
+            operator,
             vno["target"],
             downstream_profile=str(downstream).strip(),
             upstream_profile=str(upstream).strip(),
+            nbi_username=alt_user or None,
+            nbi_password=alt_pwd,
         )
         code = 200 if out.get("ok") else 502
         return jsonify(out), code
@@ -2559,10 +2657,20 @@ def register(app):
         tasa_hsi = data.get("tasa_hsi")
         if tasa_hsi is not None and not isinstance(tasa_hsi, dict):
             tasa_hsi = None
+        alt_user, alt_pwd = _extract_altiplano_ui_credentials(data)
+        operator = (vno.get("operator") or "TASA").strip().upper()
+        if alt_user and alt_pwd is not None and str(alt_pwd) != "":
+            auth_err = _validate_altiplano_ui_credentials(
+                _nbi_entorno_for_operador(operator), alt_user, alt_pwd
+            )
+            if auth_err:
+                return jsonify(auth_err[0]), auth_err[1]
         out = reinyectar_tasa_composite_nbi(
-            vno["operator"],
+            operator,
             vno["target"],
             tasa_hsi=tasa_hsi,
+            nbi_username=alt_user or None,
+            nbi_password=alt_pwd,
         )
         code = 200 if out.get("ok") else 502
         if not out.get("ok") and out.get("phase") == "delete":

@@ -20,7 +20,7 @@ def test_actualizar_tasa_composite_profiles_nbi(monkeypatch):
 
     monkeypatch.setattr(
         "services.tasa_postman_execute.execute_tasa_postman_api",
-        lambda api_id, variables: calls.append((api_id, variables))
+        lambda api_id, variables, **_kw: calls.append((api_id, variables))
         or {"ok": True, "message": "patched"},
     )
 

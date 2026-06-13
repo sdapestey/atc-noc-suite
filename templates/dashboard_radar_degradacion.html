@@ -172,7 +172,7 @@
 
 {% from 'partials/noc_toast.html' import render as noc_toast %}
 {{ noc_toast('radar-toast') }}
-<script defer src="{{ url_for('static', filename='js/noc-tools.js') }}"></script>
+<script defer src="{{ url_for('static', filename='js/noc-tools.js') }}?v=noc13"></script>
 <script defer src="{{ url_for('static', filename='js/dashboard-radar-degradacion.js') }}?v=radar-trend1"></script>
 </body>
 </html>

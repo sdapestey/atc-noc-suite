@@ -12,7 +12,6 @@ from queries import QUERIES
 
 from altiplano import (
     obtener_alarmas_ont_activas,
-    obtener_potencias_ont,
     obtener_potencias_por_cto,
     obtener_telemetry_ont,
 )
@@ -404,11 +403,152 @@ def _dict_detalle_desde_bajada_inventario_row(row, aid: str) -> dict:
     }
 
 
+def _fetch_inp_hit_por_access_id(aid: str) -> dict | None:
+    """Intent ont-connection en INP para un Access ID (device + target #VNO#gpon)."""
+    aid_s = (aid or "").strip()
+    if not aid_s:
+        return None
+    try:
+        from altiplano import resolver_ont_connection_inp_por_access_id
+
+        return resolver_ont_connection_inp_por_access_id(aid_s)
+    except Exception:
+        logger.exception("_fetch_inp_hit_por_access_id aid=%s", aid_s)
+        return None
+
+
+def _altiplano_vno_target(inp_hit: dict | None) -> str | None:
+    if not inp_hit:
+        return None
+    tgt = (inp_hit.get("target") or inp_hit.get("location_slice_pon") or "").strip()
+    return tgt if tgt and "#" in tgt else None
+
+
+def _hsi_from_tasa_match_row(row: dict) -> dict | None:
+    """HSI desde fila NBI normalizada (``tasa_hsi``) o ``intent-specific-data`` crudo."""
+    if not isinstance(row, dict):
+        return None
+    hsi = row.get("tasa_hsi")
+    if isinstance(hsi, dict) and hsi:
+        return dict(hsi)
+    from altiplano import _hsi_from_ibn_row
+
+    parsed = _hsi_from_ibn_row(row)
+    return parsed or None
+
+
+def _fetch_tasa_composite_detail(
+    operator: str | None,
+    device_prefix: str | None,
+    access_id: str | None = None,
+) -> dict | None:
+    """Target ``tasa-composite`` y perfiles HSI en el NBI TASA."""
+    op = str(operator or "").strip().upper()
+    prefix = str(device_prefix or "").strip()
+    if op != "TASA" or not prefix:
+        return None
+    try:
+        from altiplano import (
+            _target_head,
+            buscar_ont_connection_operador_por_target_exact,
+            fetch_tasa_composite_hsi_nbi,
+        )
+
+        head = _target_head(prefix) or prefix
+        search = buscar_ont_connection_operador_por_target_exact(
+            op,
+            head,
+            access_id=(access_id or "").strip() or None,
+        )
+        if not search.get("ok"):
+            return None
+        hits: list[dict] = []
+        seen: set[str] = set()
+        for row in search.get("matches") or []:
+            if not isinstance(row, dict):
+                continue
+            it = str(row.get("intent_type") or row.get("intent-type") or "").strip().lower()
+            if it != "tasa-composite":
+                continue
+            tgt = (row.get("target") or row.get("location_slice_pon") or "").strip()
+            if not tgt or tgt in seen:
+                continue
+            seen.add(tgt)
+            hsi = _hsi_from_tasa_match_row(row)
+            if not hsi:
+                hsi = fetch_tasa_composite_hsi_nbi(op, tgt)
+            hits.append({"target": tgt, "tasa_hsi": hsi})
+        if not hits:
+            return None
+        if len(hits) == 1:
+            out: dict = {"target": hits[0]["target"]}
+            if hits[0].get("tasa_hsi"):
+                out["tasa_hsi"] = hits[0]["tasa_hsi"]
+            return out
+        return {
+            "target": " · ".join(h["target"] for h in hits),
+            "multiple": True,
+        }
+    except Exception:
+        logger.exception("_fetch_tasa_composite_detail op=%s prefix=%s", op, prefix)
+        return None
+
+
+def _fetch_tasa_composite_target(
+    operator: str | None,
+    device_prefix: str | None,
+    access_id: str | None = None,
+) -> str | None:
+    detail = _fetch_tasa_composite_detail(operator, device_prefix, access_id)
+    return detail.get("target") if detail else None
+
+
+def _operator_label_potencias(
+    op_id: int | str | None, base: dict | None
+) -> str | None:
+    if op_id is not None:
+        label = _operador_desde_operatorid_cell(op_id)
+        if _operador_display_valido(label):
+            return label
+    if base and _operador_display_valido(base.get("OPERADOR")):
+        return str(base.get("OPERADOR") or "").strip()
+    return None
+
+
+def _altiplano_vno_payload(
+    inp_hit: dict | None,
+    *,
+    operator: str | None = None,
+    access_id: str | None = None,
+) -> dict:
+    vno = _altiplano_vno_target(inp_hit)
+    device = ""
+    if inp_hit:
+        device = str(
+            inp_hit.get("inp_device_name")
+            or inp_hit.get("object_name_ui")
+            or inp_hit.get("object_name")
+            or ""
+        ).strip()
+    tasa_detail = _fetch_tasa_composite_detail(operator, device or vno, access_id)
+    tasa = tasa_detail.get("target") if tasa_detail else None
+    out = {
+        "ALTIPLANO_VNO": vno,
+        "ALTIPLANO_TASA_COMPOSITE": tasa,
+    }
+    if tasa_detail and tasa_detail.get("tasa_hsi"):
+        out["ALTIPLANO_TASA_HSI"] = tasa_detail["tasa_hsi"]
+    if tasa_detail and tasa_detail.get("multiple"):
+        out["ALTIPLANO_TASA_COMPOSITE_MULTIPLE"] = True
+    return out
+
+
 def _live_altiplano_device_y_expected_sn(
     aid: str,
     *,
     object_name_pg: str | None = None,
     operator_id_pg: int | None = None,
+    inp_hit: dict | None = None,
 ) -> tuple[str | None, str | None, int | None]:
     """
     Device name (INP ``search-intents``) y Expected Serial en vivo.
@@ -426,7 +566,8 @@ def _live_altiplano_device_y_expected_sn(
             resolver_ont_connection_inp_por_access_id,
         )
 
-        inp_hit = resolver_ont_connection_inp_por_access_id(aid_s)
+        if inp_hit is None:
+            inp_hit = resolver_ont_connection_inp_por_access_id(aid_s)
         op_id = operator_id_pg
         if inp_hit:
             obj = (
@@ -901,7 +1042,6 @@ def cambiar_admin_status_access_id(
         return {"ok": False, "message": "admin_status debe ser LOCKED o UNLOCKED"}
 
     obj = (str(object_name or "").strip() if object_name else "") or None
-    op_id = None
     if not obj:
         base = consultar_access_id_estructura(aid)
         cto = base.get("CTO") if base else None
@@ -910,16 +1050,7 @@ def cambiar_admin_status_access_id(
                 "ok": False,
                 "message": "ONT en estado FREE/RESERVED (sin lock admin en Altiplano)",
             }
-        obj, op_id = _resolver_object_name_operator_potencias(aid, cto)
-    else:
-        base = consultar_access_id_estructura(aid)
-        if base:
-            _, op_id = _resolver_object_name_operator_potencias(aid, base.get("CTO"))
-        else:
-            with db_cursor() as cur:
-                row = _fetch_row_bajada_inventario_detalle(cur, aid)
-            if row:
-                op_id = row[1]
+        obj, _ = _resolver_object_name_operator_potencias(aid, cto)
 
     if not obj:
         return {"ok": False, "message": "No se encontró object_name para el Access ID"}
@@ -1055,16 +1186,13 @@ def consultar_access_id_potencias(access_id):
         status = ""
 
     obj_pg, op_id_pg = _resolver_object_name_operator_potencias(aid_canon, cto)
+    inp_hit = None if status == "FREE" else _fetch_inp_hit_por_access_id(aid_canon)
     obj_live, sn_live, op_id_live = _live_altiplano_device_y_expected_sn(
-        aid_canon, object_name_pg=obj_pg, operator_id_pg=op_id_pg
+        aid_canon,
+        object_name_pg=obj_pg,
+        operator_id_pg=op_id_pg,
+        inp_hit=inp_hit,
     )
-    inp_hit = None
-    if obj_live:
-        inp_hit = {
-            "object_name": obj_live,
-            "object_name_ui": obj_live,
-            "operator_id": op_id_live,
-        }
 
     ont_pg = _ont_postgres_para_compare(aid_canon, cto, base, obj_pg)
     ont_alt = _ont_altiplano_para_compare(inp_hit)
@@ -1072,6 +1200,8 @@ def consultar_access_id_potencias(access_id):
 
     # Puertos FREE no tienen PON en Altiplano → no se consulta ni telemetry ni alarmas.
     # Para RESERVED se permite lectura completa (potencias, SN y alarmas).
+    op_label = _operator_label_potencias(op_id_live or op_id_pg, base)
+
     if status == "FREE":
         return {
             "AID": aid_canon,
@@ -1082,6 +1212,7 @@ def consultar_access_id_potencias(access_id):
             "alarmas_label": None,
             "NV_STATUS": None,
             **ont_fields,
+            **_altiplano_vno_payload(inp_hit, operator=op_label, access_id=aid_canon),
         }
 
     obj = obj_live or obj_pg
@@ -1096,6 +1227,7 @@ def consultar_access_id_potencias(access_id):
             "alarmas_label": None,
             "NV_STATUS": None,
             **ont_fields,
+            **_altiplano_vno_payload(inp_hit, operator=op_label, access_id=aid_canon),
         }
 
     telem = obtener_telemetry_ont(aid_canon, obj, op_id)
@@ -1108,6 +1240,7 @@ def consultar_access_id_potencias(access_id):
         # SN: Expected Serial en vivo; Postgres solo si Altiplano no devuelve lectura.
         "SN": telem.get("sn") or sn_live or base_sn or None,
         **ont_fields,
+        **_altiplano_vno_payload(inp_hit, operator=op_label, access_id=aid_canon),
     }
     from altiplano import filter_alarmas_por_serial_ont
 
@@ -1150,9 +1283,15 @@ def consultar_access_id_potencias(access_id):
         "alarms_active": n_alarms,
     }
     if op_id is not None:
-        op_label = _operador_desde_operatorid_cell(op_id)
-        if _operador_display_valido(op_label):
-            out["OPERADOR"] = op_label
+        op_live = _operador_desde_operatorid_cell(op_id)
+        if _operador_display_valido(op_live):
+            out["OPERADOR"] = op_live
+            if op_live != op_label:
+                out.update(
+                    _altiplano_vno_payload(
+                        inp_hit, operator=op_live, access_id=aid_canon
+                    )
+                )
     return out
 
 

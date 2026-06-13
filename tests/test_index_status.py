@@ -26,7 +26,8 @@ def test_index_access_id_sin_fila_estado_solo_tx_rx(client, monkeypatch):
     assert "<th>RX (dBm)</th><td id=\"s0-rx\"" in html
     assert "<th>Alarmas</th><td id=\"s0-alarmas\"" in html
     assert "estado-id" not in html
-    assert "(aux.bajada_inventario)" in html
+    assert "(aux.bajada_inventario)" not in html
+    assert "Sin registro en inventario CM activo" not in html
 
 
 def test_index_alphanumeric_access_id_resolves(client, monkeypatch):

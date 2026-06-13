@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <title>Altiplano · ATC NOC Suite</title>
 {% include 'partials/noc_head.html' %}
-<script src="{{ url_for('static', filename='js/noc-tools.js') }}"></script>
+<script src="{{ url_for('static', filename='js/noc-tools.js') }}?v=noc13"></script>
 </head>
 <body class="theme-devops page-altiplano">
 <div class="container">
@@ -969,7 +969,6 @@
     var showOpts = {
       variant: opts.variant || "success",
       durationMs: opts.durationMs != null ? Number(opts.durationMs) : 4800,
-      atPointer: false,
     };
     window.NocToast.show("consulta-success-toast", message, showOpts);
   }

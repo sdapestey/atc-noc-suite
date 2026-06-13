@@ -2,11 +2,11 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<title>Cortes de Rama · ATC NOC Suite</title>
+<title>Alarm Analyzer · ATC NOC Suite</title>
 {% include 'partials/noc_head.html' %}
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/estadisticas-flatpickr.css') }}">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard-cortes-rama.css') }}?v=cortes24">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard-cortes-rama.css') }}?v=alarm8">
 </head>
 <body class="theme-devops page-dashboard page-cortes-rama">
 <div class="container">
@@ -17,7 +17,7 @@
         <h1>ATC NOC Suite</h1>
       </div>
       <p class="page-lead page-lead--one-line">
-        <strong>Cortes de Rama</strong> — PON con pérdida masiva (Dying Gasp / LOSi-LOBi) desde Altiplano INP
+        <strong>Alarm Analyzer</strong> — PON con pérdida masiva (Dying Gasp / LOSi-LOBi) desde Altiplano INP
       </p>
     </div>
     <div class="topbar-meta">
@@ -105,7 +105,6 @@
               </select>
             </label>
             <button class="btn btn-primary" type="submit" id="btn-cortes-search">Actualizar</button>
-            <button class="btn btn-ghost" type="button" id="btn-cortes-export" disabled>Exportar CSV</button>
             <button class="btn btn-ghost" type="button" id="btn-cortes-limpiar">Limpiar</button>
           </div>
         </div>
@@ -126,7 +125,7 @@
       <div class="metric-card metric-card--atencion">
         <div class="label">Dying Gasp</div>
         <div class="value" id="kpi-dying">—</div>
-        <div class="hint">energía aguas arriba</div>
+        <div class="hint">corte de luz</div>
       </div>
       <div class="metric-card">
         <div class="label">Clientes afectados</div>
@@ -143,7 +142,7 @@
     <div id="cortes-eventos-banner" class="cortes-eventos-banner" hidden aria-live="polite" aria-label="Eventos masivos detectados">
       <div class="cortes-eventos-banner__head">
         <strong>Eventos masivos</strong>
-        <span class="muted">varios PON en la misma ventana de 2&nbsp;min (ART)</span>
+        <span class="muted">varios PON en la misma ventana de 2&nbsp;min</span>
       </div>
       <div id="cortes-eventos-list" class="cortes-eventos-list"></div>
     </div>
@@ -156,7 +155,7 @@
     <div class="controls-hint cortes-hint suite-note">
       <div class="cortes-hint__text">
         <strong class="hint-kicker">NOC</strong>
-        Impacto (solo eventos masivos): <strong>0–15</strong> moderado · <strong>16–249</strong> urgente · <strong>250+</strong> emergencia — varios PON en la misma ventana de 2&nbsp;min en una OLT suman clientes. Fechas en ART.
+        Impacto (solo eventos masivos): <strong>0–15</strong> moderado · <strong>16–249</strong> urgente · <strong>250+</strong> emergencia — varios PON en la misma ventana de 2&nbsp;min en el mismo sitio suman clientes.
         <button type="button" class="btn btn-ghost btn-sm" id="btn-cortes-marcar-vistos">Marcar todos como vistos</button>
         <span id="kpi-sin-inv" class="cortes-sin-inv muted" hidden></span>
       </div>
@@ -244,8 +243,8 @@
 {{ noc_toast('cortes-toast') }}
 <script defer src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/es.js"></script>
-<script defer src="{{ url_for('static', filename='js/noc-tools.js') }}"></script>
+<script defer src="{{ url_for('static', filename='js/noc-tools.js') }}?v=noc13"></script>
 <script defer src="{{ url_for('static', filename='js/noc-estadisticas-flatpickr.js') }}"></script>
-<script defer src="{{ url_for('static', filename='js/dashboard-cortes-rama.js') }}?v=cortes24"></script>
+<script defer src="{{ url_for('static', filename='js/dashboard-cortes-rama.js') }}?v=alarm8"></script>
 </body>
 </html>

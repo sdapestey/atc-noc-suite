@@ -4,9 +4,11 @@ import json
 import os
 import re
 import time
+from datetime import date, datetime, time as dt_time, timedelta, timezone
 from functools import lru_cache
 import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from zoneinfo import ZoneInfo
 
 import requests
 import urllib3
@@ -3881,6 +3883,27 @@ def _nbi_bearer_token_for_entorno(entorno_nbi: str) -> tuple[str | None, str | N
     return token, None
 
 
+def _nbi_token_for_operator(
+    operator: str,
+    *,
+    nbi_username: str | None = None,
+    nbi_password: str | None = None,
+) -> tuple[str | None, str | None]:
+    """Token NBI del operador: credenciales UI si vienen; si no, variables de entorno."""
+    op = (operator or "").strip().upper()
+    if not op:
+        return None, "Operador no indicado"
+    ui_user = (nbi_username or "").strip() if nbi_username else ""
+    ui_pwd = nbi_password if isinstance(nbi_password, str) else (nbi_password or "")
+    ui_pwd = ui_pwd if isinstance(ui_pwd, str) else str(ui_pwd)
+    if ui_user and ui_pwd != "":
+        token = obtener_token_entorno_nbi(op, ui_user, ui_pwd, force_refresh=True)
+        if not token:
+            return None, f"Credenciales Altiplano ({op}) rechazadas."
+        return token, None
+    return _nbi_bearer_token_for_entorno(op)
+
+
 def _inp_synchronize_intent_via_netconf_execute(
     host: str,
     port: str,
@@ -4739,6 +4762,8 @@ def borrar_intent_nbi(
     *,
     target: str,
     intent_type: str,
+    nbi_username: str | None = None,
+    nbi_password: str | None = None,
 ) -> dict:
     """Elimina un intent en el NBI del operador (sin cascada INP)."""
     op = (entorno_nbi or "").strip().upper()
@@ -4751,7 +4776,11 @@ def borrar_intent_nbi(
             "target": full_target or None,
             "operator": op,
         }
-    token, err = _nbi_bearer_token_for_entorno(op)
+    token, err = _nbi_token_for_operator(
+        op,
+        nbi_username=nbi_username,
+        nbi_password=nbi_password,
+    )
     if err:
         return {"ok": False, "message": err, "target": full_target, "operator": op}
     host, port, base_url = get_altiplano_nbi_target(op)
@@ -5001,6 +5030,58 @@ def _profile_names_from_tasa_suggest_response(data: object) -> list[str]:
     return sorted(set(out), key=str.lower)
 
 
+def fetch_tasa_composite_hsi_nbi(operator: str, target: str) -> dict | None:
+    """Perfiles HSI actuales vía GET RESTCONF del intent ``tasa-composite``."""
+    op = (operator or "TASA").strip().upper()
+    tgt = (target or "").strip()
+    if not tgt:
+        return None
+    token, err = _nbi_bearer_token_for_entorno(op)
+    if err:
+        return None
+    host, port, base_url = get_altiplano_nbi_target(op)
+    if not host or not port or not base_url:
+        return None
+    base_rest = f"https://{host}:{port}/{base_url}/rest/restconf/data"
+    rel = _rel_path_intent_instance(tgt, "tasa-composite")
+    url = f"{base_rest}/{rel}"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/yang-data+json, application/json;q=0.9, */*;q=0.5",
+    }
+    try:
+        res = requests.get(url, headers=headers, verify=False, timeout=45)
+    except requests.RequestException:
+        return None
+    if res.status_code != 200:
+        return None
+    data = _json_loads_altiplano_http_response(res)
+    if not isinstance(data, dict):
+        return None
+    unwrapped = _unwrap_restconf_data_layer(data)
+    candidates: list[dict] = []
+    for root in (data, unwrapped):
+        if not isinstance(root, dict):
+            continue
+        for key in ("ibn:intent", "intent"):
+            inner = root.get(key)
+            if isinstance(inner, dict):
+                candidates.append(inner)
+            elif isinstance(inner, list):
+                candidates.extend(x for x in inner if isinstance(x, dict))
+        if isinstance(root.get("intent-specific-data"), dict):
+            candidates.append(root)
+    for entry in candidates:
+        hsi = _hsi_from_ibn_row(entry)
+        if hsi:
+            return hsi
+    if isinstance(unwrapped, dict):
+        hsi = _hsi_from_ibn_row(unwrapped)
+        if hsi:
+            return hsi
+    return None
+
+
 def tasa_composite_profile_suggestions_nbi(
     operator: str,
     target: str,
@@ -5103,6 +5184,8 @@ def actualizar_tasa_composite_profiles_nbi(
     *,
     downstream_profile: str,
     upstream_profile: str,
+    nbi_username: str | None = None,
+    nbi_password: str | None = None,
 ) -> dict:
     """
     PATCH perfiles HSI de ``tasa-composite`` (GUI: Shaper + Traffic Descriptor).
@@ -5129,7 +5212,12 @@ def actualizar_tasa_composite_profiles_nbi(
             "target": tgt or None,
             "operator": op,
         }
-    patch_out = execute_tasa_postman_api(TASA_MODIFY_PROFILES_API_ID, vars_map)
+    patch_out = execute_tasa_postman_api(
+        TASA_MODIFY_PROFILES_API_ID,
+        vars_map,
+        nbi_username=nbi_username,
+        nbi_password=nbi_password,
+    )
     if patch_out.get("ok"):
         return {
             "ok": True,
@@ -5161,6 +5249,8 @@ def reinyectar_tasa_composite_nbi(
     *,
     tasa_hsi: dict | None = None,
     verify_timeout_s: float = 90.0,
+    nbi_username: str | None = None,
+    nbi_password: str | None = None,
 ) -> dict:
     """
     Reinyección ``tasa-composite``: borra el intent en TASA y lo vuelve a crear (Create Services).
@@ -5186,7 +5276,13 @@ def reinyectar_tasa_composite_nbi(
             "operator": op,
         }
 
-    del_out = borrar_intent_nbi(op, target=tgt, intent_type="tasa-composite")
+    del_out = borrar_intent_nbi(
+        op,
+        target=tgt,
+        intent_type="tasa-composite",
+        nbi_username=nbi_username,
+        nbi_password=nbi_password,
+    )
     if not del_out.get("ok"):
         return {
             **del_out,
@@ -5195,7 +5291,12 @@ def reinyectar_tasa_composite_nbi(
             "intent_type": "tasa-composite",
         }
 
-    create_out = execute_tasa_postman_api(TASA_SERVICES_API_ID, vars_map)
+    create_out = execute_tasa_postman_api(
+        TASA_SERVICES_API_ID,
+        vars_map,
+        nbi_username=nbi_username,
+        nbi_password=nbi_password,
+    )
     if not create_out.get("ok"):
         return {
             "ok": False,
@@ -6867,7 +6968,6 @@ def _alarm_resource_raw_paths(ne: str, object_name_raw: str) -> list[str]:
         f"/anv:device-manager/anv-device-holders:device={ne_val}/"
         "device-specific-data"
     )
-    onu_key = normalizar_object_name(str(object_name_raw or "").strip())
     paths: list[str] = []
     for gpon in gpon_list:
         paths.extend(
@@ -7084,40 +7184,44 @@ _INTERFACE_LT_PON_RE = re.compile(
 )
 
 
+def _art_day_raised_time_bounds(fecha: date) -> tuple[str, str]:
+    """Límites UTC (ISO Z) de un día ART para filtrar ``raisedTime`` en ES."""
+    tz = ZoneInfo("America/Argentina/Buenos_Aires")
+    start = datetime.combine(fecha, dt_time.min, tzinfo=tz)
+    end = start + timedelta(days=1)
+
+    def _fmt(dt: datetime) -> str:
+        return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
+    return _fmt(start), _fmt(end)
+
+
 def _build_alarmas_corte_pon_search_query(
     *,
     page_from: int = 0,
     page_size: int = _CORTE_PON_PAGE_SIZE,
     estado: str = "activas",
+    raised_on: date | None = None,
 ) -> dict:
     """Consulta ES de alarmas CT loss-of-signal (Alarm Analyzer / HAR INP)."""
     status_should = _build_alarm_status_should(estado)
+    must: list[dict] = [
+        {
+            "bool": {
+                "should": status_should,
+                "minimum_should_match": 1,
+            }
+        },
+        {"match_phrase": {"alarmType": _CORTE_PON_ALARM_TYPE}},
+    ]
+    if raised_on is not None:
+        gte, lt = _art_day_raised_time_bounds(raised_on)
+        must.append({"range": {"raisedTime": {"gte": gte, "lt": lt}}})
     return {
         "size": max(1, min(int(page_size), _CORTE_PON_PAGE_SIZE)),
         "from": max(0, int(page_from)),
         "sort": [{"raisedTime": {"order": "desc"}}],
-        "query": {
-            "bool": {
-                "must": [
-                    {
-                        "bool": {
-                            "should": status_should,
-                            "minimum_should_match": 1,
-                        }
-                    },
-                    {
-                        "bool": {
-                            "should": [
-                                {"match_phrase": {"alarmType": _CORTE_PON_ALARM_TYPE}},
-                                {"wildcard": {"alarmType": f"*{_CORTE_PON_ALARM_TYPE}*"}},
-                                {"match": {"alarmType": _CORTE_PON_ALARM_TYPE}},
-                            ],
-                            "minimum_should_match": 1,
-                        }
-                    },
-                ]
-            }
-        },
+        "query": {"bool": {"must": must}},
     }
 
 
@@ -7221,12 +7325,15 @@ def _alarm_search_hits_page(body: object) -> list[dict]:
     return items if isinstance(items, list) else []
 
 
-def obtener_alarmas_corte_pon(estado: str = "activas") -> list[dict]:
+def obtener_alarmas_corte_pon(
+    estado: str = "activas", *, raised_on: date | None = None
+) -> list[dict]:
     """
     Alarmas de corte masivo en PON (todos los ONUs) vía AC INP.
 
     ``estado``: ``activas`` (índice ``alarms-active``), ``cleared`` o ``todas``
     (sin índice, como Alarm Analyzer HAR INP).
+    ``raised_on``: filtra por día ART de ``raisedTime`` en la consulta ES.
     """
     estado_norm = _normalize_corte_pon_estado(estado)
     ctx = _inp_alarm_search_url(estado=estado_norm)
@@ -7243,7 +7350,7 @@ def obtener_alarmas_corte_pon(estado: str = "activas") -> list[dict]:
     page_from = 0
     while page_from < _CORTE_PON_MAX_ALARMS:
         query = _build_alarmas_corte_pon_search_query(
-            page_from=page_from, estado=estado_norm
+            page_from=page_from, estado=estado_norm, raised_on=raised_on
         )
         body = _http_post_altiplano_json(
             search_url,

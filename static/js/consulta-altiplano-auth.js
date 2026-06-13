@@ -5,7 +5,7 @@
   "use strict";
 
   var CACHE_KEY = "atc_noc_consulta_altiplano_auth";
-  var DEFAULT_CACHE_TTL_MS = 30 * 60 * 1000;
+  var DEFAULT_CACHE_TTL_MS = 10 * 60 * 1000;
 
   function cacheTtlMs() {
     var cfg = window.__CONSULTA_INDEX_CFG__ || {};

@@ -64,8 +64,8 @@ def create_app() -> Flask:
             tab = "historico"
         elif p.startswith("/dashboard/radar-degradacion"):
             tab = "radar"
-        elif p.startswith("/dashboard/cortes-rama"):
-            tab = "cortes"
+        elif p.startswith("/dashboard/alarm-analyzer") or p.startswith("/dashboard/cortes-rama"):
+            tab = "alarm_analyzer"
         elif p.startswith("/dashboard/estadisticas") or p.startswith("/dashboard/calidad-inventario"):
             tab = "estadisticas"
         else:
@@ -77,7 +77,7 @@ def create_app() -> Flask:
             "camino": "Camino Optico",
             "historico": "Historico Potencias",
             "radar": "Radar Degradacion",
-            "cortes": "Cortes de Rama",
+            "alarm_analyzer": "Alarm Analyzer",
             "estadisticas": "Estadisticas",
             "altiplano": "Altiplano",
         }
@@ -85,7 +85,7 @@ def create_app() -> Flask:
             "index": "consulta",
             "historico": "monitoreo",
             "radar": "monitoreo",
-            "cortes": "monitoreo",
+            "alarm_analyzer": "monitoreo",
             "rama": "inventario",
             "olt": "inventario",
             "camino": "inventario",

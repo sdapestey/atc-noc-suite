@@ -65,3 +65,11 @@ def test_dashboard_olt_js_contains_core_handlers():
     assert "olt-lt-row--semaforo-historico" in js
     assert "_restorePeorSiPendiente" in js
     assert 'peCell.textContent.trim() === "…"' in js
+    assert "function applyOltUrlDeepLink(" in js
+    assert "select_pon" in js
+    assert "_parseOltPonKey" in js
+    assert "_showOltDeepLinkLoading" in js
+    assert "Completado" in js
+    tpl = Path("templates/dashboard_olt.html").read_text(encoding="utf-8")
+    assert "olt-deep-link-status" in tpl
+    assert "lt-detail-spinner" in tpl

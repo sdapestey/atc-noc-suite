@@ -109,8 +109,6 @@ def test_cambiar_sn_endpoint_validates_sn(client):
 
 
 def test_consulta_altiplano_validate_ok(client, monkeypatch):
-    import web.routes as routes
-
     _mock_altiplano_login_ok(monkeypatch)
     r = client.post(
         "/consulta/altiplano/validate",

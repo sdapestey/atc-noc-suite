@@ -1,4 +1,4 @@
-/* Calendario Flatpickr compartido — Estadísticas / Cortes de Rama */
+/* Calendario Flatpickr compartido — Estadísticas / Alarm Analyzer */
 (function (global) {
   function fpMonthNames(fp) {
     const loc = fp.l10n || (flatpickr.l10ns && flatpickr.l10ns.es) || {};

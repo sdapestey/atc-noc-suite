@@ -157,6 +157,11 @@ def test_consultar_access_id_detalle_operatorid_cero_usa_serial_e_invocator(monk
     )
     monkeypatch.setattr(inv, "db_cursor", _fake_db_cursor_bajada_detalle(bajada_row=row))
     monkeypatch.setattr(inv, "consultar_access_id_estructura", lambda _aid: None)
+    monkeypatch.setattr(
+        inv,
+        "_live_altiplano_device_y_expected_sn",
+        lambda *_a, **_kw: (None, None, None),
+    )
     out = inv.consultar_access_id_detalle_desde_bajada_inventario("1058143440")
     assert out is not None
     assert out["OPERADOR"] == "TASA"
@@ -357,7 +362,8 @@ def test_index_post_aid_detalle_desde_bajada(client, monkeypatch):
     r = client.post("/", data={"value": "1058516041"})
     assert r.status_code == 200
     html = r.get_data(as_text=True)
-    assert "(aux.bajada_inventario)" in html
+    assert "(aux.bajada_inventario)" not in html
+    assert "Sin registro en inventario CM activo" not in html
     assert "<th>AID</th>" in html
     assert "1058516041" in html
     assert "Access ID dado de baja" not in html
@@ -519,6 +525,7 @@ def test_index_post_aid_bajada_muestra_tabla_aunque_haya_baja_aux(client, monkey
     assert "Access ID dado de baja" not in html
     assert "<th>AID</th>" in html
     assert "999001" in html
+    assert "Sin registro en inventario CM activo" in html
 
 
 def test_index_post_alias_srvc_loc_ok(client, monkeypatch):

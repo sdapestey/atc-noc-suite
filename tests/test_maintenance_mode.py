@@ -5,6 +5,7 @@ def test_maintenance_mode_disabled_by_default(client):
 
 def test_maintenance_mode_blocks_html_pages(client, monkeypatch):
     monkeypatch.setenv("MAINTENANCE_MODE", "1")
+    monkeypatch.setenv("MAINTENANCE_MESSAGE", "En mantenimiento")
     r = client.get("/")
     assert r.status_code == 503
     assert b"En mantenimiento" in r.data
@@ -29,6 +30,7 @@ def test_maintenance_mode_allows_health_and_static(client, monkeypatch):
 
 def test_maintenance_mode_blocks_api_json(client, monkeypatch):
     monkeypatch.setenv("MAINTENANCE_MODE", "1")
+    monkeypatch.setenv("MAINTENANCE_MESSAGE", "En mantenimiento")
     r = client.get("/api/potencias-historico", headers={"Accept": "application/json"})
     assert r.status_code == 503
     data = r.get_json()

@@ -137,7 +137,7 @@
     if (!el) return false;
     opts = opts || {};
     resetToastAnchor(el);
-    if (opts.atPointer === false) return false;
+    if (opts.atPointer !== true) return false;
     const p =
       _lastPointer && Date.now() - _lastPointer.t <= TOAST_POINTER_MAX_MS ? _lastPointer : null;
     if (!p) return false;

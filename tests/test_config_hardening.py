@@ -30,3 +30,17 @@ def test_get_altiplano_inp_wide_search_http_timeout_s_default_and_floor(monkeypa
     monkeypatch.setenv("ALTIPLANO_INP_WIDE_SEARCH_HTTP_TIMEOUT_S", "10")
     assert config_module.get_altiplano_inp_wide_search_http_timeout_s() == 75
 
+
+def test_get_orquestador_session_ttl_seconds_default_and_floor(monkeypatch):
+    monkeypatch.delenv("ORQUESTADOR_SESSION_TTL_SECONDS", raising=False)
+    assert config_module.get_orquestador_session_ttl_seconds() == 3600
+    monkeypatch.setenv("ORQUESTADOR_SESSION_TTL_SECONDS", "30")
+    assert config_module.get_orquestador_session_ttl_seconds() == 60
+
+
+def test_get_consulta_altiplano_ui_cache_seconds_default_and_floor(monkeypatch):
+    monkeypatch.delenv("CONSULTA_ALTIPLANO_UI_CACHE_SECONDS", raising=False)
+    assert config_module.get_consulta_altiplano_ui_cache_seconds() == 600
+    monkeypatch.setenv("CONSULTA_ALTIPLANO_UI_CACHE_SECONDS", "30")
+    assert config_module.get_consulta_altiplano_ui_cache_seconds() == 60
+

@@ -3,7 +3,7 @@ def test_dashboard_altiplano_get_login_page_sin_sesion(client):
     assert r.status_code == 200
     html = r.get_data(as_text=True)
     assert 'id="orquestador-login-form"' in html
-    assert "Acceso Orquestador" in html
+    assert "Acceso Altiplano" in html
     assert "orquestador-login-card" in html
     assert "orquestador-login-input" in html
     assert 'id="login_username"' in html
@@ -146,6 +146,8 @@ def test_dashboard_altiplano_get_panel_cuando_hay_sesion(client):
 
 
 def test_dashboard_altiplano_login_ok(client, monkeypatch):
+    import time
+
     import web.routes as routes
 
     monkeypatch.setattr(routes, "obtener_token_entorno_nbi", lambda *_a, **_k: "fresh-token")
@@ -162,6 +164,27 @@ def test_dashboard_altiplano_login_ok(client, monkeypatch):
         assert sess.get("orquestador_ok") is True
         assert sess.get("orquestador_user") == "u_inp"
         assert sess.get("orquestador_inp_token") == "fresh-token"
+        assert float(sess.get("orquestador_expires_at") or 0) > time.time()
+
+
+def test_dashboard_altiplano_sesion_caducada_muestra_login(client):
+    import time
+
+    with client.session_transaction() as sess:
+        sess["orquestador_ok"] = True
+        sess["orquestador_user"] = "u_inp"
+        sess["orquestador_inp_token"] = "expired-token"
+        sess["orquestador_expires_at"] = time.time() - 60
+
+    r = client.get("/dashboard/altiplano")
+    html = r.get_data(as_text=True)
+    assert r.status_code == 200
+    assert 'id="orquestador-login-form"' in html
+    assert "expired-token" not in html
+
+    with client.session_transaction() as sess:
+        assert "orquestador_ok" not in sess
+        assert "orquestador_inp_token" not in sess
 
 
 def test_dashboard_altiplano_login_fallo_altiplano(client, monkeypatch):
@@ -1184,6 +1207,42 @@ def test_dashboard_altiplano_actualizar_tasa_profiles_ok(client, monkeypatch):
     )
     assert r.status_code == 200
     assert r.get_json()["ok"] is True
+
+
+def test_dashboard_altiplano_actualizar_tasa_profiles_con_credenciales_ui(
+    client, monkeypatch
+):
+    import web.routes as routes
+
+    captured = {}
+
+    def fake_update(*_a, **kw):
+        captured.update(kw)
+        return {"ok": True, "message": "Perfiles actualizados"}
+
+    monkeypatch.setattr(routes, "actualizar_tasa_composite_profiles_nbi", fake_update)
+    monkeypatch.setattr(
+        routes,
+        "obtener_token_entorno_nbi",
+        lambda *_a, **_k: "tok-ui",
+    )
+
+    r = client.post(
+        "/dashboard/altiplano/actualizar-tasa-composite-profiles",
+        json={
+            "scope": "vno",
+            "operator": "TASA",
+            "target": "BA_OLTA_SF01_01-2-1-9#HSI-1501",
+            "intent_type": "tasa-composite",
+            "downstream_profile": "TASA_SH100MB_DN",
+            "upstream_profile": "TASA_BW100MB_UP",
+            "altiplano_user": "noc_user",
+            "altiplano_password": "secret",
+        },
+    )
+    assert r.status_code == 200
+    assert captured.get("nbi_username") == "noc_user"
+    assert captured.get("nbi_password") == "secret"
 
 
 def test_dashboard_altiplano_actualizar_rn_by_id_con_hash_se_normaliza(client, monkeypatch):

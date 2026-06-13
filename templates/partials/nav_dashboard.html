@@ -19,7 +19,7 @@
       <p class="global-nav-dd-section" role="presentation">Monitoreo</p>
       <a class="global-nav-dd-link global-tab{% if nav_tab == 'historico' %} global-nav-dd-link--current{% endif %}" role="menuitem" href="{{ url_for('dash_potencias_historico') }}">Historico Potencias</a>
       <a class="global-nav-dd-link global-tab{% if nav_tab == 'radar' %} global-nav-dd-link--current{% endif %}" role="menuitem" href="{{ url_for('dash_radar_degradacion') }}">Radar Degradacion</a>
-      <a class="global-nav-dd-link global-tab{% if nav_tab == 'cortes' %} global-nav-dd-link--current{% endif %}" role="menuitem" href="{{ url_for('dash_cortes_rama') }}">Cortes de Rama</a>
+      <a class="global-nav-dd-link global-tab{% if nav_tab == 'alarm_analyzer' %} global-nav-dd-link--current{% endif %}" role="menuitem" href="{{ url_for('dash_alarm_analyzer') }}">Alarm Analyzer</a>
       <a class="global-nav-dd-link global-tab{% if nav_tab == 'estadisticas' %} global-nav-dd-link--current{% endif %}" role="menuitem" href="{{ url_for('dash_estadisticas') }}">Estadisticas</a>
       <p class="global-nav-dd-section" role="presentation">Referencia</p>
       <a
@@ -75,7 +75,7 @@
         <div class="global-nav-group-menu global-nav-dd-menu" role="menu" hidden aria-hidden="true">
           <a class="global-nav-dd-link global-tab{% if nav_tab == 'historico' %} global-nav-dd-link--current{% endif %}" role="menuitem" href="{{ url_for('dash_potencias_historico') }}">Historico Potencias</a>
           <a class="global-nav-dd-link global-tab{% if nav_tab == 'radar' %} global-nav-dd-link--current{% endif %}" role="menuitem" href="{{ url_for('dash_radar_degradacion') }}">Radar Degradacion</a>
-          <a class="global-nav-dd-link global-tab{% if nav_tab == 'cortes' %} global-nav-dd-link--current{% endif %}" role="menuitem" href="{{ url_for('dash_cortes_rama') }}">Cortes de Rama</a>
+          <a class="global-nav-dd-link global-tab{% if nav_tab == 'alarm_analyzer' %} global-nav-dd-link--current{% endif %}" role="menuitem" href="{{ url_for('dash_alarm_analyzer') }}">Alarm Analyzer</a>
         </div>
       </div>
 

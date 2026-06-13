@@ -34,10 +34,34 @@ def test_contar_ont_connection_inp_search_intents_reads_total_count(monkeypatch)
     assert flt["aligned"] == "false"
 
 
+def test_inp_bearer_token_uses_altiplano_credentials(monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr(
+        "services.estadisticas_altiplano.get_altiplano_credentials",
+        lambda: ("svc_user", "svc_pass"),
+    )
+
+    def fake_token(entorno, user, pwd, **kwargs):
+        captured["entorno"] = entorno
+        captured["user"] = user
+        captured["pwd"] = pwd
+        return "tok-env"
+
+    monkeypatch.setattr("services.estadisticas_altiplano.obtener_token_entorno_nbi", fake_token)
+
+    from services.estadisticas_altiplano import _inp_bearer_token
+
+    token, err = _inp_bearer_token()
+    assert token == "tok-env"
+    assert err is None
+    assert captured == {"entorno": "INP", "user": "svc_user", "pwd": "svc_pass"}
+
+
 def test_dashboard_estadisticas_altiplano_inp_aggregates_sections(monkeypatch):
     monkeypatch.setattr(
         "services.estadisticas_altiplano._inp_bearer_token",
-        lambda _sess=None: ("tok", None),
+        lambda: ("tok", None),
     )
 
     def fake_count(token, *, required_network_state, alignment_state, timeout_s):
@@ -50,7 +74,6 @@ def test_dashboard_estadisticas_altiplano_inp_aggregates_sections(monkeypatch):
             ("suspended", ""): 20,
             ("not-present", ""): 5,
             ("", "aligned"): 80,
-            ("", "misaligned"): 25,
             ("", "misaligned"): 25,
             ("not-present", "misaligned"): 3,
             ("not-present", "aligned"): 2,
@@ -77,7 +100,7 @@ def test_dashboard_estadisticas_altiplano_json_route(client, monkeypatch):
 
     captured = {}
 
-    def fake_service(*, sess_token=None, refresh=False):
+    def fake_service(*, refresh=False):
         captured["refresh"] = refresh
         return {
             "ok": True,
