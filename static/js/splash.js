@@ -1,28 +1,21 @@
 /**
- * Splash pantalla completa: solo "/" sin intención de consulta, una vez por pestaña.
- * Fade in al abrir y fade out al cerrar (opacity + transitionend).
+ * Splash índice: el inline en splash_overlay.html muestra al instante;
+ * cierra con fade tras data-autoclose-ms (def. 2600 ms) o click / Escape.
  */
 (function () {
   var KEY = "noc_splash_v1";
   var overlay = document.getElementById("noc-splash-overlay");
-  if (!overlay) return;
+  if (!overlay || overlay.hasAttribute("hidden")) return;
 
-  var path = window.location.pathname || "";
-  if (path !== "/") return;
+  var autoMs = parseInt(overlay.getAttribute("data-autoclose-ms") || "2600", 10);
+  if (!Number.isFinite(autoMs) || autoMs < 0) autoMs = 2600;
 
-  function hasDeepLinkIntent() {
-    try {
-      var params = new URLSearchParams(window.location.search || "");
-      var prefill = (
-        params.get("q") ||
-        params.get("rama") ||
-        params.get("value") ||
-        ""
-      ).trim();
-      return !!prefill;
-    } catch (e) {
-      return false;
-    }
+  var leaving = false;
+  var autoTimer = null;
+  var shownAt = parseInt(overlay.getAttribute("data-splash-shown-at") || "0", 10);
+  if (!Number.isFinite(shownAt) || shownAt <= 0) {
+    shownAt = Date.now();
+    overlay.setAttribute("data-splash-shown-at", String(shownAt));
   }
 
   function markSplashSeen() {
@@ -31,29 +24,26 @@
     } catch (e2) {}
   }
 
-  if (hasDeepLinkIntent()) {
-    markSplashSeen();
-    return;
+  function lockScroll() {
+    var root = document.body || document.documentElement;
+    if (root) root.classList.add("noc-splash-open");
   }
 
-  try {
-    if (window.sessionStorage.getItem(KEY) === "1") return;
-  } catch (e) {
-    return;
+  function unlockScroll() {
+    document.documentElement.classList.remove("noc-splash-open");
+    if (document.body) document.body.classList.remove("noc-splash-open");
   }
-
-  var autoMs = parseInt(overlay.getAttribute("data-autoclose-ms") || "2600", 10);
-  if (!Number.isFinite(autoMs) || autoMs < 0) autoMs = 2600;
-
-  var autoTimer = null;
-  var leaving = false;
 
   function finishHide() {
     leaving = false;
+    if (autoTimer != null) {
+      clearTimeout(autoTimer);
+      autoTimer = null;
+    }
     overlay.classList.remove("noc-splash--visible", "noc-splash--in", "noc-splash--leaving");
     overlay.setAttribute("hidden", "");
     overlay.setAttribute("aria-hidden", "true");
-    document.body.classList.remove("noc-splash-open");
+    unlockScroll();
     overlay.removeEventListener("transitionend", onTransitionEnd);
     markSplashSeen();
   }
@@ -69,10 +59,6 @@
 
   function hide() {
     if (overlay.hasAttribute("hidden") || leaving) return;
-    if (autoTimer != null) {
-      clearTimeout(autoTimer);
-      autoTimer = null;
-    }
     document.removeEventListener("keydown", onKeydown);
 
     leaving = true;
@@ -81,49 +67,32 @@
     overlay.setAttribute("aria-hidden", "true");
 
     overlay.addEventListener("transitionend", onTransitionEnd);
-    // Si no hay transición (p. ej. reduced motion extremo), cerrar igual
     window.setTimeout(function () {
       if (!leaving) return;
       if (overlay.classList.contains("noc-splash--leaving")) {
         overlay.removeEventListener("transitionend", onTransitionEnd);
         finishHide();
       }
-    }, 700);
+    }, 500);
   }
 
-  function show() {
-    overlay.removeAttribute("hidden");
-    overlay.setAttribute("aria-hidden", "false");
-    overlay.classList.add("noc-splash--visible");
-    document.body.classList.add("noc-splash-open");
-    document.addEventListener("keydown", onKeydown);
-
-    window.requestAnimationFrame(function () {
+  function scheduleAutoHide() {
+    var elapsed = Date.now() - shownAt;
+    var wait = Math.max(0, autoMs - elapsed);
+    autoTimer = window.setTimeout(function () {
+      autoTimer = null;
       window.requestAnimationFrame(function () {
-        overlay.classList.add("noc-splash--in");
+        hide();
       });
-    });
-
-    window.setTimeout(function () {
-      try {
-        overlay.focus();
-      } catch (e3) {}
-    }, 120);
-    if (autoMs > 0) {
-      autoTimer = window.setTimeout(hide, autoMs);
-    }
+    }, wait);
   }
 
   var backdrop = overlay.querySelector(".noc-splash-backdrop");
   if (backdrop) {
-    backdrop.addEventListener("click", function () {
-      hide();
-    });
+    backdrop.addEventListener("click", hide);
   }
 
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", show);
-  } else {
-    show();
-  }
+  lockScroll();
+  document.addEventListener("keydown", onKeydown);
+  scheduleAutoHide();
 })();

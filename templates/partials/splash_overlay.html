@@ -1,7 +1,7 @@
-{# Splash índice: requiere JS para mostrarse; con JS deshabilitado permanece hidden. #}
+{# Splash índice: inline muestra al instante; splash.js cierra al DOMContentLoaded. #}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/splash.css') }}">
 <div id="noc-splash-overlay"
-     class="noc-splash"
+     class="noc-splash noc-splash--intro"
      hidden
      tabindex="-1"
      aria-hidden="true"
@@ -12,7 +12,7 @@
   <div class="noc-splash-backdrop" aria-hidden="true" title="Cerrar"></div>
   <div class="noc-splash-inner">
     <img id="noc-splash-logo"
-         class="noc-splash-logo"
+         class="noc-splash-logo noc-splash-logo--pulse"
          src="{{ url_for('static', filename=config.SPLASH_LOGO_STATIC) }}"
          alt=""
          width="791"
@@ -22,4 +22,52 @@
     <p class="noc-splash-lead muted">Consultas, dashboards e inventario GPON</p>
   </div>
 </div>
-<script defer src="{{ url_for('static', filename='js/splash.js') }}?v=splash-deeplink1"></script>
+<script>
+(function () {
+  var KEY = "noc_splash_v1";
+  var overlay = document.getElementById("noc-splash-overlay");
+  if (!overlay) return;
+  if ((window.location.pathname || "") !== "/") return;
+
+  function hasDeepLinkIntent() {
+    try {
+      var params = new URLSearchParams(window.location.search || "");
+      return !!(
+        (params.get("q") || "").trim() ||
+        (params.get("rama") || "").trim() ||
+        (params.get("value") || "").trim()
+      );
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function markSplashSeen() {
+    try {
+      window.sessionStorage.setItem(KEY, "1");
+    } catch (e2) {}
+  }
+
+  function splashAlreadySeen() {
+    try {
+      return window.sessionStorage.getItem(KEY) === "1";
+    } catch (e) {
+      return false;
+    }
+  }
+
+  if (hasDeepLinkIntent()) {
+    markSplashSeen();
+    return;
+  }
+  if (splashAlreadySeen()) return;
+
+  overlay.removeAttribute("hidden");
+  overlay.setAttribute("aria-hidden", "false");
+  overlay.setAttribute("data-splash-shown-at", String(Date.now()));
+  overlay.classList.add("noc-splash--visible", "noc-splash--in");
+  var root = document.body || document.documentElement;
+  if (root) root.classList.add("noc-splash-open");
+})();
+</script>
+<script defer src="{{ url_for('static', filename='js/splash.js') }}?v=splash-ls3"></script>

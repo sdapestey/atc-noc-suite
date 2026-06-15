@@ -1,5 +1,4 @@
-/* Splash índice: pantalla completa + fade in / fade out por opacidad.
-   Fondo dark/light alineado con body.theme-devops en devops-dashboard.css */
+/* Splash índice: pantalla completa + fade out; fondo alineado con theme-devops (dark/light). */
 .noc-splash {
   position: fixed;
   inset: 0;
@@ -34,7 +33,7 @@
     );
   background-attachment: fixed;
   background-repeat: no-repeat;
-  transition: opacity 0.55s ease;
+  transition: opacity 0.4s ease;
 }
 
 /* Foco programático (splash.js): sin outline; en Linux GTK Chrome pinta un borde azul a pantalla completa */
@@ -68,19 +67,13 @@ html[data-theme="light"] .noc-splash {
   background-repeat: no-repeat;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  html[data-theme="light"] .noc-splash {
-    background-attachment: scroll;
-  }
-}
-
 .noc-splash[hidden] {
   display: none !important;
 }
 
 .noc-splash.noc-splash--visible {
   display: flex !important;
-  opacity: 0;
+  opacity: 1;
 }
 
 .noc-splash.noc-splash--visible.noc-splash--in {
@@ -117,7 +110,22 @@ html[data-theme="light"] .noc-splash {
   box-sizing: border-box;
 }
 
-/* Ancho acorde al título (~anchura de “ATC NOC Suite”); el SVG/PNG es ancho → manda el width */
+.noc-splash--intro .noc-splash-logo {
+  display: block;
+  width: min(300px, 72vw);
+  height: auto;
+  max-width: min(300px, 72vw);
+  max-height: min(40vh, 14rem);
+  object-fit: contain;
+  object-position: center;
+  margin: 0 auto clamp(16px, 3.5vh, 28px);
+  filter: drop-shadow(0 10px 28px rgba(0, 0, 0, 0.28));
+}
+
+.noc-splash--intro .noc-splash-lead {
+  margin-bottom: 0;
+}
+
 .noc-splash-logo {
   display: block;
   width: min(36ch, 92vw);
@@ -132,6 +140,27 @@ html[data-theme="light"] .noc-splash {
 
 html[data-theme="light"] .noc-splash-logo {
   filter: drop-shadow(0 6px 18px rgba(0, 0, 0, 0.12));
+}
+
+.noc-splash-logo--pulse {
+  animation: noc-splash-pulse 2000ms linear infinite;
+  transform-origin: 70% 70%;
+}
+
+@keyframes noc-splash-pulse {
+  0%,
+  30%,
+  60%,
+  80%,
+  100% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.08);
+  }
+  70% {
+    transform: scale(1.05);
+  }
 }
 
 .noc-splash-title {
@@ -151,6 +180,7 @@ html[data-theme="light"] .noc-splash-logo {
   color: var(--fg-muted);
 }
 
+html.noc-splash-open,
 body.noc-splash-open {
   overflow: hidden;
 }
@@ -158,5 +188,13 @@ body.noc-splash-open {
 @media (prefers-reduced-motion: reduce) {
   .noc-splash {
     transition-duration: 0.01ms !important;
+  }
+
+  html[data-theme="light"] .noc-splash {
+    background-attachment: scroll;
+  }
+
+  .noc-splash-logo--pulse {
+    animation: none;
   }
 }

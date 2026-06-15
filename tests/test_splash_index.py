@@ -45,7 +45,7 @@ def test_splash_static_assets_exist():
 
 
 def test_splash_skips_on_index_deep_link_query():
-    js = Path("static/js/splash.js").read_text(encoding="utf-8")
-    assert "hasDeepLinkIntent" in js
-    assert 'params.get("q")' in js
-    assert 'params.get("rama")' in js
+    partial = Path("templates/partials/splash_overlay.html").read_text(encoding="utf-8")
+    assert "hasDeepLinkIntent" in partial
+    assert 'params.get("q")' in partial
+    assert 'params.get("rama")' in partial
