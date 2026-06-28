@@ -1,10 +1,17 @@
 let lastPayload = null;
 let allItems = [];
-let allGrupos = [];
 let currentPage = 0;
 let pageSize = 10;
-let viewMode = "grupo";
 const PAGER_SHOW_ABOVE = 10;
+const _EVENTO_COLLAPSE_MIN = 3;
+const _HORA_COLLAPSE_MIN = 1;
+const _SITIO_COLLAPSE_MIN = 12;
+const _eventoExpandedKeys = new Set();
+const _eventoCollapsedKeys = new Set();
+const _sitioExpandedKeys = new Set();
+const _sitioCollapsedKeys = new Set();
+const _horaExpandedKeys = new Set();
+const _horaCollapsedKeys = new Set();
 
 const _CAUSA_BADGE_CLASS = {
   DYING_GASP: "cortes-badge--dying",
@@ -103,9 +110,6 @@ function _nuevosTrackingEnabled() {
 
 function _isNuevo(row) {
   if (!_nuevosTrackingEnabled()) return false;
-  const estado = _getCortesEstado();
-  const status = String(row?.status || "").toLowerCase();
-  if (estado === "todas" && status === "cleared") return false;
   const pk = String(row?.pon_key || "").trim();
   return pk && !seenPonKeys.has(pk);
 }
@@ -135,6 +139,156 @@ function _formatRaised(iso) {
   return pick("day") + "/" + pick("month") + " " + pick("hour") + ":" + pick("minute");
 }
 
+function _formatVentanaArt(ventana) {
+  const s = String(ventana || "").trim();
+  if (!s) return "—";
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
+  if (m) {
+    return (
+      String(parseInt(m[3], 10)) +
+      "/" +
+      String(parseInt(m[2], 10)) +
+      " " +
+      m[4] +
+      ":" +
+      m[5]
+    );
+  }
+  return s;
+}
+
+function _formatRaisedHourBucket(iso) {
+  const s = String(iso || "").trim();
+  if (!s) return "—";
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return s;
+  const parts = new Intl.DateTimeFormat("es-AR", {
+    timeZone: _TZ_ART,
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    hour12: false,
+  }).formatToParts(d);
+  const pick = (type) => parts.find((p) => p.type === type)?.value || "";
+  return pick("day") + "/" + pick("month") + " " + pick("hour") + ":00";
+}
+
+function _siteKey(row) {
+  return String(row?.principal || row?.olt || "—").trim() || "—";
+}
+
+function _pruneHierarchyCollapseKeys(blocks, mode) {
+  if (mode === "cleared_hierarchy") {
+    const validSitio = new Set((blocks || []).map((b) => b.key).filter(Boolean));
+    const validHora = new Set();
+    (blocks || []).forEach((site) => {
+      (site.hours || []).forEach((hour) => {
+        if (hour.key) validHora.add(hour.key);
+      });
+    });
+    [..._sitioExpandedKeys, ..._sitioCollapsedKeys].forEach((key) => {
+      if (!validSitio.has(key)) {
+        _sitioExpandedKeys.delete(key);
+        _sitioCollapsedKeys.delete(key);
+      }
+    });
+    [..._horaExpandedKeys, ..._horaCollapsedKeys].forEach((key) => {
+      if (!validHora.has(key)) {
+        _horaExpandedKeys.delete(key);
+        _horaCollapsedKeys.delete(key);
+      }
+    });
+    return;
+  }
+  _pruneEventoCollapseKeys(blocks);
+}
+
+function _pruneEventoCollapseKeys(blocks) {
+  const valid = new Set(
+    (blocks || []).filter((b) => b.type === "evento" && b.key).map((b) => b.key)
+  );
+  [..._eventoExpandedKeys].forEach((key) => {
+    if (!valid.has(key)) _eventoExpandedKeys.delete(key);
+  });
+  [..._eventoCollapsedKeys].forEach((key) => {
+    if (!valid.has(key)) _eventoCollapsedKeys.delete(key);
+  });
+}
+
+function _isEventoBlockExpanded(block) {
+  const key = block && block.key;
+  if (!key) return true;
+  if (_eventoExpandedKeys.has(key)) return true;
+  if (_eventoCollapsedKeys.has(key)) return false;
+  return (block.items || []).length < _EVENTO_COLLAPSE_MIN;
+}
+
+function _toggleEventoBlock(key) {
+  const blocks = _displayRowsForMode().blocks;
+  const block = blocks.find((b) => b.type === "evento" && b.key === key);
+  if (!block) return;
+  if (_isEventoBlockExpanded(block)) {
+    _eventoExpandedKeys.delete(key);
+    _eventoCollapsedKeys.add(key);
+  } else {
+    _eventoCollapsedKeys.delete(key);
+    _eventoExpandedKeys.add(key);
+  }
+  _renderTablePage();
+}
+
+function _isSitioBlockExpanded(block) {
+  const key = block && block.key;
+  if (!key) return true;
+  if (_sitioExpandedKeys.has(key)) return true;
+  if (_sitioCollapsedKeys.has(key)) return false;
+  return (block.itemCount || 0) < _SITIO_COLLAPSE_MIN;
+}
+
+function _toggleSitioBlock(key) {
+  const blocks = _displayRowsForMode().blocks;
+  const block = blocks.find((b) => b.type === "sitio" && b.key === key);
+  if (!block) return;
+  if (_isSitioBlockExpanded(block)) {
+    _sitioExpandedKeys.delete(key);
+    _sitioCollapsedKeys.add(key);
+  } else {
+    _sitioCollapsedKeys.delete(key);
+    _sitioExpandedKeys.add(key);
+  }
+  _renderTablePage();
+}
+
+function _isHourBlockExpanded(block) {
+  const key = block && block.key;
+  if (!key) return false;
+  if (_horaExpandedKeys.has(key)) return true;
+  if (_horaCollapsedKeys.has(key)) return false;
+  return false;
+}
+
+function _toggleHourBlock(key) {
+  const mode = _displayRowsForMode().mode;
+  const blocks = _displayRowsForMode().blocks;
+  let block = null;
+  if (mode === "cleared_hierarchy") {
+    blocks.forEach((site) => {
+      (site.hours || []).forEach((hour) => {
+        if (hour.key === key) block = hour;
+      });
+    });
+  }
+  if (!block) return;
+  if (_isHourBlockExpanded(block)) {
+    _horaExpandedKeys.delete(key);
+    _horaCollapsedKeys.add(key);
+  } else {
+    _horaCollapsedKeys.delete(key);
+    _horaExpandedKeys.add(key);
+  }
+  _renderTablePage();
+}
+
 function _todayArtIso() {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: _TZ_ART,
@@ -156,9 +310,62 @@ function _cortesFechaIso() {
   return (document.getElementById("cortes-fecha-dia")?.value || "").trim();
 }
 
+function _syncCortesFechaDisplay() {
+  const fp = _cortesFechaPicker;
+  const input = document.getElementById("cortes-fecha-dia");
+  const iso = (fp?.input?.value || input?.value || "").trim();
+  const visible = fp?.altInput;
+  if (!visible) return;
+  if (!iso) {
+    visible.value = "Todas las fechas";
+    return;
+  }
+  if (iso === _todayArtIso()) {
+    visible.value = "Hoy";
+    return;
+  }
+  if (fp?.selectedDates?.length) {
+    visible.value = fp.formatDate(fp.selectedDates[0], fp.config.altFormat);
+  }
+}
+
+function _setCortesFechaAll() {
+  if (_cortesFechaPicker) _cortesFechaPicker.clear();
+  const input = document.getElementById("cortes-fecha-dia");
+  if (input) input.value = "";
+  _syncCortesFechaDisplay();
+}
+
+function _setCortesFechaHoy() {
+  _setCortesFechaIso(_todayArtIso());
+}
+
+function _enhanceCortesFechaPicker(fp) {
+  const cal = fp?.calendarContainer;
+  if (!cal || cal.dataset.cortesFooter === "1") return;
+  cal.dataset.cortesFooter = "1";
+  const footer = document.createElement("div");
+  footer.className = "noc-fp-footer";
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "noc-fp-footer-btn";
+  btn.textContent = "Todas las fechas";
+  btn.addEventListener("click", (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    _setCortesFechaAll();
+    fp.close();
+    if (_restoringState) return;
+    currentPage = 0;
+    _saveStateSoon();
+    fetchCortes({ fresh: true });
+  });
+  footer.appendChild(btn);
+  cal.appendChild(footer);
+}
+
 function _buildFechaParam() {
-  const day = _cortesFechaIso();
-  return day || "hoy";
+  return _cortesFechaIso();
 }
 
 function _initCortesFechaPicker() {
@@ -167,26 +374,39 @@ function _initCortesFechaPicker() {
   if (!input || !NFP || _cortesFechaPicker) {
     return;
   }
-  const initial = (input.value || "").trim() || _todayArtIso();
+  const initial = (input.value || "").trim();
   _cortesFechaPicker = NFP.create(input, {
-    defaultDate: initial,
+    defaultDate: initial || undefined,
     onChange() {
+      _syncCortesFechaDisplay();
       if (_restoringState) return;
       currentPage = 0;
       if (!_restoringState) _saveStateSoon();
       fetchCortes({ fresh: true });
     },
+    onClose() {
+      _syncCortesFechaDisplay();
+    },
   });
+  if (_cortesFechaPicker) {
+    _enhanceCortesFechaPicker(_cortesFechaPicker);
+    _syncCortesFechaDisplay();
+  }
 }
 
 function _setCortesFechaIso(iso) {
   const val = String(iso || "").trim();
-  if (_cortesFechaPicker && val) {
-    _cortesFechaPicker.setDate(val, false);
+  if (!val) {
+    _setCortesFechaAll();
     return;
   }
-  const input = document.getElementById("cortes-fecha-dia");
-  if (input) input.value = val;
+  if (_cortesFechaPicker) {
+    _cortesFechaPicker.setDate(val, false);
+  } else {
+    const input = document.getElementById("cortes-fecha-dia");
+    if (input) input.value = val;
+  }
+  _syncCortesFechaDisplay();
 }
 
 function _loadRefreshMs() {
@@ -269,41 +489,39 @@ function _applyAutoRefresh() {
   _scheduleAutoRefreshTick();
 }
 
-function _ensureFechaHoy() {
-  if (_cortesFechaPicker) {
-    if (!_cortesFechaIso()) {
-      _setCortesFechaIso(_todayArtIso());
-    }
-    return;
-  }
-  const fechaDia = document.getElementById("cortes-fecha-dia");
-  if (fechaDia && !fechaDia.value) {
-    fechaDia.value = _todayArtIso();
-  }
-}
-
 function _getCortesEstado() {
   return document.getElementById("cortes-estado")?.value || "activas";
+}
+
+function _syncToolbarContext() {
+  const cleared = _getCortesEstado() === "cleared";
+  const fechaWrap = document.getElementById("cortes-fecha-wrap");
+  const fechaInput = document.getElementById("cortes-fecha-dia");
+  if (fechaWrap) fechaWrap.classList.toggle("cortes-fecha-wrap--cleared", cleared);
+  if (fechaInput) {
+    fechaInput.placeholder = cleared ? "Elegí un día" : "Hoy";
+    fechaInput.title = cleared
+      ? "Recomendado en Cleared: filtrar por día de raised (hora Argentina). Sin fecha se listan todos los cleared devueltos por Altiplano."
+      : "Por defecto hoy (hora Argentina). Abrí el calendario para otro día o «Todas las fechas».";
+  }
+  _syncCortesFechaDisplay();
 }
 
 const _IMPACTO_RANK = { EMERGENCIA: 3, URGENTE: 2, MODERADO: 1 };
 
 function _syncTableLayout() {
-  const estado = _getCortesEstado();
-  _showClearedCol = estado === "cleared" || estado === "todas";
+  _showClearedCol = true;
   const table = document.getElementById("cortes-table");
   if (!table) return;
-  table.classList.toggle("cortes-table--show-cleared", _showClearedCol);
-  table.classList.toggle("cortes-table--show-estado", estado !== "activas");
-  table.classList.toggle("cortes-table--grupo", viewMode === "grupo");
+  table.classList.add("cortes-table--show-cleared");
+  table.classList.remove("cortes-table--show-estado", "cortes-table--cleared-grouped");
   const locTh = document.getElementById("cortes-th-loc");
-  if (locTh) locTh.textContent = viewMode === "grupo" ? "PON" : "OLT / LT / PON";
+  if (locTh) locTh.textContent = "OLT / LT / PON";
 }
 
 function _emptyCortesMessage() {
   const estado = _getCortesEstado();
   if (estado === "cleared") return "Sin cortes cleared que coincidan con los filtros.";
-  if (estado === "todas") return "Sin cortes que coincidan con los filtros.";
   return "Sin cortes activos que coincidan con los filtros.";
 }
 
@@ -317,14 +535,12 @@ function _buildFetchParams(opts) {
   const q = (document.getElementById("cortes-q")?.value || "").trim();
   const sort = document.getElementById("cortes-sort")?.value || "reciente";
   const fecha = _buildFechaParam();
-  const impacto = document.getElementById("cortes-impacto")?.value || "ALL";
   if (causa && causa !== "ALL") params.set("causa", causa);
   if (principal && principal !== "ALL") params.set("principal", principal);
   if (vno && vno !== "ALL") params.set("vno", vno);
   if (q) params.set("q", q);
   if (sort && sort !== "reciente") params.set("sort", sort);
   if (fecha) params.set("fecha", fecha);
-  if (impacto && impacto !== "ALL") params.set("impacto", impacto);
   if (estado && estado !== "activas") params.set("estado", estado);
   if (opts.fresh) params.set("fresh", "1");
   params.set("limit", "500");
@@ -384,7 +600,6 @@ function _updateKpis(payload, displayItems) {
     if (n) sinInv.textContent = "· " + n + " sin mapeo inventario";
   }
   _renderEventosMasivos(payload?.eventos_masivos || []);
-  _updateVisibleCount(displayItems);
 }
 
 const _EVENTO_TIPO_ORDER = ["fibra", "luz", "otro"];
@@ -464,7 +679,7 @@ function _renderEventoMasivoCard(ev, idx) {
     "<strong>" +
     _esc(ev.cortes) +
     " PON</strong> · <span class=\"mono\">" +
-    _esc(ev.ventana || ev.minute) +
+    _esc(_formatVentanaArt(ev.ventana || ev.minute)) +
     "</span> · <strong>" +
     _esc(ev.clientes) +
     "</strong> clientes" +
@@ -478,10 +693,13 @@ function _renderEventosMasivos(eventos) {
   const banner = document.getElementById("cortes-eventos-banner");
   const list = document.getElementById("cortes-eventos-list");
   if (!banner || !list) return;
-  const rows = eventos || [];
+  const rows = (eventos || []).filter(
+    (ev) => String(ev.impacto || "").toUpperCase() === "EMERGENCIA"
+  );
   if (!rows.length) {
     banner.hidden = true;
     list.innerHTML = "";
+    list._eventosData = [];
     return;
   }
   banner.hidden = false;
@@ -528,20 +746,22 @@ function _renderEventosMasivos(eventos) {
 
 function _impactoBadgeHtml(imp, opts) {
   opts = opts || {};
+  if (opts.evento) {
+    return (
+      '<span class="cortes-badge cortes-badge--evento-masivo" title="' +
+      _esc(opts.title || "Evento masivo") +
+      '">Σ</span>'
+    );
+  }
   const badgeCls = _IMPACTO_BADGE_CLASS[imp] || "cortes-badge--moderado";
   const badgeTxt = _IMPACTO_SHORT[imp] || opts.label || imp;
-  const eventoCls = opts.evento ? " cortes-badge--evento" : "";
   return (
     '<span class="cortes-badge ' +
     badgeCls +
-    eventoCls +
     '" title="' +
     _esc(opts.title || imp) +
     '">' +
     _esc(badgeTxt) +
-    (opts.evento
-      ? '<span class="cortes-badge__evento" aria-hidden="true">Σ</span>'
-      : "") +
     "</span>"
   );
 }
@@ -607,140 +827,512 @@ function _renderGroupImpactBadge(g) {
   });
 }
 
-function _renderGroupMetaPills(g, opts) {
-  const extra = (opts && opts.extra) || "";
-  return (
-    extra +
-    '<span class="cortes-group-pill"><strong>' +
-    _esc(g.cortes) +
-    "</strong> PON</span>" +
-    '<span class="cortes-group-pill"><strong>' +
-    _esc(g.ont_total) +
-    "</strong> clientes</span>" +
-    _renderGroupImpactBadge(g) +
-    (g.losi
-      ? '<span class="cortes-group-pill cortes-group-pill--causa" title="Corte de fibra (LOSi/LOBi)">' +
+function _groupEarliestRaised(items) {
+  let best = null;
+  let iso = "";
+  (items || []).forEach((row) => {
+    const ts = Date.parse(String(row.raised || ""));
+    if (!Number.isFinite(ts)) return;
+    if (best === null || ts < best) {
+      best = ts;
+      iso = row.raised || "";
+    }
+  });
+  return iso;
+}
+
+function _renderGroupCausaBadges(g) {
+  const parts = [];
+  parts.push(_renderGroupImpactBadge(g));
+  if (g.losi) {
+    parts.push(
+      '<span class="cortes-group-pill cortes-group-pill--causa" title="Corte de fibra (LOSi/LOBi)">' +
         '<span class="cortes-badge cortes-badge--losi">LOSi</span>' +
         "<strong>" +
         _esc(g.losi) +
         "</strong></span>"
-      : "") +
-    (g.dying
-      ? '<span class="cortes-group-pill cortes-group-pill--causa" title="Corte de luz (Dying Gasp)">' +
+    );
+  }
+  if (g.dying) {
+    parts.push(
+      '<span class="cortes-group-pill cortes-group-pill--causa" title="Corte de luz (Dying Gasp)">' +
         '<span class="cortes-badge cortes-badge--dying">DG</span>' +
         "<strong>" +
         _esc(g.dying) +
         "</strong></span>"
-      : "") +
-    '<span class="cortes-group-pill">' +
-    _esc(g.ramas_count) +
-    " RAMAs</span>"
+    );
+  }
+  return parts.filter(Boolean).join("");
+}
+
+function _renderGroupCausaSummary(g) {
+  const parts = [];
+  if (g.losi) parts.push("LOSi " + g.losi);
+  if (g.dying) parts.push("DG " + g.dying);
+  if (!parts.length) return "";
+  return (
+    '<span class="cortes-group-summary-meta muted" title="Conteo por causa">' +
+    _esc(parts.join(" · ")) +
+    "</span>"
   );
 }
 
-function _aggregateLtGrupos(ltGrupos) {
-  let cortes = 0;
+function _ontBreakdownTitle(vnoList, ontTotal) {
+  if (vnoList && vnoList.length) {
+    return vnoList.map((v) => v.count + " " + v.vno).join(", ");
+  }
+  const n = Number(ontTotal) || 0;
+  return n > 0 ? n + " ONT" : "";
+}
+
+function _sinMapTitle(row) {
+  const clientes = row.ont_total ?? 0;
+  if (clientes > 0) {
+    return clientes + " clientes IN SERVICE sin path RATC/FATC en inventario";
+  }
+  return "Sin ONT IN SERVICE mapeadas en inventario para este PON";
+}
+
+function _renderSinMapoLabel(row) {
+  return (
+    '<span class="cortes-sin-map" title="' +
+    _esc(_sinMapTitle(row)) +
+    '">Sin Mapeo</span>'
+  );
+}
+
+function _ctosFromKeys(ctoKeys) {
+  const seen = new Set();
+  const out = [];
+  (ctoKeys || []).forEach((key) => {
+    const s = String(key || "").trim();
+    if (!s) return;
+    const pipe = s.indexOf("|");
+    const cto = pipe >= 0 ? s.slice(pipe + 1).trim() : s;
+    if (cto && !seen.has(cto)) {
+      seen.add(cto);
+      out.push(cto);
+    }
+  });
+  return out.sort((a, b) => a.localeCompare(b, "es"));
+}
+
+function _renderIdListCell(ids, opts) {
+  opts = opts || {};
+  const list = (ids || []).map((x) => String(x || "").trim()).filter(Boolean);
+  if (!list.length) {
+    if (opts.sinInventario) return _renderSinMapoLabel(opts.row);
+    return (
+      opts.emptyHtml ||
+      '<span class="cortes-id-cell cortes-id-cell--empty" title="Sin dato">—</span>'
+    );
+  }
+  const title = list.join(", ");
+  if (list.length === 1) {
+    return (
+      '<span class="mono cortes-id-cell cortes-id-cell--single" title="' +
+      _esc(title) +
+      '">' +
+      _esc(list[0]) +
+      "</span>"
+    );
+  }
+  return (
+    '<span class="mono cortes-id-cell cortes-id-cell--multi" title="' +
+    _esc(title) +
+    '">' +
+    _esc(list[0]) +
+    ' <span class="cortes-id-cell__more">+' +
+    _esc(String(list.length - 1)) +
+    "</span></span>"
+  );
+}
+
+function _renderCtoCell(row) {
+  if (row.sin_inventario) return _renderSinMapoLabel(row);
+  const ctos = _ctosFromKeys(row.cto_keys);
+  if (!ctos.length) {
+    return '<span class="cortes-id-cell cortes-id-cell--empty" title="Sin CTO">—</span>';
+  }
+  if (ctos.length === 1) {
+    return (
+      '<span class="mono cortes-id-cell cortes-id-cell--single cortes-id-cell--cto" title="' +
+      _esc(ctos[0]) +
+      '">' +
+      _esc(ctos[0]) +
+      "</span>"
+    );
+  }
+  const title = ctos.join(", ");
+  return (
+    '<span class="cortes-metric-n cortes-cto-count" title="' +
+    _esc(title) +
+    '">' +
+    _esc(String(ctos.length)) +
+    "</span>"
+  );
+}
+
+function _renderMetricRowCells(entity, opts) {
+  opts = opts || {};
+  const raised = opts.raised != null ? opts.raised : entity.raised;
+  const clearedVal = opts.cleared != null ? opts.cleared : entity.cleared;
+  const ont = Number(entity.ont_total ?? 0);
+  const ontCls = ont > 0 ? " cortes-col-ont--hit" : "";
+  let html = "";
+  html +=
+    '<td class="mono cortes-raised cortes-col-raised">' + _esc(_formatRaised(raised)) + "</td>";
+  html +=
+    '<td class="mono cortes-cleared cortes-col-cleared">' +
+    _esc(clearedVal ? _formatRaised(clearedVal) : "—") +
+    "</td>";
+  html +=
+    '<td class="cortes-col-ramas cortes-col-id">' + _renderRamasCell(entity) + "</td>";
+  html +=
+    '<td class="cortes-col-cto cortes-col-id">' + _renderCtoCell(entity) + "</td>";
+  html +=
+    '<td class="cortes-col-ont' +
+    ontCls +
+    '">' +
+    _renderOntCell(entity.vno_list, ont, false, entity) +
+    "</td>";
+  html += '<td class="cortes-col-actions">' + (opts.actionsHtml || "") + "</td>";
+  return html;
+}
+
+function _eventoClusterKey(row) {
+  if (!row || !row.evento_simultaneo) return "";
+  const sitio = String(row.principal || row.olt || "").trim();
+  const ventana = String(row.evento_ventana || "").trim();
+  const causa = String(row.evento_causa || row.causa || "OTRO")
+    .trim()
+    .toUpperCase();
+  if (!sitio || !ventana) return "";
+  return sitio + "|" + ventana + "|" + causa;
+}
+
+function _aggregateEventoItems(items) {
   let ont_total = 0;
   let losi = 0;
   let dying = 0;
   const ramas = new Set();
-  const items = [];
-  (ltGrupos || []).forEach((g) => {
-    cortes += Number(g.cortes) || 0;
-    ont_total += Number(g.ont_total) || 0;
-    losi += Number(g.losi) || 0;
-    dying += Number(g.dying) || 0;
-    (g.ramas || []).forEach((rama) => ramas.add(String(rama)));
-    (g.items || []).forEach((row) => items.push(row));
+  const ctoKeys = new Set();
+  const olts = new Set();
+  const vnoAcc = {};
+  (items || []).forEach((row) => {
+    ont_total += Number(row.ont_total) || 0;
+    const causa = String(row.causa || "");
+    if (causa === "LOSI_LOBI") losi += 1;
+    else if (causa === "DYING_GASP") dying += 1;
+    if (row.olt) olts.add(String(row.olt));
+    (row.ramas || []).forEach((rama) => ramas.add(String(rama)));
+    (row.cto_keys || []).forEach((key) => ctoKeys.add(String(key)));
+    (row.vno_list || []).forEach((v) => {
+      const label = String(v.vno || "");
+      if (!label) return;
+      vnoAcc[label] = (vnoAcc[label] || 0) + (Number(v.count) || 0);
+    });
   });
   return {
-    cortes,
+    items: items || [],
+    cortes: (items || []).length,
     ont_total,
     losi,
     dying,
+    ramas: Array.from(ramas).sort((a, b) => a.localeCompare(b, "es")),
+    cto_keys: Array.from(ctoKeys).sort((a, b) => a.localeCompare(b, "es")),
     ramas_count: ramas.size,
-    items,
+    cto_count: ctoKeys.size,
+    olt_count: olts.size,
+    vno_list: Object.keys(vnoAcc)
+      .sort((a, b) => a.localeCompare(b, "es"))
+      .map((vno) => ({ vno, count: vnoAcc[vno] })),
+    principal: (items && items[0] && items[0].principal) || "",
+    evento_ventana: (items && items[0] && items[0].evento_ventana) || "",
+    impacto: (items && items[0] && items[0].impacto) || "MODERADO",
   };
 }
 
-function _buildSitioGrupos(grupos) {
-  const order = [];
-  const map = new Map();
-  (grupos || []).forEach((g) => {
-    const key = String(g.principal || "—");
-    if (!map.has(key)) {
-      map.set(key, { principal: key, lt_grupos: [] });
-      order.push(key);
+function _buildDisplayBlocks(items) {
+  const eventoByKey = new Map();
+  const blocks = [];
+  const seenEvento = new Set();
+  (items || []).forEach((item) => {
+    const key = _eventoClusterKey(item);
+    if (key) {
+      if (!eventoByKey.has(key)) eventoByKey.set(key, []);
+      eventoByKey.get(key).push(item);
+      if (!seenEvento.has(key)) {
+        seenEvento.add(key);
+        blocks.push({ type: "evento", key });
+      }
+      return;
     }
-    map.get(key).lt_grupos.push(g);
+    blocks.push({ type: "single", item });
   });
-  return order.map((key) => {
-    const site = map.get(key);
-    return Object.assign(site, _aggregateLtGrupos(site.lt_grupos));
+  return blocks.map((block) => {
+    if (block.type === "single") return block;
+    return {
+      type: "evento",
+      key: block.key,
+      items: eventoByKey.get(block.key) || [],
+    };
   });
 }
 
-function _renderSitioGroupRow(site) {
-  const ltCount = (site.lt_grupos || []).length;
-  const ltPill =
-    ltCount > 1
-      ? '<span class="cortes-group-pill cortes-group-pill--lt-count"><strong>' +
-        _esc(ltCount) +
-        "</strong> LT</span>"
+function _groupLatestCleared(items) {
+  let best = null;
+  let iso = "";
+  (items || []).forEach((row) => {
+    const ts = Date.parse(String(row.cleared || ""));
+    if (!Number.isFinite(ts)) return;
+    if (best === null || ts > best) {
+      best = ts;
+      iso = row.cleared || "";
+    }
+  });
+  return iso;
+}
+
+function _buildClearedHierarchyBlocks(items) {
+  const siteOrder = [];
+  const bySite = new Map();
+  (items || []).forEach((item) => {
+    const site = _siteKey(item);
+    if (!bySite.has(site)) {
+      bySite.set(site, { hourOrder: [], hours: new Map() });
+      siteOrder.push(site);
+    }
+    const bucket = bySite.get(site);
+    const hourLabel = _formatRaisedHourBucket(item.raised);
+    if (!bucket.hours.has(hourLabel)) {
+      bucket.hours.set(hourLabel, []);
+      bucket.hourOrder.push(hourLabel);
+    }
+    bucket.hours.get(hourLabel).push(item);
+  });
+  return siteOrder.map((site) => {
+    const bucket = bySite.get(site);
+    const hours = bucket.hourOrder.map((hourLabel) => ({
+      type: "hora",
+      key: site + "|" + hourLabel,
+      site,
+      hourLabel,
+      items: bucket.hours.get(hourLabel) || [],
+    }));
+    const flatItems = hours.flatMap((h) => h.items);
+    return {
+      type: "sitio",
+      key: site,
+      site,
+      hours,
+      items: flatItems,
+      itemCount: flatItems.length,
+    };
+  });
+}
+
+function _renderHierarchyToggle(key, expanded, title, label, cls, dataAttr) {
+  return (
+    '<button type="button" class="btn btn-ghost btn-sm ' +
+    cls +
+    '" data-' +
+    dataAttr +
+    '="' +
+    _esc(key) +
+    '" aria-expanded="' +
+    (expanded ? "true" : "false") +
+    '" title="' +
+    _esc(title) +
+    '"><span class="cortes-evento-toggle__icon" aria-hidden="true">' +
+    (expanded ? "▾" : "▸") +
+    '</span><span class="mono">' +
+    _esc(label) +
+    "</span></button>"
+  );
+}
+
+function _renderSitioGroupRow(siteBlock) {
+  const g = _aggregateEventoItems(siteBlock.items);
+  const summaryMeta = _renderGroupCausaSummary(g);
+  const ponCount = siteBlock.itemCount || 0;
+  const expanded = _isSitioBlockExpanded(siteBlock);
+  const toggleTitle = expanded
+    ? "Ocultar horas de " + siteBlock.site
+    : "Mostrar " + ponCount + " PON de " + siteBlock.site;
+  const toggleBtn = _renderHierarchyToggle(
+    siteBlock.key,
+    expanded,
+    toggleTitle,
+    ponCount + " PON",
+    "cortes-sitio-toggle",
+    "sitio-key"
+  );
+  return (
+    '<tr class="cortes-site-row' +
+    (expanded ? "" : " cortes-site-row--collapsed") +
+    '" data-sitio-key="' +
+    _esc(siteBlock.key) +
+    '"><td colspan="4" class="cortes-site-summary-cell">' +
+    '<div class="cortes-group-head cortes-group-head--site">' +
+    '<span class="cortes-group-head__lead">' +
+    toggleBtn +
+    '<span class="cortes-group-head__site">' +
+    _esc(siteBlock.site) +
+    "</span></span>" +
+    (summaryMeta ? summaryMeta : "") +
+    "</div></td>" +
+    _renderMetricRowCells(g, {
+      groupSummary: true,
+      raised: _groupEarliestRaised(siteBlock.items),
+      cleared: _groupLatestCleared(siteBlock.items),
+      oltCount: g.olt_count,
+      actionsHtml: "",
+    }) +
+    "</tr>"
+  );
+}
+
+function _renderHourGroupRow(hourBlock, siteBlock) {
+  const g = _aggregateEventoItems(hourBlock.items);
+  const summaryMeta = _renderGroupCausaSummary(g);
+  const ponCount = (hourBlock.items || []).length;
+  const siteExpanded = _isSitioBlockExpanded(siteBlock);
+  const expanded = _isHourBlockExpanded(hourBlock);
+  const toggleTitle = expanded
+    ? "Ocultar detalle de PON"
+    : "Mostrar " + ponCount + " PON de " + hourBlock.hourLabel;
+  const toggleBtn = _renderHierarchyToggle(
+    hourBlock.key,
+    expanded,
+    toggleTitle,
+    ponCount + " PON",
+    "cortes-hour-toggle",
+    "hora-key"
+  );
+  return (
+    '<tr class="cortes-hour-row cortes-group-row cortes-group-row--lt' +
+    (expanded ? "" : " cortes-hour-row--collapsed") +
+    '"' +
+    (siteExpanded ? "" : " hidden") +
+    ' data-hora-key="' +
+    _esc(hourBlock.key) +
+    '" data-sitio-key="' +
+    _esc(siteBlock.key) +
+    '"><td colspan="4" class="cortes-hour-summary-cell">' +
+    '<div class="cortes-group-head cortes-group-head--hour">' +
+    '<span class="cortes-group-head__lead">' +
+    toggleBtn +
+    '<strong class="cortes-group-head__hour mono" title="' +
+    _esc(hourBlock.hourLabel) +
+    '">' +
+    _esc(hourBlock.hourLabel) +
+    "</strong></span>" +
+    (summaryMeta ? summaryMeta : "") +
+    "</div></td>" +
+    _renderMetricRowCells(g, {
+      groupSummary: true,
+      raised: _groupEarliestRaised(hourBlock.items),
+      cleared: _groupLatestCleared(hourBlock.items),
+      oltCount: g.olt_count,
+      actionsHtml: "",
+    }) +
+    "</tr>"
+  );
+}
+
+function _countPonsInBlocks(blocks) {
+  return (blocks || []).length;
+}
+
+function _renderEventoGroupActions(items) {
+  const ponKeys = (items || [])
+    .map((row) => String(row.pon_key || "").trim())
+    .filter(Boolean);
+  if (!ponKeys.length) return "";
+  const oltUrl = _buildOltUrlFromPonKeys(ponKeys);
+  const principal = (items[0] && (items[0].principal || items[0].olt)) || "";
+  return (
+    '<div class="cortes-actions cortes-actions--compact">' +
+    '<a class="btn btn-ghost btn-sm cortes-evento-olt-btn" href="' +
+    _esc(oltUrl) +
+    '" target="_blank" rel="noopener noreferrer" title="Abrir OLT/LT con todos los PON del evento">OLT</a>' +
+    '<button type="button" class="btn btn-ghost btn-sm cortes-evento-reporte-btn" data-pon-keys="' +
+    _esc(ponKeys.join(",")) +
+    '" data-principal="' +
+    _esc(principal) +
+    '" title="Exportar clientes IN SERVICE del evento">Reporte</button>' +
+    "</div>"
+  );
+}
+
+function _renderEventoTableGroupRow(block) {
+  const g = _aggregateEventoItems(block.items);
+  const meta = block.items[0] || {};
+  const badges = _renderGroupCausaBadges(g);
+  const ventana = _formatVentanaArt(meta.evento_ventana || g.evento_ventana || "");
+  const ponCount = (block.items || []).length;
+  const expanded = _isEventoBlockExpanded(block);
+  const toggleTitle = expanded
+    ? "Ocultar detalle de PON"
+    : "Mostrar " + ponCount + " PON del evento";
+  const title =
+    (g.principal || meta.principal || meta.olt || "Evento masivo") + " · " + ventana;
+  const toggleBtn =
+    ponCount >= _EVENTO_COLLAPSE_MIN
+      ? '<button type="button" class="btn btn-ghost btn-sm cortes-evento-toggle" data-evento-key="' +
+        _esc(block.key) +
+        '" aria-expanded="' +
+        (expanded ? "true" : "false") +
+        '" title="' +
+        _esc(toggleTitle) +
+        '"><span class="cortes-evento-toggle__icon" aria-hidden="true">' +
+        (expanded ? "▾" : "▸") +
+        '</span><span class="mono">' +
+        _esc(ponCount) +
+        " PON</span></button>"
       : "";
   return (
-    '<tr class="cortes-site-row"><td colspan="10">' +
-    '<div class="cortes-group-head cortes-group-head--site">' +
-    '<span class="cortes-group-head__site">' +
-    _esc(site.principal || "—") +
-    "</span>" +
-    '<span class="cortes-group-head__meta">' +
-    _renderGroupMetaPills(site, { extra: ltPill }) +
-    "</span></div></td></tr>"
-  );
-}
-
-function _renderLtSubGroupRow(g) {
-  return (
-    '<tr class="cortes-group-row cortes-group-row--lt"><td colspan="10">' +
-    '<div class="cortes-group-head cortes-group-head--lt">' +
-    '<span class="cortes-group-head__lt mono">' +
-    _esc(g.lt_name || "") +
-    "</span>" +
-    '<span class="cortes-group-head__meta">' +
-    _renderGroupMetaPills(g) +
-    "</span></div></td></tr>"
-  );
-}
-
-function _renderSitioLtGroupRow(g) {
-  return (
-    '<tr class="cortes-group-row"><td colspan="10">' +
-    '<div class="cortes-group-head">' +
+    '<tr class="cortes-evento-row' +
+    (expanded ? "" : " cortes-evento-row--collapsed") +
+    '" data-evento-key="' +
+    _esc(block.key) +
+    '"><td colspan="4" class="cortes-evento-summary-cell">' +
+    '<div class="cortes-group-head cortes-group-head--evento">' +
     '<span class="cortes-group-head__lead">' +
-    '<span class="cortes-group-head__site">' +
-    _esc(g.principal || "—") +
-    "</span>" +
-    '<span class="cortes-group-head__lt mono">' +
-    _esc(g.lt_name || "") +
-    "</span></span>" +
-    '<span class="cortes-group-head__meta">' +
-    _renderGroupMetaPills(g) +
-    "</span></div></td></tr>"
+    toggleBtn +
+    '<strong class="cortes-group-head__title" title="' +
+    _esc(title) +
+    '">' +
+    _esc(title) +
+    "</strong></span>" +
+    (badges ? '<span class="cortes-group-head__badges">' + badges + "</span>" : "") +
+    "</div></td>" +
+    _renderMetricRowCells(g, {
+      groupSummary: true,
+      raised: _groupEarliestRaised(g.items),
+      oltCount: g.olt_count,
+      actionsHtml: _renderEventoGroupActions(block.items),
+    }) +
+    "</tr>"
   );
 }
 
-function _updateVisibleCount(displayItems) {
+function _updateVisibleCount(blocks, totalBlocks) {
   const el = document.getElementById("cortes-visible-count");
   if (!el) return;
-  const total = displayItems.length;
+  const total = totalBlocks || (blocks || []).length;
   if (!total) {
     el.textContent = "0";
     return;
   }
+  const pons = _countPonsInBlocks(blocks);
   const start = currentPage * pageSize + 1;
   const end = Math.min(total, (currentPage + 1) * pageSize);
-  el.textContent = start === end ? start + "/" + total : start + "–" + end + "/" + total;
+  el.textContent =
+    pons +
+    " PON · filas " +
+    (start === end ? start + "/" + total : start + "–" + end + "/" + total);
 }
 
 function _renderVnoResumen(vnoResumen) {
@@ -766,72 +1358,73 @@ function _renderVnoResumen(vnoResumen) {
     .join("");
 }
 
+function _renderOntCell(vnoList, ontTotal, summaryOnly, row) {
+  const n = Number(ontTotal) || 0;
+  const title = _ontBreakdownTitle(vnoList, n);
+  if (summaryOnly) {
+    if (n <= 0) return '<span class="cortes-metric-n cortes-metric-n--empty">—</span>';
+    return (
+      '<span class="cortes-metric-n' +
+      (n > 0 ? "" : " cortes-metric-n--empty") +
+      '" title="' +
+      _esc(title) +
+      '">' +
+      _esc(n) +
+      "</span>"
+    );
+  }
+  if (row && row.sin_inventario) {
+    return _renderSinMapoLabel(row);
+  }
+  if (vnoList && vnoList.length) {
+    return (
+      '<div class="cortes-ont-cell">' +
+      vnoList
+        .map(
+          (v) =>
+            '<span class="cortes-ont-pill" title="' +
+            _esc(v.vno) +
+            '"><span class="cortes-ont-pill__n">' +
+            _esc(v.count) +
+            "</span> " +
+            _esc(v.vno) +
+            "</span>"
+        )
+        .join("") +
+      "</div>"
+    );
+  }
+  if (n > 0) {
+    return (
+      '<div class="cortes-ont-cell"><span class="cortes-ont-pill" title="ONT afectadas">' +
+      '<span class="cortes-ont-pill__n">' +
+      _esc(n) +
+      "</span></span></div>"
+    );
+  }
+  return '<span class="muted">—</span>';
+}
+
 function _renderVnoCell(vnoList) {
-  if (!vnoList || !vnoList.length) return '<span class="muted">—</span>';
-  return (
-    '<div class="cortes-vno-cell">' +
-    vnoList
-      .map(
-        (v) =>
-          '<span class="cortes-vno-pill" title="' +
-          _esc(v.vno) +
-          '"><span class="cortes-vno-pill__n">' +
-          _esc(v.count) +
-          "</span> " +
-          _esc(v.vno) +
-          "</span>"
-      )
-      .join("") +
-    "</div>"
-  );
+  return _renderOntCell(vnoList, 0);
 }
 
 function _renderRamasCell(row) {
   const ramas = row.ramas || [];
   if (!ramas.length) {
-    if (row.sin_inventario) {
-      return '<span class="cortes-sin-map" title="Sin ONT IN SERVICE en inventario para este PON">Sin mapeo</span>';
-    }
-    const clientes = row.ont_total ?? 0;
-    const lt = row.lt_name || row.olt || "";
-    const oltUrl = lt ? "/dashboard/olt?lt=" + encodeURIComponent(lt) : "/dashboard/olt";
-    const ponLbl = row.pon_label || (row.pon ? "PON " + row.pon : "este PON");
-    if (clientes > 0) {
-      return (
-        '<a class="cortes-sin-rama-link" href="' +
-        _esc(oltUrl) +
-        '" target="_blank" rel="noopener noreferrer" title="Hay ' +
-        clientes +
-        " clientes IN SERVICE pero el inventario no devolvió path RATC/FATC. En OLT/LT expandí " +
-        ponLbl +
-        ' para ver las ramas.">' +
-        "Sin RAMA · ver OLT</a>"
-      );
-    }
-    return '<span class="muted" title="Sin path_atc en inventario">Sin RAMA</span>';
+    return _renderIdListCell([], {
+      row: row,
+      sinInventario: !!row.sin_inventario,
+      emptyHtml: '<span class="cortes-id-cell cortes-id-cell--empty" title="Sin RAMA">—</span>',
+    });
   }
-  const maxShow = 3;
-  const visible = ramas.slice(0, maxShow);
-  const extra = ramas.length - visible.length;
-  let html = '<div class="cortes-ramas-list">';
-  visible.forEach((rama) => {
-    const isFatc = rama.toUpperCase().indexOf("-FATC-") >= 0;
-    const url = "/dashboard/rama?q=" + encodeURIComponent(rama);
-    html +=
-      '<a class="cortes-rama-link' +
-      (isFatc ? " cortes-rama-link--fatc" : "") +
-      '" href="' +
-      _esc(url) +
-      '" target="_blank" rel="noopener noreferrer">' +
-      _esc(rama) +
-      "</a>";
-  });
-  if (extra > 0) html += '<span class="cortes-rama-more muted">+' + extra + "</span>";
-  html += "</div>";
-  return html;
+  return _renderIdListCell(ramas, { row: row });
 }
 
 function _renderActions(row, compact) {
+  if (row.sin_inventario) {
+    return '<span class="muted" title="' + _esc(_sinMapTitle(row)) + '">—</span>';
+  }
   const pk = String(row.pon_key || "").trim();
   const oltUrl = pk ? _buildOltUrlFromPonKeys([pk]) : "/dashboard/olt";
   const cls = compact ? " cortes-actions--compact" : "";
@@ -851,7 +1444,7 @@ function _renderActions(row, compact) {
   }
   if (row.ramas && row.ramas[0]) {
     html +=
-      '<a class="btn btn-ghost btn-sm" href="/?q=' +
+      '<a class="btn btn-ghost btn-sm cortes-action-rx-btn" href="/?q=' +
       encodeURIComponent(row.ramas[0]) +
       '" target="_blank" rel="noopener noreferrer" title="Consultar potencias RX">RX</a>';
   }
@@ -889,6 +1482,8 @@ function _renderCausaCell(row, opts) {
       '<span class="cortes-badge cortes-badge--nuevo" title="Corte nuevo desde tu última visita">N</span>'
     );
   }
+  const impactHtml = _renderImpactoBadge(row, opts);
+  if (impactHtml) parts.push(impactHtml);
   const showCausaBadge = !opts.child || !opts.group || _groupHasMixedCausa(opts.group);
   if (showCausaBadge) {
     const causa = row.causa || "OTRO";
@@ -910,95 +1505,42 @@ function _renderCausaCell(row, opts) {
   return '<span class="cortes-causa-cell">' + parts.join("") + "</span>";
 }
 
-function _renderDataRow(row, opts) {
-  opts = opts || {};
-  const child =
-    opts.child
-      ? " cortes-data-row--child" + (opts.nested ? " cortes-data-row--nested" : "")
-      : "";
+function _renderDataRow(row) {
   const nuevo = _isNuevo(row) ? " cortes-data-row--nuevo" : "";
-  const imp = row.impacto || "MODERADO";
-  const impPon = row.impacto_pon || imp;
-  const impactoRow =
-    !opts.child && row.evento_simultaneo && imp !== "MODERADO"
-      ? " cortes-data-row--" + imp.toLowerCase()
-      : "";
-  const clientes = row.ont_total ?? 0;
-  const rowImp = row.evento_simultaneo ? imp : "MODERADO";
-  const clientesCls =
-    rowImp === "EMERGENCIA"
-      ? "cortes-clientes--emergencia"
-      : rowImp === "URGENTE"
-        ? "cortes-clientes--urgente"
-        : clientes > 0
-          ? "cortes-clientes--hit"
-          : "muted";
-  const loc = opts.child
-    ? '<span class="mono cortes-loc__pon">' + _esc(row.pon_label || "PON " + row.pon) + "</span>"
-    :
-        '<div class="cortes-loc"><span class="mono cortes-loc__olt">' +
-        _esc(row.olt) +
-        '</span><span class="cortes-loc__sub mono">LT ' +
-        _esc(row.lt) +
-        " · " +
-        _esc(row.pon_label || row.pon) +
-        "</span></div>";
+  const loc =
+    '<div class="cortes-loc"><span class="mono cortes-loc__olt">' +
+    _esc(row.olt) +
+    '</span><span class="cortes-loc__sub mono">LT ' +
+    _esc(row.lt) +
+    " · " +
+    _esc(row.pon_label || row.pon) +
+    "</span></div>";
+  const causaHtml = _renderCausaCell(row, {});
   return (
     '<tr class="cortes-data-row' +
-    child +
     nuevo +
-    impactoRow +
     '">' +
-    "<td>" +
-    _renderCausaCell(row, { child: opts.child, group: opts.group }) +
+    '<td class="cortes-col-causa">' +
+    causaHtml +
     "</td>" +
-    "<td>" +
+    '<td class="cortes-col-loc">' +
     loc +
     "</td>" +
-    '<td class="cortes-sitio cortes-col-sitio--optional">' +
-    _esc(row.principal || "—") +
-    "</td>" +
-    '<td class="cortes-col-estado--optional">' +
-    _renderEstadoCell(row) +
-    "</td>" +
-    '<td class="mono cortes-raised">' +
-    _esc(_formatRaised(row.raised)) +
-    "</td>" +
-    '<td class="mono cortes-cleared cortes-col-cleared--optional">' +
-    _esc(row.cleared ? _formatRaised(row.cleared) : "—") +
-    "</td>" +
-    '<td class="cortes-col-clientes ' +
-    clientesCls +
-    '">' +
-    '<div class="cortes-clientes-cell"><span class="cortes-clientes-n">' +
-    _esc(clientes) +
-    "</span>" +
-    _renderImpactoBadge(row, { groupChild: opts.child }) +
-    "</div></td>" +
-    "<td>" +
-    _renderVnoCell(row.vno_list) +
-    "</td>" +
-    "<td>" +
-    _renderRamasCell(row) +
-    "</td>" +
-    "<td>" +
-    _renderActions(row, true) +
-    "</td>" +
+    _renderMetricRowCells(row, {
+      actionsHtml: _renderActions(row, true),
+    }) +
     "</tr>"
   );
 }
 
 function _displayRowsForMode() {
-  if (viewMode === "grupo") {
-    return { mode: "grupo", sitios: _buildSitioGrupos(allGrupos || []) };
-  }
-  return { mode: "pon", items: allItems };
+  const blocks = (allItems || []).map((item) => ({ type: "single", item }));
+  return { mode: "flat", blocks };
 }
 
 function _totalPagesForDisplay() {
-  const d = _displayRowsForMode();
-  if (d.mode === "grupo") return d.sitios.length ? Math.ceil(d.sitios.length / pageSize) : 0;
-  return d.items.length ? Math.ceil(d.items.length / pageSize) : 0;
+  const blocks = _displayRowsForMode().blocks;
+  return blocks.length ? Math.ceil(blocks.length / pageSize) : 0;
 }
 
 function _updatePager() {
@@ -1007,8 +1549,8 @@ function _updatePager() {
   const prev = document.getElementById("cortes-page-prev");
   const next = document.getElementById("cortes-page-next");
   const pages = _totalPagesForDisplay();
-  const d = _displayRowsForMode();
-  const total = d.mode === "grupo" ? d.sitios.length : d.items.length;
+  const blocks = _displayRowsForMode().blocks;
+  const total = blocks.length;
   if (!pager) return;
   pager.hidden = total <= PAGER_SHOW_ABOVE;
   if (info) {
@@ -1025,15 +1567,16 @@ function _renderTablePage() {
   if (!tbody || !table) return;
 
   _syncTableLayout();
-  const d = _displayRowsForMode();
-  const total = d.mode === "grupo" ? d.sitios.length : d.items.length;
+  const display = _displayRowsForMode();
+  const blocks = display.blocks;
+  const total = blocks.length;
 
   if (!total) {
     tbody.innerHTML = "";
     table.classList.add("is-hidden");
     if (empty) empty.hidden = false;
     _updatePager();
-    _updateVisibleCount([]);
+    _updateVisibleCount([], 0);
     return;
   }
 
@@ -1041,38 +1584,15 @@ function _renderTablePage() {
   table.classList.remove("is-hidden");
 
   const start = currentPage * pageSize;
+  const pageBlocks = blocks.slice(start, start + pageSize);
   let html = "";
-
-  if (d.mode === "grupo") {
-    const pageSitios = d.sitios.slice(start, start + pageSize);
-    pageSitios.forEach((site) => {
-      const ltGrupos = site.lt_grupos || [];
-      const multiLt = ltGrupos.length > 1;
-      if (multiLt) {
-        html += _renderSitioGroupRow(site);
-        ltGrupos.forEach((g) => {
-          html += _renderLtSubGroupRow(g);
-          (g.items || []).forEach((row) => {
-            html += _renderDataRow(row, { child: true, group: g, nested: true });
-          });
-        });
-      } else if (ltGrupos[0]) {
-        const g = ltGrupos[0];
-        html += _renderSitioLtGroupRow(g);
-        (g.items || []).forEach((row) => {
-          html += _renderDataRow(row, { child: true, group: g });
-        });
-      }
-    });
-    _updateVisibleCount(pageSitios);
-  } else {
-    const pageItems = d.items.slice(start, start + pageSize);
-    html = pageItems.map((row) => _renderDataRow(row)).join("");
-    _updateVisibleCount(d.items);
-  }
+  pageBlocks.forEach((block) => {
+    html += _renderDataRow(block.item);
+  });
 
   tbody.innerHTML = html;
   _updatePager();
+  _updateVisibleCount(pageBlocks, total);
 }
 
 function _setLoading(on) {
@@ -1098,7 +1618,6 @@ function _showCortesError(msg) {
   const table = document.getElementById("cortes-table");
   const tbody = document.getElementById("cortes-tbody");
   allItems = [];
-  allGrupos = [];
   currentPage = 0;
   if (tbody) tbody.innerHTML = "";
   if (table) table.classList.add("is-hidden");
@@ -1115,24 +1634,6 @@ function _showCortesError(msg) {
   _cortesToast(msg || "Error consultando cortes", { variant: "error" });
 }
 
-function _setViewMode(mode) {
-  viewMode = mode === "grupo" ? "grupo" : "pon";
-  const ponBtn = document.getElementById("cortes-view-pon");
-  const grupoBtn = document.getElementById("cortes-view-grupo");
-  if (ponBtn) {
-    ponBtn.classList.toggle("is-active", viewMode === "pon");
-    ponBtn.setAttribute("aria-selected", viewMode === "pon" ? "true" : "false");
-  }
-  if (grupoBtn) {
-    grupoBtn.classList.toggle("is-active", viewMode === "grupo");
-    grupoBtn.setAttribute("aria-selected", viewMode === "grupo" ? "true" : "false");
-  }
-  _syncTableLayout();
-  currentPage = 0;
-  _renderTablePage();
-  if (!_restoringState) _saveStateSoon();
-}
-
 function _buildCortesRamaStatePayload() {
   return {
     ts: Date.now(),
@@ -1143,8 +1644,6 @@ function _buildCortesRamaStatePayload() {
     vno: document.getElementById("cortes-vno")?.value || "ALL",
     sort: document.getElementById("cortes-sort")?.value || "reciente",
     fechaDia: _cortesFechaIso(),
-    impacto: document.getElementById("cortes-impacto")?.value || "ALL",
-    viewMode,
     pageSize,
     currentPage,
     refreshMs: _getRefreshMs(),
@@ -1166,14 +1665,12 @@ function _readCortesRamaState() {
     const size = Number(parsed.pageSize);
     return {
       q: typeof parsed.q === "string" ? parsed.q : "",
-      estado: typeof parsed.estado === "string" ? parsed.estado : "activas",
+      estado: parsed.estado === "todas" ? "activas" : typeof parsed.estado === "string" ? parsed.estado : "activas",
       causa: typeof parsed.causa === "string" ? parsed.causa : "ALL",
       principal: typeof parsed.principal === "string" ? parsed.principal : "ALL",
       vno: typeof parsed.vno === "string" ? parsed.vno : "ALL",
       sort: typeof parsed.sort === "string" ? parsed.sort : "reciente",
       fechaDia: typeof parsed.fechaDia === "string" ? parsed.fechaDia : "",
-      impacto: typeof parsed.impacto === "string" ? parsed.impacto : "ALL",
-      viewMode: parsed.viewMode === "pon" ? "pon" : "grupo",
       pageSize: Number.isFinite(size) && size > 0 ? Math.floor(size) : 10,
       currentPage: Number.isFinite(page) && page >= 0 ? Math.floor(page) : 0,
       refreshMs: Number.isFinite(Number(parsed.refreshMs)) && Number(parsed.refreshMs) > 0
@@ -1185,12 +1682,14 @@ function _readCortesRamaState() {
 
 function _restoreState() {
   const st = _readCortesRamaState();
-  if (!st) return;
+  if (!st) return false;
   _restoringState = true;
   const q = document.getElementById("cortes-q");
   if (q && st.q) q.value = st.q;
   const estadoSel = document.getElementById("cortes-estado");
-  if (estadoSel && st.estado) estadoSel.value = st.estado;
+  if (estadoSel && st.estado) {
+    estadoSel.value = st.estado === "todas" ? "activas" : st.estado;
+  }
   const causa = document.getElementById("cortes-causa");
   if (causa && st.causa) causa.value = st.causa;
   const principal = document.getElementById("cortes-principal");
@@ -1202,22 +1701,19 @@ function _restoreState() {
   if (st.fechaDia) {
     _setCortesFechaIso(st.fechaDia);
   } else {
-    _ensureFechaHoy();
+    _setCortesFechaAll();
   }
-  const impactoSel = document.getElementById("cortes-impacto");
-  if (impactoSel && st.impacto) impactoSel.value = st.impacto;
   if (st.pageSize) pageSize = st.pageSize;
   const ps = document.getElementById("cortes-page-size");
   if (ps && st.pageSize) ps.value = String(st.pageSize);
-  if (st.viewMode) viewMode = st.viewMode;
   if (typeof st.currentPage === "number") currentPage = st.currentPage;
   const refreshSel = document.getElementById("cortes-refresh");
   if (refreshSel && st.refreshMs) {
     refreshSel.value = String(st.refreshMs);
     _saveRefreshMs(st.refreshMs);
   }
-  _setViewMode(viewMode);
   _restoringState = false;
+  return true;
 }
 
 function resetCortes() {
@@ -1229,14 +1725,11 @@ function resetCortes() {
   document.getElementById("cortes-vno").value = "ALL";
   const sortSel = document.getElementById("cortes-sort");
   if (sortSel) sortSel.value = "reciente";
-  _setCortesFechaIso(_todayArtIso());
-  const impactoSel = document.getElementById("cortes-impacto");
-  if (impactoSel) impactoSel.value = "ALL";
+  _setCortesFechaHoy();
   const refreshSel = document.getElementById("cortes-refresh");
   if (refreshSel) refreshSel.value = "0";
   _applyAutoRefresh();
   currentPage = 0;
-  _setViewMode("grupo");
   fetchCortes({ fresh: true });
 }
 
@@ -1274,7 +1767,7 @@ function fetchCortes(opts) {
       }
       lastPayload = data;
       allItems = data.items || [];
-      allGrupos = data.grupos || [];
+      _pruneEventoCollapseKeys(_buildDisplayBlocks(allItems));
       _syncTableLayout();
       if (!preservePage && !_restoringState) currentPage = 0;
       _populateSelect(document.getElementById("cortes-principal"), data.principals, "Todos los sitios");
@@ -1381,6 +1874,13 @@ function exportEventoReporte(ev, btn) {
 }
 
 function _onCortesFilterChange() {
+  _syncToolbarContext();
+  currentPage = 0;
+  if (!_restoringState) _saveStateSoon();
+  fetchCortes({ fresh: true });
+}
+
+function _onCortesSortChange() {
   currentPage = 0;
   if (!_restoringState) _saveStateSoon();
   fetchCortes({ fresh: true });
@@ -1392,6 +1892,17 @@ function _onCortesReporteButtonClick(ev) {
   ev.preventDefault();
   ev.stopPropagation();
   const pk = (btn.getAttribute("data-pon-key") || "").trim();
+  const pkMany = (btn.getAttribute("data-pon-keys") || "").trim();
+  if (pkMany) {
+    exportEventoReporte(
+      {
+        pon_keys: pkMany.split(",").map((s) => s.trim()).filter(Boolean),
+        principal: (btn.getAttribute("data-principal") || "").trim(),
+      },
+      btn
+    );
+    return;
+  }
   if (pk) {
     exportEventoReporte(
       {
@@ -1414,12 +1925,37 @@ function _onCortesReporteButtonClick(ev) {
   exportEventoReporte(row, btn);
 }
 
+function _onCortesTbodyClick(ev) {
+  const sitioToggle = ev.target.closest(".cortes-sitio-toggle");
+  if (sitioToggle) {
+    ev.preventDefault();
+    const key = (sitioToggle.getAttribute("data-sitio-key") || "").trim();
+    if (key) _toggleSitioBlock(key);
+    return;
+  }
+  const horaToggle = ev.target.closest(".cortes-hour-toggle");
+  if (horaToggle) {
+    ev.preventDefault();
+    const key = (horaToggle.getAttribute("data-hora-key") || "").trim();
+    if (key) _toggleHourBlock(key);
+    return;
+  }
+  const toggle = ev.target.closest(".cortes-evento-toggle");
+  if (toggle) {
+    ev.preventDefault();
+    const key = (toggle.getAttribute("data-evento-key") || "").trim();
+    if (key) _toggleEventoBlock(key);
+    return;
+  }
+  _onCortesReporteButtonClick(ev);
+}
+
 function initCortesRamaDashboard() {
   if (_cortesPageReady) return;
   _cortesPageReady = true;
 
   document.getElementById("cortes-eventos-list")?.addEventListener("click", _onCortesReporteButtonClick);
-  document.getElementById("cortes-tbody")?.addEventListener("click", _onCortesReporteButtonClick);
+  document.getElementById("cortes-tbody")?.addEventListener("click", _onCortesTbodyClick);
   document.getElementById("btn-cortes-limpiar")?.addEventListener("click", resetCortes);
   document.getElementById("btn-cortes-search")?.addEventListener("click", (ev) => {
     ev.preventDefault();
@@ -1431,8 +1967,6 @@ function initCortesRamaDashboard() {
     _renderTablePage();
     _cortesToast("Cortes marcados como vistos");
   });
-  document.getElementById("cortes-view-pon")?.addEventListener("click", () => _setViewMode("pon"));
-  document.getElementById("cortes-view-grupo")?.addEventListener("click", () => _setViewMode("grupo"));
   document.getElementById("cortes-q")?.addEventListener("keydown", (ev) => {
     if (ev.key === "Enter") {
       ev.preventDefault();
@@ -1469,10 +2003,7 @@ function initCortesRamaDashboard() {
   ["cortes-estado", "cortes-causa", "cortes-principal", "cortes-vno"].forEach((id) => {
     document.getElementById(id)?.addEventListener("change", _onCortesFilterChange);
   });
-  document.getElementById("cortes-sort")?.addEventListener("change", _onCortesFilterChange);
-  ["cortes-impacto"].forEach((id) => {
-    document.getElementById(id)?.addEventListener("change", _onCortesFilterChange);
-  });
+  document.getElementById("cortes-sort")?.addEventListener("change", _onCortesSortChange);
   document.getElementById("cortes-page-prev")?.addEventListener("click", () => {
     if (currentPage > 0) {
       currentPage -= 1;
@@ -1495,13 +2026,17 @@ function initCortesRamaDashboard() {
   });
 
   _initCortesFechaPicker();
+  let restored = false;
   try {
-    _restoreState();
+    restored = !!_restoreState();
   } catch (_err) {
     /* estado de sesión corrupto no debe impedir la consulta inicial */
   }
-  _ensureFechaHoy();
+  if (!restored) {
+    _setCortesFechaHoy();
+  }
   _syncTableLayout();
+  _syncToolbarContext();
   _applyAutoRefresh();
   fetchCortes({ fresh: true });
 }

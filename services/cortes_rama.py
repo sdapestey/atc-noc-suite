@@ -126,6 +126,7 @@ def _batch_inventario_por_pon_keys(pon_keys: list[str]) -> dict[str, dict]:
             "ratcs": set(),
             "fatcs": set(),
             "paths": set(),
+            "ctos": set(),
             "ont_total": 0,
             "vnos": defaultdict(int),
         }
@@ -135,15 +136,18 @@ def _batch_inventario_por_pon_keys(pon_keys: list[str]) -> dict[str, dict]:
             QUERIES["cortes_rama_inventario_por_pon"],
             (obj_patterns,),
         )
-        for obj_norm, rama, invocator in cur.fetchall():
+        for obj_norm, rama, cto, invocator in cur.fetchall():
             pk = _pon_key_from_object_name(str(obj_norm or ""))
             if not pk or pk not in valid_keys:
                 continue
             bucket = agg[pk]
             bucket["ont_total"] += 1
             path = str(rama or "").strip()
+            cto_s = str(cto or "").strip()
             if path:
                 bucket["paths"].add(path)
+            if path and cto_s:
+                bucket["ctos"].add((path, cto_s))
             u = path.upper()
             if "-RATC-" in u:
                 bucket["ratcs"].add(path)
@@ -165,11 +169,14 @@ def _batch_inventario_por_pon_keys(pon_keys: list[str]) -> dict[str, dict]:
         ramas = _merge_ramas_display(ratcs, fatcs)
         if not ramas:
             ramas = sorted(bucket["paths"], key=_rama_sort_key)
+        ctos = bucket["ctos"]
         out[pk] = {
             "ramas": ramas,
             "ramas_ratc": sorted(ratcs, key=str.lower),
             "ramas_fatc": sorted(fatcs, key=str.lower),
             "ramas_count": len(ramas),
+            "cto_count": len(ctos),
+            "cto_keys": [f"{r}|{c}" for r, c in sorted(ctos, key=lambda x: (x[0].lower(), x[1].lower()))],
             "ont_total": int(bucket["ont_total"]),
             "vnos": vnos_map,
             "vno_list": vno_list,
@@ -256,7 +263,7 @@ def _clasificar_impacto(ont_total: int | str | None) -> str:
     n = max(0, int(ont_total or 0))
     if n >= 250:
         return "EMERGENCIA"
-    if n >= 16:
+    if n >= 17:
         return "URGENTE"
     return "MODERADO"
 
@@ -558,12 +565,15 @@ def _build_grupos_sitio_lt(items: list[dict], sort_by: str | None = None) -> lis
                 "losi": 0,
                 "dying": 0,
                 "ramas": set(),
+                "ctos": set(),
                 "vnos_acc": defaultdict(int),
                 "items": [],
             }
         g = groups[key]
         g["cortes"] += 1
         g["ont_total"] += int(item.get("ont_total") or 0)
+        for cto_key in item.get("cto_keys") or []:
+            g["ctos"].add(str(cto_key))
         causa = str(item.get("causa") or "")
         if causa == "LOSI_LOBI":
             g["losi"] += 1
@@ -580,6 +590,8 @@ def _build_grupos_sitio_lt(items: list[dict], sort_by: str | None = None) -> lis
     for g in groups.values():
         g["ramas"] = sorted(g.pop("ramas"), key=str.lower)
         g["ramas_count"] = len(g["ramas"])
+        g["cto_count"] = len(g.pop("ctos"))
+        g["olt_count"] = 1 if g.get("olt") else 0
         vnos_acc = g.pop("vnos_acc")
         g["vno_list"] = [
             {"vno": vno, "count": vnos_acc[vno]}
@@ -635,6 +647,8 @@ def _cortes_rama_uncached(
         vnos = dict(inv.get("vnos") or {})
         vno_list = list(inv.get("vno_list") or [])
         ont_total = int(inv.get("ont_total") or 0)
+        cto_count = int(inv.get("cto_count") or 0)
+        cto_keys = list(inv.get("cto_keys") or [])
         for v in vnos:
             vnos_globales.add(v)
         causa_code = str(al.get("causa") or "OTRO")
@@ -659,7 +673,10 @@ def _cortes_rama_uncached(
                     "ramas_ratc": list(inv.get("ramas_ratc") or []),
                     "ramas_fatc": list(inv.get("ramas_fatc") or []),
                     "ramas_count": len(ramas),
+                    "cto_count": cto_count,
+                    "cto_keys": cto_keys,
                     "ont_total": ont_total,
+                    "olt_count": 1 if olt else 0,
                     "vnos": vnos,
                     "vno_list": vno_list,
                     "sin_inventario": not ramas and ont_total == 0,

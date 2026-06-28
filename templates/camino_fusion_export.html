@@ -8,7 +8,13 @@
 <body class="bentley-export{% if pdf_mode %} bentley-export--pdf{% endif %}">
   {% if not pdf_mode %}
   <div class="bentley-toolbar">
+    {% if report.report_tipo == 'fosc' and report.fosc_id %}
+    <a class="primary" href="{{ url_for('dash_camino_optico_export_splice', fosc=report.fosc_id, rama=report.rama or '', pdf=1) }}">Descargar PDF</a>
+    {% elif report.report_tipo == 'splice' and report.fosc_id and report.tray %}
+    <a class="primary" href="{{ url_for('dash_camino_optico_export_splice', fosc=report.fosc_id, tray=report.tray, rama=report.rama or '', pdf=1) }}">Descargar PDF</a>
+    {% else %}
     <a class="primary" href="{{ url_for('dash_camino_optico_export_fusion', fusion=report.fusion_id, rama=report.rama or '', pdf=1) }}">Descargar PDF</a>
+    {% endif %}
     <a href="{{ url_for('dash_camino_optico') }}">Volver a Camino óptico</a>
     {% if report.ok %}<span>{{ report.header.fusion_id }}</span>{% endif %}
     <span class="hint">Usá «Descargar PDF» para igualar al modelo Bentley (no Imprimir del navegador).</span>
@@ -16,7 +22,11 @@
   {% endif %}
 
   {% macro fc(label, slug) %}
-    {% if label %}<td class="fc fc--{{ slug or 'none' }}">{{ label }}</td>{% else %}<td></td>{% endif %}
+    {% if label or slug %}
+    <td class="fc fc--{{ slug or 'none' }}">{% if label %}{{ label }}{% endif %}</td>
+    {% else %}
+    <td></td>
+    {% endif %}
   {% endmacro %}
 
   {% macro cable_rows(rows) %}
@@ -69,8 +79,9 @@
   {% set h = report.header %}
   {% set b = report.bentley %}
   {% set cables = b.cable_render %}
+  {% set cable_pages = cables.pages if cables.pages is defined else [] %}
 
-  <div class="bentley-page">
+  <div class="bentley-page bentley-page--sheet">
     <header class="bentley-header">
       <div class="bentley-header-body">
         <div class="bentley-header-logo">
@@ -82,20 +93,20 @@
           <div class="val">{{ h.direccion or "—" }}</div>
           <div class="lbl" role="rowheader">COORDENADAS:</div>
           <div class="val val--url">{% if h.maps_url %}<a href="{{ h.maps_url }}">{{ h.maps_url }}</a>{% else %}—{% endif %}</div>
-          <div class="lbl" role="rowheader">TIPO:</div>
-          <div class="val">{{ h.tipo }}</div>
-
           <div class="lbl" role="rowheader">BACKHAUL:</div>
           <div class="val">{{ h.backhaul or "—" }}</div>
+
           <div class="lbl" role="rowheader">NOMBRE:</div>
           <div class="val">{{ h.nombre_fosc or "—" }}</div>
-          <div class="lbl" role="rowheader">STATUS:</div>
-          <div class="val">{{ h.status or "—" }}</div>
-
+          <div class="lbl" role="rowheader">TIPO:</div>
+          <div class="val">{{ h.tipo }}</div>
           <div class="lbl" role="rowheader">OWNER:</div>
           <div class="val">{{ h.owner or "—" }}</div>
+
           <div class="lbl" role="rowheader">ALIAS:</div>
           <div class="val">{{ h.alias or "—" }}</div>
+          <div class="lbl" role="rowheader">STATUS:</div>
+          <div class="val">{{ h.status or "—" }}</div>
           <div class="lbl" role="rowheader">FUSIÓN:</div>
           <div class="val">{{ h.fusion_num or "—" }}</div>
 
@@ -107,6 +118,7 @@
       </div>
     </header>
 
+    {% if b.splitter_sections %}
     <table class="bentley-grid bentley-grid--splitter">
       <colgroup>
         <col><col><col><col><col><col><col><col><col><col><col><col><col><col>
@@ -185,19 +197,24 @@
         {% endfor %}
       </tbody>
     </table>
+    {% endif %}
+    <img class="bentley-wm" src="{{ watermark_src }}" alt="" aria-hidden="true">
+  </div>
 
+  {% for sheet_rows in cable_pages %}
+  <div class="bentley-page bentley-page--sheet">
     <table class="bentley-grid bentley-grid--cable">
       <colgroup>
         <col><col><col><col><col><col><col><col><col><col><col><col>
       </colgroup>
       {{ cable_head() }}
       <tbody>
-        {{ cable_rows(cables.page1) }}
-        {% if cables.page2 %}{{ cable_rows(cables.page2) }}{% endif %}
+        {{ cable_rows(sheet_rows) }}
       </tbody>
     </table>
     <img class="bentley-wm" src="{{ watermark_src }}" alt="" aria-hidden="true">
   </div>
+  {% endfor %}
   {% endif %}
 </body>
 </html>

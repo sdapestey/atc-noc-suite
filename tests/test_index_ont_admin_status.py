@@ -35,16 +35,20 @@ def test_cambiar_admin_status_ont_post_ema(monkeypatch):
     )
 
 
-def _mock_altiplano_login_ok(monkeypatch):
+def _mock_altiplano_env_creds(monkeypatch, user="noc_user", password="secret"):
     import web.routes as routes
 
-    monkeypatch.setattr(routes, "obtener_token_entorno_nbi", lambda *_a, **_k: "tok-test")
+    monkeypatch.setattr(
+        routes,
+        "_altiplano_creds_from_env",
+        lambda _entorno: (user, password, None),
+    )
 
 
 def test_ont_admin_status_endpoint_success(client, monkeypatch):
     import web.routes as routes
 
-    _mock_altiplano_login_ok(monkeypatch)
+    _mock_altiplano_env_creds(monkeypatch)
     monkeypatch.setattr(
         routes,
         "cambiar_admin_status_access_id",
@@ -63,8 +67,6 @@ def test_ont_admin_status_endpoint_success(client, monkeypatch):
             "object_name": "BA_OLTA_SF01_04-7-1-5",
             "toggle": True,
             "current_admin": "UNLOCKED",
-            "altiplano_user": "noc_user",
-            "altiplano_password": "secret",
         },
     )
     assert r.status_code == 200
@@ -74,7 +76,7 @@ def test_ont_admin_status_endpoint_success(client, monkeypatch):
 def test_ont_admin_status_endpoint_toggle_locked_to_unlocked(client, monkeypatch):
     import web.routes as routes
 
-    _mock_altiplano_login_ok(monkeypatch)
+    _mock_altiplano_env_creds(monkeypatch)
     seen = {}
 
     def fake(aid, op, status, **kwargs):
@@ -90,18 +92,24 @@ def test_ont_admin_status_endpoint_toggle_locked_to_unlocked(client, monkeypatch
             "operador": "TASA",
             "toggle": True,
             "current_admin": "LOCKED",
-            "altiplano_user": "noc_user",
-            "altiplano_password": "secret",
         },
     )
     assert r.status_code == 200
     assert seen["status"] == "UNLOCKED"
 
 
-def test_ont_admin_status_endpoint_rechaza_credenciales_invalidas(client, monkeypatch):
+def test_ont_admin_status_endpoint_sin_credenciales_env(client, monkeypatch):
     import web.routes as routes
 
-    monkeypatch.setattr(routes, "obtener_token_entorno_nbi", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        routes,
+        "_altiplano_creds_from_env",
+        lambda _entorno: (
+            "",
+            "",
+            ({"ok": False, "message": "Credenciales Altiplano no configuradas en .env"}, 503),
+        ),
+    )
 
     r = client.post(
         "/ont/admin-status",
@@ -110,9 +118,7 @@ def test_ont_admin_status_endpoint_rechaza_credenciales_invalidas(client, monkey
             "operador": "TASA",
             "toggle": True,
             "current_admin": "UNLOCKED",
-            "altiplano_user": "bad",
-            "altiplano_password": "bad",
         },
     )
-    assert r.status_code == 401
-    assert "incorrectos" in (r.get_json() or {}).get("message", "")
+    assert r.status_code == 503
+    assert ".env" in (r.get_json() or {}).get("message", "")

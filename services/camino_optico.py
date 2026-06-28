@@ -17,6 +17,7 @@ from .camino_gis import (
     consultar_cto_coordenadas_desde_sfat,
     consultar_feeder_distribucion_planta_interna,
     consultar_fusiones_verificacion_rama,
+    consultar_fosc_camino_logico_rama,
     consultar_fosc_cerca_trazado_ramas,
     consultar_fosc_ordenadas_en_rama,
     es_codigo_fusion_planta,
@@ -34,6 +35,7 @@ from .domain import (
     SITIO_PRINCIPAL_DEFAULT,
     SITIO_PRINCIPAL_POR_REGION,
 )
+from .camino_rama_reporte import consultar_reporte_rama_cm
 from .inventory import consultar_cto_coordenadas, consultar_cto_coordenadas_batch, consultar_cto_direccion_postal
 
 # Paleta alineada con LT_OVERLAY_PALETTE en dashboard_camino_optico.html
@@ -1055,6 +1057,8 @@ def dashboard_camino_optico_rama(rama, *, fusion_destacar: str | None = None):
         pasos_equipo=_paso_equipo_focal_desde_olt(olt_hint),
     )
 
+    reporte_rama = consultar_reporte_rama_cm(rama)
+
     return {
         "tipo": "rama",
         "rama": rama,
@@ -1071,6 +1075,7 @@ def dashboard_camino_optico_rama(rama, *, fusion_destacar: str | None = None):
             [rama], gis, fusion_destacar=fusion_destacar
         ),
         "fusion_destacar": fusion_destacar,
+        "reporte_rama": reporte_rama,
     }
 
 
@@ -1710,10 +1715,20 @@ def _analisis_corte_masivo_gis(gis: dict, ramas: list[str]) -> tuple[list[dict],
     extra = max(0, len(ramas_list) - len(ramas_short))
     motivo_extra = f" (+{extra} ramas más)" if extra else ""
     length_txt = f" Troncal compartido ≈ {int(round(length_m))} m." if length_m > 5 else ""
+    length_m_int = int(round(length_m))
+    radius_m = min(120, max(75, int(70 + peak * 0.5)))
 
-    zona = {
-        "rank": 1,
+    cnt_origen = int(origen["rama_count"])
+    pct_origen = int(round(100 * cnt_origen / total)) if total else 0
+    ramas_origen = list(origen["ramas"])
+    ramas_origen_short = ramas_origen[:10]
+    extra_origen = max(0, len(ramas_origen) - len(ramas_origen_short))
+    motivo_extra_origen = f" (+{extra_origen} ramas más)" if extra_origen else ""
+
+    zona_reparto = {
+        "rank": 2,
         "tipo": "reparto",
+        "selected": False,
         "lat": round(float(bifurcacion["lat"]), 6),
         "lon": round(float(bifurcacion["lon"]), 6),
         "rama_count": cnt,
@@ -1723,18 +1738,37 @@ def _analisis_corte_masivo_gis(gis: dict, ramas: list[str]) -> tuple[list[dict],
         "ramas_extra": extra,
         "prioridad": prioridad,
         "score": score,
-        "radius_m": min(120, max(75, int(70 + peak * 0.5))),
-        "troncal_length_m": int(round(length_m)),
+        "radius_m": radius_m,
+        "troncal_length_m": length_m_int,
         "motivo": (
             f"Punto de reparto: último tramo con {cnt}/{total} ramas ({pct}%) antes de "
-            f"separarse en el trazado ci_op — foco probable de corte de troncal.{length_txt}"
-            f"{motivo_extra}"
+            f"separarse en el trazado ci_op.{length_txt}{motivo_extra}"
+        ),
+    }
+    zona_origen = {
+        "rank": 1,
+        "tipo": "troncal_origen",
+        "selected": True,
+        "lat": round(float(origen["lat"]), 6),
+        "lon": round(float(origen["lon"]), 6),
+        "rama_count": cnt_origen,
+        "rama_total": total,
+        "rama_pct": pct_origen,
+        "ramas": ramas_origen_short,
+        "ramas_extra": extra_origen,
+        "prioridad": prioridad,
+        "score": score,
+        "radius_m": radius_m,
+        "troncal_length_m": length_m_int,
+        "motivo": (
+            f"Inicio del troncal compartido: primer tramo con {cnt_origen}/{total} ramas "
+            f"({pct_origen}%) sobre el mismo ci_op.{length_txt}{motivo_extra_origen}"
         ),
     }
 
     troncal = {
         "ok": True,
-        "length_m": int(round(length_m)),
+        "length_m": length_m_int,
         "points": [{"lat": round(la, 6), "lon": round(lo, 6)} for la, lo in troncal_pts],
         "origen": {"lat": round(float(origen["lat"]), 6), "lon": round(float(origen["lon"]), 6)},
         "bifurcacion": {
@@ -1742,7 +1776,167 @@ def _analisis_corte_masivo_gis(gis: dict, ramas: list[str]) -> tuple[list[dict],
             "lon": round(float(bifurcacion["lon"]), 6),
         },
     }
-    return [zona], troncal
+    return [zona_origen, zona_reparto], troncal
+
+
+def _fosc_cerca_metricas(lat: float, lon: float, markers: list[dict], radio_m: float = 200.0) -> dict:
+    """Cuenta botellas FOSC cercanas a un candidato de zona de corte."""
+    nearby: list[float] = []
+    for m in markers or []:
+        try:
+            mla, mlo = float(m.get("lat")), float(m.get("lon"))
+        except (TypeError, ValueError):
+            continue
+        d = _haversine_m(lat, lon, mla, mlo)
+        if d <= radio_m:
+            nearby.append(d)
+    return {
+        "count": len(nearby),
+        "min_m": int(round(min(nearby))) if nearby else None,
+    }
+
+
+def _fosc_densidad_troncal_segmento(
+    troncal_pts: list[tuple[float, float]],
+    markers: list[dict],
+    *,
+    head: bool,
+    fraction: float = 0.12,
+    radio_m: float = 150.0,
+) -> int:
+    """Botellas FOSC cerca del inicio o fin de la polilínea del troncal compartido."""
+    if not troncal_pts or not markers:
+        return 0
+    n = max(1, int(len(troncal_pts) * fraction))
+    sample = troncal_pts[:n] if head else troncal_pts[-n:]
+    count = 0
+    for m in markers:
+        try:
+            mla, mlo = float(m.get("lat")), float(m.get("lon"))
+        except (TypeError, ValueError):
+            continue
+        for la, lo in sample:
+            if _haversine_m(mla, mlo, la, lo) <= radio_m:
+                count += 1
+                break
+    return count
+
+
+def _elegir_zona_corte_principal(
+    zonas: list[dict],
+    markers: list[dict],
+    troncal: dict,
+) -> list[dict]:
+    """
+    Ordena las zonas candidatas: prioriza despacho en campo según soporte FOSC.
+    Casos reales: corte en inicio del troncal (origen) o en reparto (bifurcación).
+    """
+    if len(zonas) < 2:
+        if zonas:
+            zonas[0]["rank"] = 1
+            zonas[0]["selected"] = True
+        return zonas
+
+    origen_z = next((z for z in zonas if z.get("tipo") == "troncal_origen"), None)
+    reparto_z = next((z for z in zonas if z.get("tipo") == "reparto"), None)
+    if not origen_z or not reparto_z:
+        zonas[0]["rank"] = 1
+        zonas[0]["selected"] = True
+        for i, z in enumerate(zonas[1:], start=2):
+            z["rank"] = i
+            z["selected"] = False
+        return zonas
+
+    troncal_pts = [
+        (float(p["lat"]), float(p["lon"]))
+        for p in (troncal.get("points") or [])
+        if p.get("lat") is not None and p.get("lon") is not None
+    ]
+    length_m = int(troncal.get("length_m") or 0)
+    head_density = _fosc_densidad_troncal_segmento(troncal_pts, markers, head=True)
+    tail_density = _fosc_densidad_troncal_segmento(troncal_pts, markers, head=False)
+
+    for z in (origen_z, reparto_z):
+        m = _fosc_cerca_metricas(float(z["lat"]), float(z["lon"]), markers)
+        z["fosc_cerca_count"] = m["count"]
+        z["fosc_cerca_min_m"] = m["min_m"]
+
+    origen_min = origen_z.get("fosc_cerca_min_m")
+    reparto_min = reparto_z.get("fosc_cerca_min_m")
+    origen_count = int(origen_z.get("fosc_cerca_count") or 0)
+    reparto_count = int(reparto_z.get("fosc_cerca_count") or 0)
+    prefer_origen = False
+    if (
+        origen_min is not None
+        and origen_min <= 100
+        and origen_count >= reparto_count + 3
+    ):
+        prefer_origen = True
+    elif (
+        length_m >= 2000
+        and origen_min is not None
+        and origen_min <= 150
+        and head_density > tail_density
+        and (reparto_min is None or origen_min + 80 < reparto_min)
+    ):
+        prefer_origen = True
+
+    if prefer_origen:
+        origen_z["rank"] = 1
+        origen_z["selected"] = True
+        origen_z["motivo"] = (
+            (origen_z.get("motivo") or "").rstrip(".")
+            + " — foco operativo (botellas FOSC cercanas al inicio del troncal)."
+        )
+        reparto_z["rank"] = 2
+        reparto_z["selected"] = False
+        return [origen_z, reparto_z]
+
+    reparto_z["rank"] = 1
+    reparto_z["selected"] = True
+    reparto_z["motivo"] = (
+        (reparto_z.get("motivo") or "").rstrip(".")
+        + " — foco probable de corte de troncal compartida."
+    )
+    origen_z["rank"] = 2
+    origen_z["selected"] = False
+    return [reparto_z, origen_z]
+
+
+def _aplicar_snap_fosc_a_zona(zona: dict, snap: dict | None, *, primary: bool) -> None:
+    """Ajusta coords/motivo de una zona con el resultado de snap_corte_a_fosc."""
+    if not snap or not snap.get("ok"):
+        return
+    zona["lat_heuristica"] = zona.get("lat")
+    zona["lon_heuristica"] = zona.get("lon")
+    zona["lat"] = snap.get("lat")
+    zona["lon"] = snap.get("lon")
+    zona["snap_fosc"] = {
+        k: snap.get(k)
+        for k in (
+            "id_botella",
+            "id_cm",
+            "tipo",
+            "direccion",
+            "dist_traz_m",
+            "dist_snap_m",
+            "dist_corte_m",
+            "maps_url",
+            "metodo",
+        )
+        if snap.get(k) is not None
+    }
+    extra = []
+    if snap.get("id_cm"):
+        extra.append(f"Botella {snap['id_cm']}")
+    if snap.get("direccion"):
+        extra.append(str(snap["direccion"]))
+    if snap.get("dist_snap_m") is not None:
+        extra.append(f"≈ {snap['dist_snap_m']} m sobre troncal")
+    if extra:
+        zona["motivo"] = (zona.get("motivo") or "").rstrip(".") + ". Snap FOSC: " + "; ".join(extra) + "."
+    if primary:
+        zona["snap_primary"] = True
 
 
 def _zonas_corte_probable_desde_gis(gis: dict, ramas: list[str]) -> list[dict]:
@@ -1941,38 +2135,17 @@ def _planta_interna_para_consulta(
     ci_op = _resumen_ci_op_desde_gis(gis, rama_pri)
     cab = cabecera_para_fosc(rama_pri, gis)
 
+    fosc: dict[str, Any] = {"ok": False, "markers": []}
     try:
-        fosc = consultar_fosc_ordenadas_en_rama(
-            ramas,
-            cabecera=cab,
-            gis=gis,
-            focal_lat=focal_lat,
-            focal_lon=focal_lon,
-        )
-        if fosc.get("ok") and not (fosc.get("markers") or []) and cab:
-            fosc_alt = consultar_fosc_ordenadas_en_rama(
-                ramas,
-                gis=gis,
-                focal_lat=focal_lat,
-                focal_lon=focal_lon,
-                filtrar_cabecera=False,
-                max_dist_traz_m=(fosc.get("max_dist_traz_m") or 100) * 1.5,
-            )
-            if fosc_alt.get("ok") and fosc_alt.get("markers"):
-                fosc = fosc_alt
-                fosc["nota"] = (
-                    f"Sin FOSC con cabecera «{cab}»; se listan botellas a ≤"
-                    f"{int(fosc_alt.get('max_dist_traz_m') or 0)} m del trazado (sin filtro cabecera)."
-                )
-        if fosc.get("ok") and not (fosc.get("markers") or []) and cab:
+        fosc = consultar_fosc_camino_logico_rama(rama_pri)
+        if fosc.get("ok") and not (fosc.get("markers") or []):
             fosc.setdefault(
                 "hint",
-                f"No hay botellas FOSC a ≤{int(fosc.get('max_dist_traz_m') or 100)} m del trazado "
-                f"(cabecera «{cab}»). Revisá en QGIS o ampliá CAMINO_GIS_FOSC_MAX_DIST_TRAZ_M.",
+                f"No hay puntos en el camino lógico de «{rama_pri}» (report_fusiones).",
             )
     except Exception:
-        logger.exception("FOSC ordenadas falló para %s", ramas)
-        fosc = {"ok": False, "markers": [], "error": "Error consultando botellas."}
+        logger.exception("FOSC camino lógico falló para %s", ramas)
+        fosc = {"ok": False, "markers": [], "error": "Error consultando camino lógico."}
 
     feeder: dict[str, Any] = {"ok": False}
     try:
@@ -1997,13 +2170,29 @@ def _planta_interna_para_consulta(
                 m["feeder_144"] = True
 
     fusiones: dict[str, Any] = {"ok": False, "markers": []}
-    try:
-        fusiones = consultar_fusiones_verificacion_rama(
-            ramas, fusion_destacar=fusion_destacar
-        )
-    except Exception:
-        logger.exception("Fusiones verificación falló para %s", ramas)
-        fusiones = {"ok": False, "markers": [], "error": "Error consultando report_fusiones."}
+    if fosc.get("ok"):
+        fus_mk = [m for m in (fosc.get("markers") or []) if m.get("es_fusion")]
+        fusiones = {
+            "ok": True,
+            "markers": fus_mk,
+            "count": len(fus_mk),
+            "motivo": (
+                "Puntos de fusión / verificación en campo (report_fusiones), "
+                "pueden estar fuera del trazado ci_op."
+            ),
+        }
+        if fusion_destacar:
+            for fm in fus_mk:
+                fm["destacar"] = (fm.get("fusion_id") or "").upper() == fusion_destacar.upper()
+            fusiones["fusion_destacar"] = fusion_destacar
+    else:
+        try:
+            fusiones = consultar_fusiones_verificacion_rama(
+                ramas, fusion_destacar=fusion_destacar
+            )
+        except Exception:
+            logger.exception("Fusiones verificación falló para %s", ramas)
+            fusiones = {"ok": False, "markers": [], "error": "Error consultando report_fusiones."}
 
     if fusiones.get("ok") and feeder.get("fosc_144"):
         fosc_cm = (feeder["fosc_144"].get("id_cm") or "").strip()
@@ -2029,67 +2218,48 @@ def _enriquecer_masivo_con_infra_fosc(
     ramas: list[str],
     gis: dict,
     zonas: list[dict],
+    troncal: dict | None = None,
 ) -> dict:
-    """Botellas FOSC cerca del trazado + snap del punto de corte."""
+    """Botellas FOSC cerca del trazado + snap de zonas de corte (origen y reparto)."""
     empty: dict = {"fosc": {"ok": False, "markers": []}, "snap_corte": None}
     if not ramas or not gis.get("ok"):
         return empty
     cabecera = cabecera_para_fosc(ramas[0], gis)
-    if not cabecera:
-        return empty
     try:
-        fosc = consultar_fosc_cerca_trazado_ramas(ramas, cabecera)
+        fosc = consultar_fosc_cerca_trazado_ramas(
+            ramas,
+            cabecera=cabecera or None,
+            filtrar_cabecera=False,
+        )
     except Exception:
         logger.exception("FOSC cerca trazado falló para %s", ramas)
         fosc = {"ok": False, "markers": [], "error": "Error consultando botellas."}
 
+    markers = fosc.get("markers") or []
     snap = None
     if zonas:
-        z0 = zonas[0]
-        try:
-            la, lo = float(z0.get("lat")), float(z0.get("lon"))
-            snap = snap_corte_a_fosc(ramas, la, lo, cabecera)
-        except (TypeError, ValueError):
-            snap = {"ok": False, "error": "Zona de corte sin coordenadas."}
-        except Exception:
-            logger.exception("Snap FOSC falló para %s", ramas)
-            snap = {"ok": False, "error": "Error ajustando corte a botella."}
+        zonas[:] = _elegir_zona_corte_principal(zonas, markers, troncal or {})
+        snap_target_id = None
+        for z in zonas:
+            primary = bool(z.get("selected"))
+            zona_snap = None
+            try:
+                la, lo = float(z.get("lat")), float(z.get("lon"))
+                zona_snap = snap_corte_a_fosc(ramas, la, lo, cabecera)
+            except (TypeError, ValueError):
+                zona_snap = {"ok": False, "error": "Zona de corte sin coordenadas."}
+            except Exception:
+                logger.exception("Snap FOSC falló para %s", ramas)
+                zona_snap = {"ok": False, "error": "Error ajustando corte a botella."}
 
-        if snap and snap.get("ok"):
-            z0["lat_heuristica"] = z0.get("lat")
-            z0["lon_heuristica"] = z0.get("lon")
-            z0["lat"] = snap.get("lat")
-            z0["lon"] = snap.get("lon")
-            z0["snap_fosc"] = {
-                k: snap.get(k)
-                for k in (
-                    "id_botella",
-                    "id_cm",
-                    "tipo",
-                    "direccion",
-                    "dist_traz_m",
-                    "dist_snap_m",
-                    "dist_corte_m",
-                    "maps_url",
-                    "metodo",
-                )
-                if snap.get(k) is not None
-            }
-            extra = []
-            if snap.get("id_cm"):
-                extra.append(f"Botella {snap['id_cm']}")
-            if snap.get("direccion"):
-                extra.append(str(snap["direccion"]))
-            if snap.get("dist_snap_m") is not None:
-                extra.append(f"≈ {snap['dist_snap_m']} m sobre troncal")
-            if extra:
-                z0["motivo"] = (z0.get("motivo") or "").rstrip(".") + ". Snap FOSC: " + "; ".join(extra) + "."
+            _aplicar_snap_fosc_a_zona(z, zona_snap, primary=primary)
+            if primary and zona_snap and zona_snap.get("ok"):
+                snap = zona_snap
+                snap_target_id = zona_snap.get("id_botella")
 
-            snap_id = snap.get("id_botella")
-            if snap_id is not None and fosc.get("markers"):
-                for m in fosc["markers"]:
-                    if m.get("id_botella") == snap_id:
-                        m["snap_target"] = True
+        if snap_target_id is not None and markers:
+            for m in markers:
+                m["snap_target"] = m.get("id_botella") == snap_target_id
 
     return {"fosc": fosc, "snap_corte": snap}
 
@@ -2142,7 +2312,9 @@ def dashboard_camino_optico_ramas_masivo(raw_values) -> dict:
         gis = {"ok": False, "error": "Error interno consultando geometría (ci_op)."}
 
     zonas_corte_probable, troncal_compartido = _analisis_corte_masivo_gis(gis, ramas)
-    infra_fosc = _enriquecer_masivo_con_infra_fosc(ramas, gis, zonas_corte_probable)
+    infra_fosc = _enriquecer_masivo_con_infra_fosc(
+        ramas, gis, zonas_corte_probable, troncal_compartido
+    )
 
     ont_total = sum(int((rd.get("resumen") or {}).get("ont_count") or 0) for rd in ramas_data)
     cto_shared = sum(1 for c in ctos_union if c.get("shared"))

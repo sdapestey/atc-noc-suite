@@ -4,7 +4,7 @@ const ltCargando = {};
 const ltInventarioData = {};
 const _oltRamaPotenciasCache = {};
 const _oltRamaPotenciasCacheMs = 45000;
-const _oltSemaforoHistoricoLoaded = {};
+const _OLT_LT_SUMMARY_COLSPAN = 6;
 const _OLT_STATE_KEY = "oltDashboardStateV1";
 let _restoringOltState = false;
 const _oltStateStore = window.createNocPageStateStore
@@ -618,8 +618,7 @@ function _oltOperadorSummaryHtml(operadores) {
     .map((op) => _oltOperadorPillHtml(counts[op], op))
     .join(' <span class="olt-summary-sep" aria-hidden="true">·</span> ');
   return (
-    '<span class="olt-selection-summary-operadores" aria-label="ONT IN SERVICE por operador">' +
-    '<span class="olt-selection-operadores-label">Operador:</span> ' +
+    '<span class="olt-selection-summary-operadores olt-grand-totals__ops" aria-label="ONT IN SERVICE por operador">' +
     pills +
     "</span>"
   );
@@ -631,9 +630,8 @@ function _oltPonSummaryHtml(pon, ramas, cto, ont, operadores) {
   const c = String(Math.max(0, Number(cto) || 0));
   const o = String(Math.max(0, Number(ont) || 0));
   const emptyPon = p === "0";
-  const main =
-    '<span class="olt-selection-summary-main">' +
-    '<span class="olt-selection-summary-label">Seleccionados:</span> ' +
+  const metrics =
+    '<span class="olt-selection-summary-main olt-grand-totals__main">' +
     '<span class="olt-pon-selected-kicker' +
     (emptyPon ? " olt-pon-selected-kicker--empty" : "") +
     '" title="PON marcados; copiar/exportar incluye solo AID IN SERVICE">' +
@@ -666,7 +664,20 @@ function _oltPonSummaryHtml(pon, ramas, cto, ont, operadores) {
       "ont"
     ) +
     "</span>";
-  return main + _oltOperadorSummaryHtml(operadores);
+  return (
+    '<span class="olt-selection-summary-layout">' +
+    '<span class="olt-selection-summary-label">Seleccionados:</span>' +
+    metrics +
+    _oltOperadorSummaryHtml(operadores) +
+    "</span>"
+  );
+}
+
+function _toggleOltSummaryMode(hasSelection) {
+  const grandEl = document.getElementById("olt-grand-totals-row");
+  const selEl = document.getElementById("pon-selection-summary");
+  if (grandEl) grandEl.hidden = !!hasSelection;
+  if (selEl) selEl.hidden = !hasSelection;
 }
 
 function updatePonesSelectionSummary() {
@@ -675,9 +686,11 @@ function updatePonesSelectionSummary() {
   _syncOltExportOperatorSelect();
   const selectedPones = document.querySelectorAll(".pon-select:checked").length;
   if (!selectedPones) {
+    _toggleOltSummaryMode(false);
     el.innerHTML = _oltPonSummaryHtml(0, 0, 0, 0);
     return;
   }
+  _toggleOltSummaryMode(true);
   const res = _buildPonExportLines({ filterOperator: "" });
   if (res.error || !res.resumen) {
     el.innerHTML = _oltPonSummaryHtml(selectedPones, 0, 0, 0);
@@ -1085,6 +1098,7 @@ function closeNode(id, skipSave) {
       closeNode(child, true);
     }
   });
+  _hideOltRamaMapFor(id);
   if (!skipSave) {
     _saveOltStateSoon();
   }
@@ -1107,7 +1121,6 @@ function toggleNode(id, autoPotencias) {
   if (autoPotencias !== false) {
     _autoPotenciaCtoOltAlExpandir(id);
   }
-  _cargarSemaforoHistoricoOlt(id);
   _saveOltStateSoon();
 }
 
@@ -1163,7 +1176,6 @@ function ensureNodeOpen(id, autoPotencias) {
   if (autoPotencias !== false) {
     _autoPotenciaCtoOltAlExpandir(id);
   }
-  _cargarSemaforoHistoricoOlt(id);
   _saveOltStateSoon();
 }
 
@@ -1231,143 +1243,6 @@ function _applyPotenciaEnFilaOlt(tr, txVal, rxVal, row) {
   _npOlt().finalizeTxRxLoadingCell(tdRx, rxVal, tr);
 }
 
-function _setSem(row, res) {
-  if (!row || !res) return;
-  const r = row.querySelector(".rojas");
-  const a = row.querySelector(".amarillas");
-  const v = row.querySelector(".verdes");
-  if (r) r.textContent = String(res.ROJAS || 0);
-  if (a) a.textContent = String(res.AMARILLAS || 0);
-  if (v) v.textContent = String(res.VERDES || 0);
-}
-
-function _addSem(row, res) {
-  if (!res) return;
-  const r = row.querySelector(".rojas");
-  const a = row.querySelector(".amarillas");
-  const v = row.querySelector(".verdes");
-  if (r) r.textContent = (parseInt(r.textContent, 10) || 0) + (res.ROJAS || 0);
-  if (a) a.textContent = (parseInt(a.textContent, 10) || 0) + (res.AMARILLAS || 0);
-  if (v) v.textContent = (parseInt(v.textContent, 10) || 0) + (res.VERDES || 0);
-}
-
-function _clearSemaforoHistoricoLt(row) {
-  if (!row) return;
-  delete row.dataset.semaforoHistorico;
-  row.classList.remove("olt-lt-row--semaforo-historico");
-  row.querySelectorAll(".rojas, .amarillas, .verdes, .peor").forEach((el) => {
-    el.removeAttribute("title");
-  });
-}
-
-function _applySemaforoHistoricoLt(row, res) {
-  if (!row || !res) return;
-  _setSem(row, res);
-  const pe = row.querySelector(".peor");
-  if (pe) pe.textContent = res.PEOR_RX != null ? String(res.PEOR_RX) : "-";
-  row.dataset.semaforoHistorico = "1";
-  row.classList.add("olt-lt-row--semaforo-historico");
-  const hint = "Semáforos desde última medición RX guardada en Postgres (altiplano.potencias)";
-  row.querySelectorAll(".rojas, .amarillas, .verdes, .peor").forEach((el) => {
-    el.title = hint;
-  });
-}
-
-function _recomputeLtSemaforos(wrap, row) {
-  if (!row || !wrap) return;
-  let rojas = 0;
-  let amarillas = 0;
-  let verdes = 0;
-  let min = null;
-  let anyRx = false;
-  wrap.querySelectorAll("tr[data-aid]").forEach((tr) => {
-    if (_oltFatSkipPotencias(tr)) return;
-    const rxCell = tr.children[OLT_COL_RX];
-    if (!rxCell || rxCell.classList.contains("olt-txrx-cell--loading")) return;
-    const t = rxCell.textContent.trim();
-    if (t === "-" || t === "") return;
-    const v = _npOlt() ? _npOlt().parseRxDbm(t) : null;
-    if (v === null) return;
-    anyRx = true;
-    const c = _clasif(v);
-    if (c === "rojo") rojas += 1;
-    else if (c === "amarillo") amarillas += 1;
-    else if (c === "verde") verdes += 1;
-    if (min === null || v < min) min = v;
-  });
-  if (!anyRx) return;
-  _clearSemaforoHistoricoLt(row);
-  _setSem(row, { ROJAS: rojas, AMARILLAS: amarillas, VERDES: verdes });
-  const pe = row.querySelector(".peor");
-  if (pe) pe.textContent = min != null ? String(min) : "-";
-}
-
-function _cargarSemaforoHistoricoOlt(nodeId) {
-  const id = String(nodeId || "").trim();
-  if (!id || _oltSemaforoHistoricoLoaded[id]) return;
-  const esc = id.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-  const section = document.querySelector('[data-node-id="' + esc + '"]');
-  if (!section || !section.classList.contains("olt-section")) return;
-  const tableShell = section.querySelector(".olt-lt-table-shell");
-  if (!tableShell) return;
-  const lts = [];
-  const rowByLt = {};
-  tableShell.querySelectorAll("tr.ltrow").forEach((tr) => {
-    const td = tr.querySelector("td.lt-row-toggle");
-    const lt = td && (td.getAttribute("data-lt") || "").trim();
-    if (!lt) return;
-    lts.push(lt);
-    rowByLt[lt] = tr;
-  });
-  if (!lts.length) return;
-  _oltSemaforoHistoricoLoaded[id] = true;
-  fetch("/dashboard/olt/semaforo-historico", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: "lts=" + encodeURIComponent(lts.join(",")),
-  })
-    .then((r) => {
-      if (!r.ok) throw new Error("HTTP " + r.status);
-      return r.json();
-    })
-    .then((data) => {
-      if (!data || !data.ok) return;
-      const byLt = data.lts || {};
-      Object.keys(byLt).forEach((lt) => {
-        const row = rowByLt[lt];
-        if (row) _applySemaforoHistoricoLt(row, byLt[lt]);
-      });
-    })
-    .catch(() => {
-      delete _oltSemaforoHistoricoLoaded[id];
-    });
-}
-
-function _clasif(rx) {
-  return _npOlt() ? _npOlt().clasificarRxDbm(rx) : null;
-}
-
-function _addSemFromRx(row, rx) {
-  const c = _clasif(rx);
-  if (c === "rojo") _addSem(row, { ROJAS: 1, AMARILLAS: 0, VERDES: 0 });
-  else if (c === "amarillo") _addSem(row, { ROJAS: 0, AMARILLAS: 1, VERDES: 0 });
-  else if (c === "verde") _addSem(row, { ROJAS: 0, AMARILLAS: 0, VERDES: 1 });
-}
-
-function _recomputePeor(wrap, row) {
-  let min = null;
-  wrap.querySelectorAll("tr[data-aid]").forEach(tr => {
-    const rxCell = tr.children[OLT_COL_RX];
-    if (!rxCell) return;
-    const t = rxCell.textContent.trim();
-    if (t === "-" || t === "") return;
-    const v = _npOlt() ? _npOlt().parseRxDbm(t) : null;
-    if (v !== null && (min === null || v < min)) min = v;
-  });
-  const pe = row.querySelector(".peor");
-  if (pe) pe.textContent = min != null ? String(min) : "-";
-}
-
 function sortNaturalKeys(keys) {
   return [...keys].sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: "base" }));
 }
@@ -1376,6 +1251,7 @@ function buildRamaBlockHtml(uid, rama, block, parentRamaId, depth) {
   block = block || {};
   const d = typeof depth === "number" && depth > 0 ? depth : 1;
   const enc = encodeURIComponent(rama).replace(/%/g, "_");
+  const ramaEnc = encodeURIComponent(rama);
   const ramaId = parentRamaId ? parentRamaId + "_S_" + enc : uid + "_R_" + enc;
   const nestedHidden = parentRamaId ? " hidden" : "";
   const parentAttr = parentRamaId ? ` data-parent="${parentRamaId}"` : "";
@@ -1387,6 +1263,7 @@ function buildRamaBlockHtml(uid, rama, block, parentRamaId, depth) {
             <div class="node olt-tree-row olt-tree-depth-${d}${nestedHidden}"
                  data-node-id="${ramaId}"${parentAttr}
                  data-olt-tree-kind="${kindLabel}"
+                 data-rama="${ramaEnc}"
                  onclick="toggleNode('${ramaId}')">
                 <span class="rama-row-head">
                   <span class="rama-row-kind rama-row-kind--rama">${kindLabel}</span>
@@ -1394,8 +1271,19 @@ function buildRamaBlockHtml(uid, rama, block, parentRamaId, depth) {
                   <span class="mono rama-row-label">${_esc(rama)}</span>
                 </span>
                 <span class="rama-row-actions" onclick="event.stopPropagation()">
-                  <button type="button" class="btn pot-rama" data-pot-rama="${encodeURIComponent(rama)}">Consultar RX</button>
+                  <button type="button" class="btn pot-rama" data-pot-rama="${ramaEnc}">Consultar RX</button>
+                  <button type="button" class="btn" data-olt-rama-map-btn onclick="event.stopPropagation(); verMapaRamaOlt(this);" title="Mapa con todas las CTO que tengan coordenadas" aria-expanded="false">Ver mapa</button>
+                  <a class="btn btn-ghost" href="/dashboard/potencias-historico?ratc=${ramaEnc}&days=1" title="Abrir histórico de potencia para esta rama" onclick="event.stopPropagation();">Ver historico</a>
                 </span>
+            </div>
+            <div class="olt-rama-map-branch olt-tree-depth-${d + 1} hidden" data-olt-rama-map-for="${ramaId}">
+              <div class="rama-branch-map-panel hidden" data-rama-map-panel data-rama="${ramaEnc}" aria-hidden="true">
+                <p class="hint rama-mapa-kicker">Mapa — CTO con ubicación</p>
+                <p class="mono rama-mapa-rama-label" data-rama-mapa-label></p>
+                <p class="hint rama-mapa-msg" aria-live="polite"></p>
+                <div class="rama-mapa-canvas" data-rama-mapa-canvas hidden></div>
+                <p class="hint rama-mapa-footer" aria-live="polite"></p>
+              </div>
             </div>`;
 
   const ctos = block.CTOS || {};
@@ -1439,6 +1327,307 @@ function buildRamaBlockHtml(uid, rama, block, parentRamaId, depth) {
   }
 
   return html;
+}
+
+const _OLT_RAMA_MAP_URL = "/dashboard/rama/rama-map";
+const _OLT_RAMA_CAMINO_GIS_URL = "/dashboard/camino-optico/gis";
+const _OLT_RAMA_CTO_ADDRESS_URL = "/dashboard/rama/cto-address";
+
+function _oltRamaCoordText(lat, lon) {
+  if (window.NocMaps && window.NocMaps.coordTextFromLatLon) {
+    return window.NocMaps.coordTextFromLatLon(lat, lon);
+  }
+  const latN = Number(lat);
+  const lonN = Number(lon);
+  if (!Number.isFinite(latN) || !Number.isFinite(lonN)) return "";
+  return latN.toFixed(6) + ", " + lonN.toFixed(6);
+}
+
+function _oltExtendBoundsFromGeoJSON(bounds, gj) {
+  const depthByType = {
+    Point: 0,
+    MultiPoint: 1,
+    LineString: 1,
+    MultiLineString: 2,
+    Polygon: 2,
+    MultiPolygon: 3,
+  };
+  function scanPair(lon, lat) {
+    if (typeof lon !== "number" || typeof lat !== "number") return;
+    if (Number.isNaN(lon) || Number.isNaN(lat)) return;
+    if (Math.abs(lat) > 90 || Math.abs(lon) > 180) return;
+    bounds.extend(window.L.latLng(lat, lon));
+  }
+  function scan(coords, depth) {
+    if (depth === 0) {
+      scanPair(coords[0], coords[1]);
+      return;
+    }
+    if (Array.isArray(coords)) coords.forEach((c) => scan(c, depth - 1));
+  }
+  (gj && gj.features ? gj.features : []).forEach((f) => {
+    const g = f && f.geometry;
+    if (!g || !g.coordinates) return;
+    const d = depthByType[g.type];
+    if (d != null) scan(g.coordinates, d);
+  });
+}
+
+function _oltFitRamaMapToData(map, gj, markers) {
+  const b = window.L.latLngBounds([]);
+  if (gj) _oltExtendBoundsFromGeoJSON(b, gj);
+  (markers || []).forEach((m) => {
+    const lat = Number(m.lat);
+    const lon = Number(m.lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+    b.extend(window.L.latLng(lat, lon));
+  });
+  if (!b.isValid()) return false;
+  try {
+    map.fitBounds(b, { padding: [28, 28], maxZoom: 17 });
+    return true;
+  } catch (_e) {
+    return false;
+  }
+}
+
+function _oltRefreshRamaMapTiles(map, basemapCtrl) {
+  if (basemapCtrl && typeof basemapCtrl.redraw === "function") {
+    basemapCtrl.redraw();
+  } else if (map && window.NocMapTiles && window.NocMapTiles.refreshLeafletMapLayout) {
+    window.NocMapTiles.refreshLeafletMapLayout(map);
+    setTimeout(() => {
+      if (map && window.NocMapTiles) window.NocMapTiles.refreshLeafletMapLayout(map);
+    }, 120);
+  }
+}
+
+function _loadOltRamaMapPanel(panel, rama) {
+  const msg = panel.querySelector(".rama-mapa-msg");
+  const footer = panel.querySelector(".rama-mapa-footer");
+  const canvas = panel.querySelector("[data-rama-mapa-canvas]");
+  if (!msg || !canvas) return;
+
+  if (panel.dataset.oltRamaMapFetched === "1" && panel._ramaLeafletMap) {
+    _oltRefreshRamaMapTiles(panel._ramaLeafletMap, panel._nocMapBasemap);
+    return;
+  }
+
+  msg.textContent = "Cargando mapa…";
+  if (footer) footer.textContent = "";
+  canvas.hidden = true;
+
+  Promise.all([
+    fetch(_OLT_RAMA_MAP_URL + "?rama=" + encodeURIComponent(rama)).then((r) => {
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    }),
+    fetch(_OLT_RAMA_CAMINO_GIS_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ rama: rama }),
+    })
+      .then((r) => (r.ok ? r.json() : { ok: false, error: "Error HTTP GIS" }))
+      .catch(() => ({ ok: false, error: "Error GIS" })),
+  ])
+    .then(([data, gis]) => {
+      if (!data || !data.ok) {
+        msg.textContent = (data && data.error) || "No se pudo cargar el mapa de la RAMA.";
+        canvas.hidden = true;
+        return;
+      }
+      const markers = Array.isArray(data.markers) ? data.markers : [];
+      const sinCoord =
+        data.ctos_sin_coordenadas != null ? Number(data.ctos_sin_coordenadas) : 0;
+      const ctosTotal = data.ctos_total != null ? Number(data.ctos_total) : 0;
+      const gj = gis && gis.ok && gis.geojson ? gis.geojson : null;
+      const hasPath = !!(gj && Array.isArray(gj.features) && gj.features.length > 0);
+
+      if (markers.length === 0 && !hasPath) {
+        msg.textContent =
+          ctosTotal === 0
+            ? "No hay CTO en inventario para esta RAMA."
+            : "Ninguna CTO de esta RAMA tiene coordenadas cargadas.";
+        if (gis && gis.error) msg.textContent += " " + gis.error;
+        canvas.hidden = true;
+        if (footer) footer.textContent = sinCoord > 0 ? `${sinCoord} CTO sin coordenadas.` : "";
+        return;
+      }
+
+      msg.textContent = "";
+      canvas.hidden = false;
+      if (footer) {
+        let foot = `${markers.length} CTO en el mapa`;
+        if (sinCoord > 0) foot += ` · ${sinCoord} sin coordenadas`;
+        if (hasPath) foot += " · trazado ci_op visible";
+        footer.textContent = foot + ".";
+      }
+
+      if (typeof window.L === "undefined") {
+        msg.textContent = "No se pudo cargar el mapa (Leaflet).";
+        canvas.hidden = true;
+        return;
+      }
+
+      let map = panel._ramaLeafletMap;
+      if (!map) {
+        if (window.NocMapTiles && window.NocMapTiles.createLeafletMap) {
+          const created = window.NocMapTiles.createLeafletMap(canvas, { marker: false, zoom: 11 });
+          map = created ? created.map : null;
+          if (created) panel._nocMapBasemap = created.basemap;
+        }
+        if (!map) {
+          const mapOpts =
+            window.NocLeafletMap && window.NocLeafletMap.baseMapOptions
+              ? window.NocLeafletMap.baseMapOptions()
+              : { attributionControl: true, zoomControl: true, scrollWheelZoom: false };
+          map = window.L.map(canvas, mapOpts);
+          if (window.NocMapTiles && window.NocMapTiles.addBasemapLayer) {
+            panel._nocMapBasemap = window.NocMapTiles.addBasemapLayer(map, window.L);
+          }
+          if (window.NocLeafletMap && window.NocLeafletMap.attachScrollActivation) {
+            window.NocLeafletMap.attachScrollActivation(map, canvas);
+          }
+          if (window.NocMapFullscreen) {
+            window.NocMapFullscreen.attachMapFullscreen(map, canvas);
+          }
+        }
+        panel._ramaLeafletMap = map;
+      }
+
+      if (panel._ramaMarkerLayer) {
+        map.removeLayer(panel._ramaMarkerLayer);
+        panel._ramaMarkerLayer = null;
+      }
+      if (panel._ramaPathLayer) {
+        map.removeLayer(panel._ramaPathLayer);
+        panel._ramaPathLayer = null;
+      }
+
+      if (hasPath) {
+        try {
+          panel._ramaPathLayer = window.L.geoJSON(gj, {
+            style: function () {
+              return {
+                color: "#22c55e",
+                weight: 6,
+                opacity: 1,
+                lineCap: "round",
+                lineJoin: "round",
+              };
+            },
+            filter: function (feature) {
+              return !!(feature && feature.geometry);
+            },
+          }).addTo(map);
+        } catch (_ePath) {
+          panel._ramaPathLayer = null;
+        }
+      }
+
+      const fg = window.L.featureGroup();
+      markers.forEach((mk) => {
+        const lat = Number(mk.lat);
+        const lon = Number(mk.lon);
+        if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+        const pointStyle = {
+          radius: 9,
+          fillColor: "#3b82f6",
+          color: "#e0f2fe",
+          weight: 2,
+          opacity: 1,
+          fillOpacity: 0.95,
+        };
+        const marker = window.L.circleMarker([lat, lon], pointStyle);
+        const cto = String(mk.cto || "").trim();
+        const coordText = _oltRamaCoordText(lat, lon);
+        const popupHtml =
+          window.NocMaps && window.NocMaps.ctoPopupHtml
+            ? window.NocMaps.ctoPopupHtml(cto, lat, lon, "", { showAddrLoading: true, mapsLink: true })
+            : "";
+        if (window.NocMaps && window.NocMaps.wireCtoCircleMarker) {
+          window.NocMaps.wireCtoCircleMarker(marker, popupHtml, pointStyle, coordText, {
+            map,
+            toastId: "toast-olt",
+          });
+        }
+        if (cto && window.NocMaps && window.NocMaps.wireCtoAddressPrefetch) {
+          window.NocMaps.wireCtoAddressPrefetch(
+            marker,
+            _OLT_RAMA_CTO_ADDRESS_URL + "?cto=" + encodeURIComponent(cto),
+            (addr) =>
+              window.NocMaps.ctoPopupHtml(cto, lat, lon, addr, {
+                showAddrLoading: false,
+                mapsLink: true,
+              })
+          );
+        }
+        fg.addLayer(marker);
+      });
+      if (fg.getLayers().length > 0) {
+        fg.addTo(map);
+        panel._ramaMarkerLayer = fg;
+      }
+
+      panel.dataset.oltRamaMapFetched = "1";
+      requestAnimationFrame(() => {
+        if (!_oltFitRamaMapToData(map, gj, markers)) {
+          map.setView([-34.6, -58.38], 11);
+        }
+        _oltRefreshRamaMapTiles(map, panel._nocMapBasemap);
+      });
+    })
+    .catch(() => {
+      msg.textContent = "No se pudo cargar el mapa.";
+      canvas.hidden = true;
+    });
+}
+
+function _hideOltRamaMapFor(ramaId) {
+  const id = String(ramaId || "").trim();
+  if (!id) return;
+  const esc = id.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  const branch = document.querySelector('[data-olt-rama-map-for="' + esc + '"]');
+  if (!branch) return;
+  const panel = branch.querySelector("[data-rama-map-panel]");
+  branch.classList.add("hidden");
+  if (panel) {
+    panel.classList.add("hidden");
+    panel.setAttribute("aria-hidden", "true");
+  }
+  const row = document.querySelector('[data-node-id="' + esc + '"][data-rama]');
+  const mapBtn = row && row.querySelector("[data-olt-rama-map-btn]");
+  if (mapBtn) {
+    mapBtn.textContent = "Ver mapa";
+    mapBtn.setAttribute("aria-expanded", "false");
+  }
+}
+
+function verMapaRamaOlt(btn) {
+  if (!btn) return;
+  const row = btn.closest("[data-rama]");
+  if (!row) return;
+  const rama = decodeURIComponent(row.getAttribute("data-rama") || "").trim();
+  const ramaId = row.getAttribute("data-node-id");
+  if (!rama || !ramaId) return;
+  const branch = document.querySelector('[data-olt-rama-map-for="' + ramaId.replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"]');
+  if (!branch) return;
+  const panel = branch.querySelector("[data-rama-map-panel]");
+  if (!panel) return;
+
+  if (!panel.classList.contains("hidden")) {
+    _hideOltRamaMapFor(ramaId);
+    return;
+  }
+
+  branch.classList.remove("hidden");
+  panel.classList.remove("hidden");
+  panel.setAttribute("aria-hidden", "false");
+  btn.textContent = "Ocultar mapa";
+  btn.setAttribute("aria-expanded", "true");
+  const labelEl = panel.querySelector("[data-rama-mapa-label]");
+  if (labelEl) labelEl.textContent = rama;
+  _loadOltRamaMapPanel(panel, rama);
 }
 
 function buildPonBlockHtml(uid, pon, block) {
@@ -1487,7 +1676,9 @@ function showLtLoading(uid) {
   if (arrow) arrow.textContent = "▼";
   detailRow.classList.remove("hidden");
   detailRow.innerHTML =
-    '<td colspan="10"><div class="lt-detail-loading" role="status" aria-live="polite">' +
+    '<td colspan="' +
+    _OLT_LT_SUMMARY_COLSPAN +
+    '"><div class="lt-detail-loading" role="status" aria-live="polite">' +
     '<span class="lt-detail-spinner" aria-hidden="true"></span>' +
     "<span>Cargando inventario de red…</span></div></td>";
 }
@@ -1518,38 +1709,22 @@ function toggleLTCargar(lt, uid) {
   if (ltCargando[uid]) return;
   ltCargando[uid] = true;
 
-  const peCell = row.querySelector(".peor");
-  const historicoLt = row.dataset.semaforoHistorico === "1";
-  const prevPe = peCell ? peCell.textContent : "-";
-  if (peCell && !historicoLt) peCell.textContent = "…";
-
-  if (!historicoLt) {
-    row.querySelector(".rojas").innerText = "0";
-    row.querySelector(".amarillas").innerText = "0";
-    row.querySelector(".verdes").innerText = "0";
-  }
-
   showLtLoading(uid);
-
-  function _restorePeorSiPendiente() {
-    if (!peCell || historicoLt) return;
-    if (peCell.textContent.trim() === "…") peCell.textContent = prevPe;
-  }
 
   cargarInventarioLT(lt, uid, row)
     .then((wrap) => {
       ltInventarioCargado[uid] = true;
-      _restorePeorSiPendiente();
       toggleNode(uid);
       _saveOltStateSoon();
     })
     .catch(() => {
-      _restorePeorSiPendiente();
       const dr = document.getElementById("detail-" + uid);
       if (dr) {
         dr.classList.remove("hidden");
         dr.innerHTML =
-          '<td colspan="10"><p class="lt-detail-error">No se pudo cargar el inventario. Reintentá o revisá la consola de red.</p></td>';
+          '<td colspan="' +
+          _OLT_LT_SUMMARY_COLSPAN +
+          '"><p class="lt-detail-error">No se pudo cargar el inventario. Reintentá o revisá la consola de red.</p></td>';
       }
       toastOlt("Error al cargar inventario LT");
     })
@@ -1590,7 +1765,7 @@ function cargarInventarioLT(lt, uid, row) {
         html += buildPonBlockHtml(uid, pon, data.PONES[pon]);
       }
 
-      detailRow.innerHTML = `<td colspan="10">${html}</td>`;
+      detailRow.innerHTML = `<td colspan="${_OLT_LT_SUMMARY_COLSPAN}">${html}</td>`;
       detailRow.classList.remove("hidden");
 
       const wrap = detailRow.querySelector("td");
@@ -1761,7 +1936,6 @@ function _aplicarPotenciaRamaOlt(rama, wrap, row, data) {
       _applyPotenciaEnFilaOlt(tr, null, null, row);
     }
   });
-  _recomputeLtSemaforos(wrap, row);
 }
 
 function potenciaRama(rama, wrap, row, btnEl) {
@@ -1842,7 +2016,6 @@ function potenciaCto(cto, wrap, row, btnEl) {
           _applyPotenciaEnFilaOlt(tr, null, null, row);
         }
       });
-      _recomputeLtSemaforos(wrap, row);
     })
     .catch(() => {
       toastOlt("Error al consultar potencias (CTO)");
@@ -2138,7 +2311,14 @@ window.addEventListener("load", () => {
     if (_oltUrlHasDeepLink()) {
       await applyOltUrlDeepLink();
     } else {
-      await restoreOltDashboardState();
+      const { qParam } = _oltUrlDeepLinkParams();
+      if (qParam) {
+        const input = document.getElementById("bus-olt");
+        if (input) input.value = qParam;
+        aplicarBusquedaOlt();
+      } else {
+        await restoreOltDashboardState();
+      }
     }
     updatePonesSelectionSummary();
   })();

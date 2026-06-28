@@ -27,6 +27,34 @@
     }
   }
 
+  var REINYECTION_TOAST_ID = "toast";
+
+  function showReinyeccionProgress() {
+    toast("Reinyectando tasa-composite: eliminando, recreando y verificando…", {
+      variant: "info",
+      durationMs: 0,
+      id: REINYECTION_TOAST_ID,
+    });
+  }
+
+  function showReinyeccionOk(json) {
+    var detail =
+      json && json.message ? String(json.message).trim() : "Reinyección completada.";
+    toast("OK · " + detail, {
+      variant: "success",
+      durationMs: 12000,
+      id: REINYECTION_TOAST_ID,
+    });
+  }
+
+  function showReinyeccionError(msg) {
+    toast(msg || "No se pudo reinyectar.", {
+      variant: "error",
+      durationMs: 14000,
+      id: REINYECTION_TOAST_ID,
+    });
+  }
+
   function apiPost(url, payload, opts) {
     opts = opts || {};
     var init = {
@@ -467,27 +495,14 @@
     hsiDialogCtx = null;
 
     runConsultaAltiplanoAction({
-      operador: operator,
-      loginDialog: {
-        title: "Ingresar a Altiplano",
-        message:
-          "Credenciales de Altiplano (" +
-          operator +
-          ") para modificar perfiles HSI.",
-        okLabel: "Ingresar",
-      },
       dialog: {
         title: "Modificar perfiles HSI",
         message:
           "¿Confirmás actualizar Traffic Descriptor y Shaper en\n" + target + "?",
         okLabel: "Aplicar perfiles",
       },
-      execute: function (creds) {
-        var payload = Object.assign({}, payloadBase, {
-          altiplano_user: creds.username,
-          altiplano_password: creds.password,
-        });
-        return apiPost("/dashboard/altiplano/actualizar-tasa-composite-profiles", payload).then(
+      execute: function () {
+        return apiPost("/dashboard/altiplano/actualizar-tasa-composite-profiles", payloadBase).then(
           function (out) {
             return {
               ok: !!(out && out.ok),
@@ -613,15 +628,6 @@
     if (row.tasa_hsi) payloadBase.tasa_hsi = row.tasa_hsi;
 
     runConsultaAltiplanoAction({
-      operador: operator,
-      loginDialog: {
-        title: "Ingresar a Altiplano",
-        message:
-          "Credenciales de Altiplano (" +
-          operator +
-          ") para reinyectar tasa-composite.",
-        okLabel: "Ingresar",
-      },
       dialog: {
         title: "¿Reinyectar tasa-composite?",
         message:
@@ -632,13 +638,11 @@
           "\n\n1) Eliminar intent tasa-composite\n2) Create Services con los mismos perfiles HSI",
         danger: true,
         okLabel: "Reinyectar",
+        loadingOkLabel: "Reinyectando…",
+        loadingMessage: "Reinyectando tasa-composite en " + operator + "…",
       },
-      execute: function (creds) {
-        var payload = Object.assign({}, payloadBase, {
-          altiplano_user: creds.username,
-          altiplano_password: creds.password,
-        });
-        return apiPost("/dashboard/altiplano/reinyectar-tasa-composite", payload, {
+      execute: function () {
+        return apiPost("/dashboard/altiplano/reinyectar-tasa-composite", payloadBase, {
           timeoutMs: 360000,
         }).then(function (out) {
           return {
@@ -650,10 +654,10 @@
       },
       onCommitStart: function () {
         setBtnBusy(btn, true);
-        toast("Reinyectando tasa-composite…", { variant: "info", durationMs: 8000 });
+        showReinyeccionProgress();
       },
       onSuccess: function (json) {
-        toast(json.message || "Reinyección completada.", { variant: "success" });
+        showReinyeccionOk(json);
       },
       onFinally: function () {
         setBtnBusy(btn, false);
@@ -661,7 +665,7 @@
     }).catch(function (err) {
       if (err && err.message === "cancelled") return;
       if (err && err.authError) return;
-      toast(err.message || "No se pudo reinyectar.", { variant: "error", durationMs: 12000 });
+      showReinyeccionError(err.message);
     });
   }
 

@@ -1,10 +1,12 @@
 .env
 .venv/
-venv/
 __pycache__/
+.ruff_cache
 *.py[cod]
 .pytest_cache/
 .mypy_cache/
 *.ppk
 .cursor/
 .vscode/
+exports/
+scripts/

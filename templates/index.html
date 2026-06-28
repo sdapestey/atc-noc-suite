@@ -119,8 +119,8 @@
 {% set leaflet_rama_map_css = true %}
 {% include 'partials/head_leaflet.html' %}
 <script src="{{ url_for('static', filename='js/noc-tools.js') }}?v=noc13"></script>
-<script src="{{ url_for('static', filename='js/consulta-index-map.js') }}?v=pon40"></script>
-<script src="{{ url_for('static', filename='js/consulta-altiplano-auth.js') }}?v=pon9"></script>
+<script src="{{ url_for('static', filename='js/consulta-index-map.js') }}?v=pon41"></script>
+<script src="{{ url_for('static', filename='js/consulta-altiplano-auth.js') }}?v=pon12"></script>
 <script>
 window.__CONSULTA_INDEX_CFG__ = {
   clearUrlInd: {{ url_for("index") | tojson }},
@@ -134,10 +134,10 @@ window.__CONSULTA_INDEX_CFG__ = {
 };
 </script>
 {% if consulta_row_counts %}
-<script defer src="{{ url_for('static', filename='js/consulta-masivo-ui.js') }}?v=7"></script>
+<script defer src="{{ url_for('static', filename='js/consulta-masivo-ui.js') }}?v=8"></script>
 {% endif %}
-<script defer src="{{ url_for('static', filename='js/consulta-tasa-composite-actions.js') }}?v=4"></script>
-<script defer src="{{ url_for('static', filename='js/consulta-index.js') }}?v=pon33"></script>
+<script defer src="{{ url_for('static', filename='js/consulta-tasa-composite-actions.js') }}?v=7"></script>
+<script defer src="{{ url_for('static', filename='js/consulta-index.js') }}?v=pon41"></script>
 </head>
 
 <body class="theme-devops page-consulta-index">
@@ -477,7 +477,6 @@ window.__CONSULTA_INDEX_CFG__ = {
         <span class="rama-row-actions consulta-cto-head-row__actions">
           <button type="button" class="btn" title="Recargar TX/RX vía Altiplano" onclick="consultaRecargarPotenciasDesdeBtn(this);">Consultar RX</button>
           <button type="button" class="btn btn-ghost" data-consulta-cto-mapa-details-id="consulta-{{ sec }}-cto-map-details" title="Mostrar mapa de la CTO" onclick="consultaAbrirMapaCto(this);">Ver mapa</button>
-          <a class="btn btn-ghost" href="/dashboard/rama?q={{ c.ruta.cto|urlencode }}" title="Árbol RAMA / CTO">Árbol RAMA</a>
         </span>
       </div>
       <div class="consulta-cto-ficha" aria-label="Información de la CTO">
@@ -537,12 +536,12 @@ window.__CONSULTA_INDEX_CFG__ = {
         {% if c.resultado %}
         {% if c.resultado.CTO and c.resultado.CTO != "—" %}
         {% if c.cto_postal_address %}
-        <p class="hint rama-cto-address consulta-cto-postal-row" aria-label="Dirección postal">
-          <span class="rama-cto-address__label">Dirección</span>
+        <p class="hint rama-cto-address consulta-cto-postal-row" aria-label="Dirección postal de la CTO">
+          <span class="rama-cto-address__label">Dirección (CTO)</span>
           <span class="rama-cto-address__value">{{ c.cto_postal_address }}</span>
         </p>
         {% else %}
-        <p class="hint rama-cto-address consulta-cto-postal-row" data-consulta-cto-postal-fetch data-cto="{{ c.resultado.CTO }}" aria-live="polite">
+        <p class="hint rama-cto-address consulta-cto-postal-row" data-consulta-cto-postal-fetch data-consulta-address-label="Dirección (CTO)" data-cto="{{ c.resultado.CTO }}" aria-live="polite">
           <span class="rama-cto-address__loading">Buscando dirección…</span>
         </p>
         {% endif %}
@@ -574,7 +573,33 @@ window.__CONSULTA_INDEX_CFG__ = {
                 </div>
               </div>
               {% endif %}
-              <span class="pill"><span class="dot good"></span> TX/RX via Altiplano</span>
+              {% if c.resultado.Status != 'FREE' %}
+              <button
+                type="button"
+                class="consulta-altiplano-reload-btn btn btn-ghost btn-sm"
+                title="Recargar datos Altiplano (TX/RX, alarmas, INP, VNO)"
+                aria-label="Recargar datos Altiplano"
+                onclick="consultaRecargarAltiplanoDesdeBtn(this)"
+              >
+                <svg
+                  class="consulta-altiplano-reload-btn__icon"
+                  viewBox="0 0 24 24"
+                  width="18"
+                  height="18"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M3 12a9 9 0 0 1 15-6.7L21 8"/>
+                  <path d="M21 3v5h-5"/>
+                  <path d="M21 12a9 9 0 0 1-15 6.7L3 16"/>
+                  <path d="M3 21v-5h5"/>
+                </svg>
+              </button>
+              {% endif %}
               {% if c.resultado.Status == 'Registro aux.bajada_inventario' %}
               <span class="consulta-detalle-aviso-cm muted-caption">Sin registro en inventario CM activo</span>
               {% endif %}
@@ -615,6 +640,7 @@ window.__CONSULTA_INDEX_CFG__ = {
           {% else %}
           <tr><th>TX (dBm)</th><td id="{{ sec }}-tx" class="mono consulta-potencia-loading" aria-busy="true" aria-label="Cargando">{{ consulta_potencia_spinner }}</td></tr>
           <tr><th>RX (dBm)</th><td id="{{ sec }}-rx" class="mono consulta-potencia-loading" aria-busy="true" aria-label="Cargando">{{ consulta_potencia_spinner }}</td></tr>
+          <tr id="{{ sec }}-ultima-alarma-row" hidden><th>Última alarma</th><td id="{{ sec }}-ultima-alarma" class="mono consulta-potencia-loading" aria-busy="true" aria-label="Cargando">{{ consulta_potencia_spinner }}</td></tr>
           <tr id="{{ sec }}-alarmas-row"><th>Alarmas</th><td id="{{ sec }}-alarmas" class="consulta-alarmas-cell consulta-potencia-loading" aria-busy="true" aria-label="Cargando">{{ consulta_potencia_spinner }}</td></tr>
           {% endif %}
         </table>
@@ -848,6 +874,17 @@ window.__CONSULTA_INDEX_CFG__ = {
     </form>
 
     <p id="consulta-altiplano-auth-error" class="consulta-altiplano-auth-error" role="alert" hidden></p>
+
+    <p
+      id="consulta-altiplano-auth-loading"
+      class="consulta-altiplano-auth-loading altiplano-consulta-loading"
+      role="status"
+      aria-live="polite"
+      hidden
+    >
+      <span class="altiplano-consulta-loading__spinner" aria-hidden="true"></span>
+      <span id="consulta-altiplano-auth-loading-text"></span>
+    </p>
 
     <div class="altiplano-confirm-dialog-actions consulta-altiplano-auth-dialog__actions">
       <button type="button" id="consulta-altiplano-auth-cancel" class="btn btn-ghost altiplano-confirm-dialog-btn-cancel">Cancelar</button>

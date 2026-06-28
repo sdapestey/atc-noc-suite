@@ -299,6 +299,7 @@ QUERIES = {
         SELECT
             regexp_replace(btrim(s.object_name), ':1-1', '-') AS obj_norm,
             f.path_atc AS rama,
+            f.location_description AS cto,
             o.invocator_system
         FROM cm.inventory_fat_occupation f
         JOIN altiplano.serial s ON s.access_id = f.access_id

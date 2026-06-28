@@ -122,7 +122,73 @@ function consultaRecargarPotenciasDesdeBtn(btn) {
   if (window.ConsultaMasivoUi && window.ConsultaMasivoUi.clearPotenciasLoaded) {
     window.ConsultaMasivoUi.clearPotenciasLoaded(sec);
   }
-  cargarPotenciasSeccion(tok, sec);
+  cargarPotenciasSeccion(tok, sec, sec, { forceRefresh: true });
+}
+
+function _consultaSetAltiplanoReloadBusy(btn, loading) {
+  if (!btn) return;
+  btn.disabled = Boolean(loading);
+  btn.classList.toggle("consulta-altiplano-reload-btn--busy", Boolean(loading));
+  btn.setAttribute("aria-busy", loading ? "true" : "false");
+}
+
+function _consultaPrepAltiplanoRefreshUI(pre, root) {
+  if (!root) return;
+  const pfx = pre ? pre + "-" : "";
+  const detSt = (root.getAttribute("data-detalle-fat-status") || "").trim().toUpperCase();
+  if (detSt === "FREE") return;
+  if (!_isConsultaDetallePotenciaPar(pre)) return;
+
+  _setAlarmasDetalleRowVisible(pre, true);
+  [
+    _potCell(pre, "tx"),
+    _potCell(pre, "rx"),
+    _potCell(pre, "alarmas"),
+    _potCell(pre, "ultima-alarma"),
+  ].forEach((el) => {
+    if (el) _setConsultaPotenciaLoading(el, true);
+  });
+
+  const ontAlt = document.getElementById(pfx + "ont-altiplano-value");
+  if (ontAlt) _setConsultaPotenciaLoading(ontAlt, true);
+
+  const vnoVal = document.getElementById(pfx + "altiplano-vno-value");
+  if (vnoVal) _setConsultaPotenciaLoading(vnoVal, true);
+
+  const tasaVal = document.getElementById(pfx + "altiplano-tasa-value");
+  if (tasaVal) {
+    const targetSpan = tasaVal.querySelector(".consulta-tasa-composite-target");
+    const actionsEl = tasaVal.querySelector(".consulta-tasa-composite-actions");
+    if (actionsEl) actionsEl.hidden = true;
+    if (targetSpan) {
+      targetSpan.classList.add("consulta-potencia-loading");
+      targetSpan.innerHTML = _CONSULTA_POT_SPINNER_HTML;
+    }
+    tasaVal.classList.add("consulta-potencia-loading");
+    tasaVal.setAttribute("aria-busy", "true");
+    tasaVal.setAttribute("aria-label", "Cargando tasa-composite");
+  }
+
+  const nvOper = _nvOperEl(pre);
+  if (nvOper) {
+    _consultaShowNvStatusBar(pre, true);
+    _setConsultaPotenciaLoading(nvOper, true);
+  }
+}
+
+function consultaRecargarAltiplanoDesdeBtn(btn) {
+  const sec = btn && btn.closest ? btn.closest(".consulta-section") : null;
+  if (!sec) return;
+  const tok = sec.getAttribute("data-query-token") || "";
+  if (!tok) return;
+  const pre = sec.getAttribute("data-section-prefix") || "";
+  _consultaResetAlarmasFetched(pre);
+  _consultaPrepAltiplanoRefreshUI(pre, sec);
+  _consultaSetAltiplanoReloadBusy(btn, true);
+  cargarPotenciasSeccion(tok, sec, sec, {
+    altiplanoRefresh: true,
+    skipBtnLoading: true,
+  }).finally(() => _consultaSetAltiplanoReloadBusy(btn, false));
 }
 
 function consultaRecargarPotenciasSubcto(btn) {
@@ -131,7 +197,7 @@ function consultaRecargarPotenciasSubcto(btn) {
   const block = btn && btn.closest ? btn.closest(".consulta-cto-block") : null;
   if (!cto || !sec || !block) return;
   _consultaResetAlarmasFetched(sec.getAttribute("data-section-prefix") || "");
-  cargarPotenciasSeccion(cto, sec, block);
+  cargarPotenciasSeccion(cto, sec, block, { forceRefresh: true });
 }
 
 function _hasPower(v) {
@@ -290,6 +356,21 @@ function _consultaMasivoPotenciasPendientes(scope, pfx) {
   return pending;
 }
 
+function _consultaMasivoPotenciasCargaPendiente(scope, pfx) {
+  if (!scope || !scope.querySelectorAll) return false;
+  let pending = false;
+  scope.querySelectorAll("tr[data-aid][data-fat-status]").forEach((tr) => {
+    if (!_filaTieneAidReal(tr) || _filaSaltaPotencias(tr)) return;
+    if (_normFatStatus(tr.getAttribute("data-fat-status")) !== "IN SERVICE") return;
+    const aid = tr.getAttribute("data-aid");
+    const rx = document.getElementById(pfx + "rx-" + aid);
+    if (rx && rx.classList.contains("consulta-potencia-loading")) {
+      pending = true;
+    }
+  });
+  return pending;
+}
+
 /** True si la sección masiva aún necesita cargar potencias (expuesto para consulta-masivo-ui). */
 function _consultaSectionPotenciasPendientes(root) {
   if (!root) return true;
@@ -340,7 +421,7 @@ function _consultaRefreshPotenciaCellsLoading(cells, root) {
   const tok = root ? root.getAttribute("data-query-token") || "" : "";
   const sinReconsultaAuto = _consultaPotenciasTokenEsRamaOCto(tok);
   cells.forEach((el) => {
-    if (!el || (el.id && el.id.endsWith("-alarmas"))) return;
+    if (!el || (el.id && (el.id.endsWith("-alarmas") || el.id.endsWith("-ultima-alarma")))) return;
     if (_consultaIsNvStatusSlot(el)) return;
     const tr = el.closest("tr");
     if (tr && (_filaSaltaPotencias(tr) || !_filaTieneAidReal(tr))) {
@@ -547,6 +628,41 @@ function _formatAlarmasUtc(iso) {
   );
 }
 
+const _TZ_ART_ALARM = "America/Argentina/Buenos_Aires";
+
+function _formatUltimaAlarmaTs(iso) {
+  const s = String(iso || "").trim();
+  if (!s) return "";
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return s;
+  return d.toLocaleString("es-AR", {
+    timeZone: _TZ_ART_ALARM,
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+}
+
+function _formatUltimaAlarmaTipo(type) {
+  const raw = String(type || "").trim().toLowerCase();
+  if (!raw) return "—";
+  const labels = {
+    "onu-dying-gasp": "Dying gasp",
+    "loss-of-signal": "Loss of signal",
+    "absence-of-phy": "Absence of PHY",
+    "loss-of-frame": "Loss of frame",
+    "loss-of-burst": "Loss of burst",
+    "start-up-failure": "Start-up failure",
+    "onu-not-present": "ONU not present",
+  };
+  if (labels[raw]) return labels[raw];
+  return raw.replace(/-/g, " ");
+}
+
 function _renderAlarmaDetalleHtml(a) {
   const sev = _escHtmlAlarmas(a.severity || "");
   const typ = _escHtmlAlarmas(a.type || "—");
@@ -596,6 +712,16 @@ function _renderAlarmaDetalleHtml(a) {
 function _alarmasDetalleRow(pre) {
   const el = _potCell(pre, "alarmas");
   return el ? el.closest("tr") : null;
+}
+
+function _ultimaAlarmaDetalleRow(pre) {
+  const el = _potCell(pre, "ultima-alarma");
+  return el ? el.closest("tr") : null;
+}
+
+function _setUltimaAlarmaDetalleRowVisible(pre, visible) {
+  const row = _ultimaAlarmaDetalleRow(pre);
+  if (row) row.hidden = !visible;
 }
 
 function _setAlarmasDetalleRowVisible(pre, visible) {
@@ -1108,19 +1234,13 @@ function togglePonAdminDesdeUI(accessId, operador, objectName, currentPonAdmin, 
   }
 
   runConsultaAltiplanoAction({
-    operador: "INP",
-    loginDialog: {
-      title: "Ingresar a Altiplano",
-      message: "Credenciales de Altiplano (INP) para operar el puerto PON.",
-      okLabel: "Ingresar",
-    },
     dialog: {
       title: title,
       message: confirmMsg,
       danger: bajar,
       okLabel: bajar ? "Bajar PON" : "Levantar PON",
     },
-    execute: (creds) =>
+    execute: () =>
       fetch("/pon/admin-status", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
@@ -1130,8 +1250,6 @@ function togglePonAdminDesdeUI(accessId, operador, objectName, currentPonAdmin, 
           object_name: String(objectName || "").trim(),
           toggle: true,
           current_pon_admin: cur,
-          altiplano_user: creds.username,
-          altiplano_password: creds.password,
         }),
       }).then((r) => r.json().then((j) => ({ok: r.ok, status: r.status, json: j}))),
     onSuccess: (json) => {
@@ -1293,6 +1411,59 @@ function toggleOntAdminDesdeUIBtn(btn) {
     btn.getAttribute("data-admin") || "",
     btn
   );
+}
+
+function _applyUltimaAlarmaDetalle(pre, data) {
+  const _ensureUltimaAlarmaDetalleCell = () => {
+    let el = _potCell(pre, "ultima-alarma");
+    if (el) return el;
+    const alarmasRow = _alarmasDetalleRow(pre);
+    const rx = _potCell(pre, "rx");
+    const tx = _potCell(pre, "tx");
+    const refTr = alarmasRow || (rx || tx ? (rx || tx).closest("tr") : null);
+    if (!refTr || !refTr.parentNode) return null;
+
+    const newTr = document.createElement("tr");
+    newTr.id = pre + "-ultima-alarma-row";
+
+    const th = document.createElement("th");
+    th.textContent = "Última alarma";
+
+    const td = document.createElement("td");
+    td.id = pre + "-ultima-alarma";
+    td.className = "mono consulta-potencia-loading";
+    td.setAttribute("aria-busy", "true");
+    td.setAttribute("aria-label", "Cargando");
+    td.innerHTML = _CONSULTA_POT_SPINNER_HTML;
+
+    newTr.appendChild(th);
+    newTr.appendChild(td);
+    refTr.parentNode.insertBefore(newTr, refTr);
+    return td;
+  };
+
+  const el = _ensureUltimaAlarmaDetalleCell();
+  if (!el) return;
+  _setConsultaPotenciaLoading(el, false);
+  if (!data || typeof data !== "object") {
+    _setUltimaAlarmaDetalleRowVisible(pre, false);
+    return;
+  }
+  if (Object.prototype.hasOwnProperty.call(data, "ULTIMA_ALARMA")) {
+    _consultaMarkAlarmasFetched(pre);
+  }
+  const item = data.ULTIMA_ALARMA;
+  if (!item || typeof item !== "object" || !item.type) {
+    el.textContent = "";
+    el.removeAttribute("title");
+    _setUltimaAlarmaDetalleRowVisible(pre, false);
+    return;
+  }
+  const tipo = _formatUltimaAlarmaTipo(item.type);
+  const ts = _formatUltimaAlarmaTs(item.raised);
+  el.textContent = ts ? tipo + " · " + ts : tipo;
+  el.title = item.source === "ema" ? "Última causa de caída (EMA)" : "Última alarma FM";
+  _setUltimaAlarmaDetalleRowVisible(pre, true);
 }
 
 function _applyAlarmasDetalle(pre, data, root) {
@@ -1486,6 +1657,7 @@ function cargarPotenciasSeccion(valor, root, scopeEl, opts) {
       rx.classList.remove("status-down");
     }
     _setAlarmasDetalleRowVisible(pre, false);
+    _setUltimaAlarmaDetalleRowVisible(pre, false);
     const nvFree = _nvStatusEl(pre);
     if (nvFree) nvFree.hidden = true;
     const aidDetFree = document.getElementById(pfx + "aid-value");
@@ -1503,7 +1675,7 @@ function cargarPotenciasSeccion(valor, root, scopeEl, opts) {
       if (el && !cells.includes(el)) cells.push(el);
     });
   };
-  addCells([_potCell(pre, "tx"), _potCell(pre, "rx"), _potCell(pre, "alarmas")]);
+  addCells([_potCell(pre, "tx"), _potCell(pre, "rx"), _potCell(pre, "ultima-alarma"), _potCell(pre, "alarmas")]);
   const nvOper = _nvOperEl(pre);
   if (nvOper) {
     _consultaShowNvStatusBar(pre, true);
@@ -1515,14 +1687,28 @@ function cargarPotenciasSeccion(valor, root, scopeEl, opts) {
     const tr = el.closest("tr");
     return !tr || !_filaSaltaPotencias(tr);
   });
+  const forceAltiplano = Boolean(opts.altiplanoRefresh);
+  const forceRefresh = Boolean(opts.forceRefresh) || forceAltiplano;
   if (!silentNvRefresh) {
     cellsCarga.forEach((el) => {
-      if (el.id === pfx + "alarmas" && _consultaAlarmasYaFetched(pre)) return;
+      if (
+        !forceRefresh &&
+        (el.id === pfx + "alarmas" || el.id === pfx + "ultima-alarma") &&
+        _consultaAlarmasYaFetched(pre)
+      )
+        return;
       const keepAlarmasRendered =
-        el.id === pfx + "alarmas" && el.querySelector(".consulta-alarmas-block");
+        !forceRefresh &&
+        el.id === pfx + "alarmas" &&
+        el.querySelector(".consulta-alarmas-block");
       if (keepAlarmasRendered) return;
-      if (_consultaIsNvStatusSlot(el) && _consultaNvSlotHasContent(el)) return;
-      if (_consultaPotenciaCeldaHasReading(el)) return;
+      if (
+        _consultaIsNvStatusSlot(el) &&
+        _consultaNvSlotHasContent(el) &&
+        !forceRefresh
+      )
+        return;
+      if (_consultaPotenciaCeldaHasReading(el) && !forceRefresh) return;
       _setConsultaPotenciaLoading(el, true);
     });
   }
@@ -1531,10 +1717,12 @@ function cargarPotenciasSeccion(valor, root, scopeEl, opts) {
     if (Object.prototype.hasOwnProperty.call(opts, "prefetchedData")) {
       return Promise.resolve(opts.prefetchedData);
     }
+    let body = "value=" + encodeURIComponent(valor);
+    if (forceRefresh) body += "&refresh=1";
     return fetch("/potencias", {
       method: "POST",
       headers: {"Content-Type": "application/x-www-form-urlencoded"},
-      body: "value=" + encodeURIComponent(valor),
+      body: body,
     }).then((r) => {
       if (!r.ok) throw new Error("HTTP " + r.status);
       return r.json();
@@ -1552,6 +1740,7 @@ function cargarPotenciasSeccion(valor, root, scopeEl, opts) {
         if (tx) _applyPotenciaDbmCelda(tx, data.TX, true);
         if (rx) _applyPotenciaDbmCelda(rx, data.RX, true);
         _updateDetalleVisualStatus(pre, data, root);
+        _applyUltimaAlarmaDetalle(pre, data);
         _applyAlarmasDetalle(pre, data, root);
         _consultaArmNvRefresh(pre);
         _applyNvStatusDetalle(pre, data);
@@ -1584,11 +1773,12 @@ function cargarPotenciasSeccion(valor, root, scopeEl, opts) {
         const aidDet = document.getElementById(pfx + "aid-value");
         if (aidDet) _consultaFilaApplySemaforoHighlight(aidDet.closest("tr"), data.RX);
         _consultaRefreshPotenciaCellsLoading(
-          cellsCarga.filter((el) => el.id !== pfx + "alarmas"),
+          cellsCarga.filter((el) => el.id !== pfx + "alarmas" && el.id !== pfx + "ultima-alarma"),
           root
         );
         _consultaSemaforoDesdePotenciasPayload(root, valor, data, pfx);
         if (window.ConsultaMasivoUi) window.ConsultaMasivoUi.evalRamaAllDown(root);
+        _syncCopiarTodoBtn();
         return;
       }
       if (Array.isArray(data)) {
@@ -1619,17 +1809,18 @@ function cargarPotenciasSeccion(valor, root, scopeEl, opts) {
           _consultaFilaClearSemaforoHighlight(tr);
         });
         _consultaRefreshPotenciaCellsLoading(
-          cellsCarga.filter((el) => el.id !== pfx + "alarmas"),
+          cellsCarga.filter((el) => el.id !== pfx + "alarmas" && el.id !== pfx + "ultima-alarma"),
           root
         );
         _consultaSyncDownPoll(root, valor, scope);
         aplicarFiltrosConsulta();
         _consultaSemaforoDesdePotenciasPayload(root, valor, data, pfx);
         if (window.ConsultaMasivoUi) window.ConsultaMasivoUi.evalRamaAllDown(root);
+        _syncCopiarTodoBtn();
         return;
       }
       _consultaRefreshPotenciaCellsLoading(
-        cellsCarga.filter((el) => el.id !== pfx + "alarmas"),
+        cellsCarga.filter((el) => el.id !== pfx + "alarmas" && el.id !== pfx + "ultima-alarma"),
         root
       );
       _consultaFilaClearSemaforoEnRaiz(scope);
@@ -1646,6 +1837,7 @@ function cargarPotenciasSeccion(valor, root, scopeEl, opts) {
         }
       });
       _setAlarmasDetalleRowVisible(pre, false);
+    _setUltimaAlarmaDetalleRowVisible(pre, false);
       const nvErr = _nvStatusEl(pre);
       if (nvErr) nvErr.hidden = true;
       _consultaFilaClearSemaforoEnRaiz(scope);
@@ -1679,16 +1871,14 @@ function cambiarSNDesdeUI(accessId, operador, ontTarget, btn) {
   const currentSnEl = document.getElementById(snId);
   const current = currentSnEl ? currentSnEl.innerText.trim() : "";
 
-  if (!window.ensureConsultaAltiplanoSession || !window.runConsultaSnChange) {
-    toast("Diálogo de autenticación no disponible");
+  if (!window.runConsultaSnChange) {
+    toast("Diálogo de cambio de SN no disponible");
     return;
   }
 
-  const opLabel = String(operador || "").trim() || "Altiplano";
   let reloadScheduled = false;
 
-  const snChangeOpts = {
-    creds: null,
+  runConsultaSnChange({
     dialog: {
       title: "Cambiar SN de la ONT",
       message: "Ingresá el nuevo serial.",
@@ -1700,8 +1890,8 @@ function cambiarSNDesdeUI(accessId, operador, ontTarget, btn) {
     onCommitStart: () => {
       _setConsultaSnChanging(currentSnEl, btn, true);
     },
-    execute: (creds) => {
-      const sn = String(creds.new_sn || "").trim().toUpperCase();
+    execute: (snPayload) => {
+      const sn = String(snPayload.new_sn || "").trim().toUpperCase();
       return fetch("/sn/cambiar", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
@@ -1710,8 +1900,6 @@ function cambiarSNDesdeUI(accessId, operador, ontTarget, btn) {
           operador: String(operador || "").trim(),
           ont_target: String(ontTarget || "").trim(),
           new_sn: sn,
-          altiplano_user: creds.username,
-          altiplano_password: creds.password,
         }),
       }).then((r) => r.json().then((j) => ({ok: r.ok, status: r.status, json: j, sn})));
     },
@@ -1726,29 +1914,12 @@ function cambiarSNDesdeUI(accessId, operador, ontTarget, btn) {
         if (currentSnEl && current) currentSnEl.textContent = current;
       }
     },
-  };
-
-  ensureConsultaAltiplanoSession({
-    operador: operador,
-    dialog: {
-      title: "Ingresar a Altiplano",
-      message:
-        "Credenciales de Altiplano (" +
-        opLabel +
-        ") para autorizar el cambio de SN.",
-      okLabel: "Ingresar",
-    },
-  })
-    .then((creds) => {
-      snChangeOpts.creds = creds;
-      return runConsultaSnChange(snChangeOpts);
-    })
-    .catch((err) => {
-      if (err && err.message === "cancelled") return;
-      _setConsultaSnChanging(currentSnEl, btn, false);
-      if (currentSnEl && current) currentSnEl.textContent = current;
-      toast(err.message || "Error al cambiar SN");
-    });
+  }).catch((err) => {
+    if (err && err.message === "cancelled") return;
+    _setConsultaSnChanging(currentSnEl, btn, false);
+    if (currentSnEl && current) currentSnEl.textContent = current;
+    toast(err.message || "Error al cambiar SN");
+  });
 }
 
 function cambiarSNDesdeUIBtn(btn) {
@@ -1784,13 +1955,15 @@ function exportarConsultaCsv() {
   window.location.href = url;
 }
 
-function _consultaTablaEsPuertosCto(table) {
+function _consultaTablaEsPuertosCto(table, opts) {
+  opts = opts || {};
   if (!table || table.classList.contains("table-kv")) return false;
   const row = table.querySelector("tr");
   if (!row) return false;
-  const hdr = Array.from(row.querySelectorAll("th")).map((th) =>
-    th.innerText.trim().toUpperCase()
-  );
+  const readCell = opts.ignoreVisibility
+    ? (el) => (el.textContent || "").trim().toUpperCase()
+    : (el) => (el.innerText || "").trim().toUpperCase();
+  const hdr = Array.from(row.querySelectorAll("th")).map(readCell);
   return hdr.includes("OUT") && hdr.includes("AID");
 }
 
@@ -1817,62 +1990,119 @@ function _consultaEncabezadoCopiarCto(cto) {
   return "Estado de clientes en CTO " + name + "\n\n";
 }
 
+function _consultaEsSectionRama(section) {
+  return Boolean(section && section.getAttribute("data-es-rama") === "1");
+}
+
+function _consultaRamaNombreDesdeSection(section) {
+  if (!section) return "";
+  const tok = (section.getAttribute("data-query-token") || "").trim();
+  if (tok.toUpperCase().includes("RATC")) return tok;
+  const pathRow = section.querySelector(".consulta-rama-path-row .rama-row-label");
+  if (pathRow) {
+    const label = pathRow.textContent.trim();
+    if (label && label !== "—") return label;
+  }
+  const mapEl = section.querySelector("[data-consulta-rama-search-map][data-rama]");
+  if (mapEl) {
+    const rama = (mapEl.getAttribute("data-rama") || "").trim();
+    if (rama) return rama;
+  }
+  return tok;
+}
+
+function _consultaEncabezadoCopiarRama(rama) {
+  const name = String(rama || "").trim();
+  if (!name) return "";
+  return "Estado general de la RAMA " + name + "\n\n";
+}
+
 function _consultaMensajeCtoSinInService(cto) {
   const name = String(cto || "").trim();
   if (!name) return "";
   return "CTO " + name + " sin clientes IN SERVICE\n\n";
 }
 
-function _consultaFilaTextoCopiar(row) {
+function _consultaFilaInServiceParaCopiar(tr) {
+  if (!tr || _filaSaltaPotencias(tr)) return false;
+  const st = _normFatStatus(tr.getAttribute("data-fat-status") || "");
+  if (st !== "IN SERVICE" && st !== "RESERVED") return false;
+  const aid = (tr.getAttribute("data-aid") || "").trim();
+  return Boolean(aid && aid !== "-" && !aid.startsWith("nf-"));
+}
+
+function _consultaFilaTextoCopiar(row, opts) {
+  opts = opts || {};
+  const readCell = opts.ignoreVisibility
+    ? (el) => (el.textContent || "").trim()
+    : (el) => (el.innerText || "").trim();
   const fila = [];
   row.querySelectorAll("th, td").forEach((cell) => {
     const cleanCell = cell.cloneNode(true);
     cleanCell
       .querySelectorAll("button, .btn, a.btn, .consulta-sn-btn")
       .forEach((actionEl) => actionEl.remove());
-    fila.push(cleanCell.innerText.trim());
+    fila.push(readCell(cleanCell));
   });
   return fila.join("\t");
 }
 
-function _consultaExtraerTablaCtoInService(table) {
+function _consultaExtraerTablaCtoInService(table, opts) {
+  opts = opts || {};
+  const ignoreVisibility = Boolean(opts.ignoreVisibility);
   let headerLine = "";
   const dataLines = [];
-  if (!_consultaTablaEsPuertosCto(table)) {
+  if (!_consultaTablaEsPuertosCto(table, opts)) {
     return { headerLine: headerLine, dataLines: dataLines };
   }
-  if (getComputedStyle(table).display === "none") {
+  if (!ignoreVisibility && getComputedStyle(table).display === "none") {
     return { headerLine: headerLine, dataLines: dataLines };
   }
 
   table.querySelectorAll("tr").forEach((row) => {
-    if (getComputedStyle(row).display === "none") return;
-    const line = _consultaFilaTextoCopiar(row);
+    if (!ignoreVisibility && getComputedStyle(row).display === "none") return;
+    const line = _consultaFilaTextoCopiar(row, opts);
     if (!line) return;
     if (row.querySelector("th")) {
       headerLine = line;
       return;
     }
-    const st = (row.getAttribute("data-fat-status") || "").trim().toUpperCase();
-    if (st !== "IN SERVICE") return;
+    if (!_consultaFilaInServiceParaCopiar(row)) return;
     dataLines.push(line);
   });
 
   return { headerLine: headerLine, dataLines: dataLines };
 }
 
-function _consultaCopiarCtoScope(cto, scope) {
+function _consultaCopiarCtoScope(cto, scope, opts) {
+  opts = opts || {};
   const name = String(cto || "").trim();
   if (!name || !scope) return "";
 
   let headerLine = "";
   const dataLines = [];
-  scope.querySelectorAll("table").forEach((table) => {
-    if (!_consultaTablaEsPuertosCto(table)) return;
-    const part = _consultaExtraerTablaCtoInService(table);
-    if (part.headerLine && !headerLine) headerLine = part.headerLine;
-    dataLines.push(...part.dataLines);
+  scope.querySelectorAll("tr[data-aid][data-fat-status]").forEach((row) => {
+    if (!opts.ignoreVisibility && getComputedStyle(row).display === "none") return;
+    if (!_consultaFilaInServiceParaCopiar(row)) return;
+    if (!headerLine) {
+      const table = row.closest("table");
+      const hdrTr = table && table.querySelector("tr");
+      if (hdrTr && hdrTr.querySelector("th")) {
+        headerLine = _consultaFilaTextoCopiar(hdrTr, opts);
+      }
+    }
+    const line = _consultaFilaTextoCopiar(row, opts);
+    if (line) dataLines.push(line);
   });
+
+  if (!dataLines.length) {
+    scope.querySelectorAll("table").forEach((table) => {
+      if (!_consultaTablaEsPuertosCto(table, opts)) return;
+      const part = _consultaExtraerTablaCtoInService(table, opts);
+      if (part.headerLine && !headerLine) headerLine = part.headerLine;
+      dataLines.push(...part.dataLines);
+    });
+  }
 
   if (!dataLines.length) {
     return _consultaMensajeCtoSinInService(name);
@@ -1885,18 +2115,50 @@ function _consultaCopiarCtoScope(cto, scope) {
 }
 
 /* Copiar todos los resultados (masivo) */
+function _consultaMasivoPotenciasGlobalesPendientes() {
+  if (!document.querySelector(".consulta-section--multi")) return false;
+  let pending = false;
+  document.querySelectorAll(".consulta-section--multi").forEach((sec) => {
+    const pre = sec.getAttribute("data-section-prefix") || "";
+    const pfx = pre ? pre + "-" : "";
+    if (_consultaMasivoPotenciasCargaPendiente(sec, pfx)) pending = true;
+  });
+  if (
+    window.ConsultaMasivoUi &&
+    typeof window.ConsultaMasivoUi.masivoPreloadEnCurso === "function" &&
+    window.ConsultaMasivoUi.masivoPreloadEnCurso()
+  ) {
+    pending = true;
+  }
+  return pending;
+}
+
+function _syncCopiarTodoBtn() {
+  const btn = document.getElementById("btn-copiar");
+  if (!btn || !document.querySelector(".consulta-section--multi")) return;
+  const pending = _consultaMasivoPotenciasGlobalesPendientes();
+  btn.disabled = pending;
+  btn.title = pending
+    ? "Disponible cuando terminen de cargar todas las potencias TX/RX"
+    : "Copiar todos los resultados al portapapeles";
+}
+
 function copiarTodo() {
+  if (_consultaMasivoPotenciasGlobalesPendientes()) {
+    toast("Esperá a que terminen de cargar las potencias TX/RX");
+    return;
+  }
   let texto = "";
+  const copyOpts = { ignoreVisibility: true };
+  const esMasivo = document.querySelector(".consulta-section--multi") !== null;
 
   function appendTabla(el) {
-    const style = getComputedStyle(el);
-    if (style.display === "none") return;
+    if (!copyOpts.ignoreVisibility && getComputedStyle(el).display === "none") return;
 
     el.querySelectorAll("tr").forEach((row) => {
-      const rStyle = getComputedStyle(row);
-      if (rStyle.display === "none") return;
+      if (!copyOpts.ignoreVisibility && getComputedStyle(row).display === "none") return;
 
-      const line = _consultaFilaTextoCopiar(row);
+      const line = _consultaFilaTextoCopiar(row, copyOpts);
       if (line) texto += line + "\n";
     });
 
@@ -1904,19 +2166,24 @@ function copiarTodo() {
   }
 
   document.querySelectorAll(".consulta-section").forEach((section) => {
-    const secStyle = getComputedStyle(section);
-    if (secStyle.display === "none") return;
+    if (!esMasivo && getComputedStyle(section).display === "none") return;
 
-    section.querySelectorAll(".consulta-cto-block").forEach((block) => {
-      const blockStyle = getComputedStyle(block);
-      if (blockStyle.display === "none") return;
+    const ctoBlocks = section.querySelectorAll(".consulta-cto-block");
+    const esRama = _consultaEsSectionRama(section);
+    if (esRama && ctoBlocks.length > 0) {
+      const rama = _consultaRamaNombreDesdeSection(section);
+      if (rama) texto += _consultaEncabezadoCopiarRama(rama);
+    }
+
+    ctoBlocks.forEach((block) => {
       const cto = (block.getAttribute("data-cto") || "").trim();
-      if (cto) texto += _consultaCopiarCtoScope(cto, block);
+      if (cto) texto += _consultaCopiarCtoScope(cto, block, copyOpts);
     });
 
-    const ctoSuelta = _consultaCtoNombreDesdeSection(section);
+    const ctoSuelta =
+      ctoBlocks.length > 0 && esRama ? "" : _consultaCtoNombreDesdeSection(section);
     if (ctoSuelta) {
-      texto += _consultaCopiarCtoScope(ctoSuelta, section);
+      texto += _consultaCopiarCtoScope(ctoSuelta, section, copyOpts);
     }
 
     section.querySelectorAll("table").forEach((table) => {
@@ -1926,8 +2193,7 @@ function copiarTodo() {
     });
 
     section.querySelectorAll(".cto-header").forEach((el) => {
-      const style = getComputedStyle(el);
-      if (style.display === "none") return;
+      if (!copyOpts.ignoreVisibility && getComputedStyle(el).display === "none") return;
       texto += el.innerText.trim() + "\n";
     });
 
@@ -2118,12 +2384,16 @@ window.addEventListener("load", () => {
   if (potenciaJobs.length === 0 && !consultaMasivo) {
     /* Sin búsqueda o sin filas útiles: dejar Copiar deshabilitado como en la página inicial. */
   } else if (consultaMasivo && window.ConsultaMasivoUi) {
-    if (btnCopiar) btnCopiar.disabled = false;
+    if (btnCopiar) btnCopiar.disabled = true;
     const preload = window.ConsultaMasivoUi.initPager();
-    if (preload && preload.then) {
-      preload.then(afterPotencias).catch(afterPotencias);
-    } else {
+    const onPreloadDone = () => {
       afterPotencias();
+      _syncCopiarTodoBtn();
+    };
+    if (preload && preload.then) {
+      preload.then(onPreloadDone).catch(onPreloadDone);
+    } else {
+      onPreloadDone();
     }
   } else if (btnCopiar) {
     btnCopiar.disabled = true;
@@ -2197,8 +2467,10 @@ window.addEventListener("load", () => {
   /** Handlers usados por ``onclick`` en ``index.html`` y HTML generado en runtime. */
   window.filtrarOperador = filtrarOperador;
   window.consultaRecargarPotenciasDesdeBtn = consultaRecargarPotenciasDesdeBtn;
+  window.consultaRecargarAltiplanoDesdeBtn = consultaRecargarAltiplanoDesdeBtn;
   window.consultaRecargarPotenciasSubcto = consultaRecargarPotenciasSubcto;
   window.copiarTodo = copiarTodo;
+  window._syncCopiarTodoBtn = _syncCopiarTodoBtn;
   window.exportarConsultaCsv = exportarConsultaCsv;
   window.togglePonAdminDesdeUIBtn = togglePonAdminDesdeUIBtn;
   window.toggleOntAdminDesdeUIBtn = toggleOntAdminDesdeUIBtn;

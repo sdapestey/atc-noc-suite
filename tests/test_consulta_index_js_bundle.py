@@ -54,3 +54,14 @@ def test_consulta_index_uses_external_js_bundle():
     assert "partials/consulta_tasa_composite_dialogs.html" in html
     tasa_js = Path("static/js/consulta-tasa-composite-actions.js").read_text(encoding="utf-8")
     assert "actualizar-tasa-composite-profiles" in tasa_js or "tasa-composite" in tasa_js
+    assert "consulta-altiplano-reload-btn" in html
+    assert "consultaRecargarAltiplanoDesdeBtn" in html
+    assert "function consultaRecargarAltiplanoDesdeBtn" in js
+    assert "altiplanoRefresh" in js
+    assert "forceRefresh" in js
+    assert "Estado general de la RAMA" in js
+    assert "_consultaEncabezadoCopiarRama" in js
+    assert "_consultaFilaInServiceParaCopiar" in js
+    assert "ignoreVisibility: true" in js
+    assert "_syncCopiarTodoBtn" in js
+    assert "masivoPreloadEnCurso" in masivo_ui

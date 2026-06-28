@@ -272,6 +272,7 @@
       minDate: options.minDate,
       maxDate: options.maxDate !== undefined ? options.maxDate : fpMaxDateToday(),
       onChange: options.onChange,
+      onClose: options.onClose,
     });
     bindFpHandlers(fp);
     if (fp.calendarContainer) {

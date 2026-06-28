@@ -68,14 +68,8 @@ from services import (
     consultar_rama_estructura,
     consultar_rama_potencias,
     consultar_ci_op_por_rama,
-    dashboard_camino_optico_access_id,
-    dashboard_camino_optico_cto,
-    dashboard_camino_optico_equipo,
-    dashboard_camino_optico_lt,
-    dashboard_camino_optico_fusion_planta,
     dashboard_camino_optico_rama,
     dashboard_camino_optico_ramas_masivo,
-    dashboard_camino_optico_sitio,
     gis_payload_para_lt,
     infer_camino_consulta_tipo,
     dashboard_calidad_aids_inconsistencia_datos,
@@ -90,7 +84,7 @@ from services import (
     dashboard_calidad_inventario_estadisticas,
     dashboard_estadisticas_altiplano_inp,
     dashboard_olts,
-    dashboard_rama_bundle,
+    dashboard_olt_totales,
     buscar_intents_ont_connection_inp,
     crear_ont_connection_intent,
     estructura_dashboard_lt,
@@ -146,6 +140,33 @@ def _extract_altiplano_ui_credentials(data: dict) -> tuple[str, str | None]:
     if pwd is not None and not isinstance(pwd, str):
         pwd = str(pwd)
     return user, pwd
+
+
+def _altiplano_creds_from_env(entorno_nbi: str) -> tuple[str, str, tuple[dict, int] | None]:
+    """
+    Credenciales Altiplano para acciones de consulta índice (``.env``).
+
+    Usa ``ALTIPLANO_{OPERADOR}_*`` si existen; si no, ``ALTIPLANO_USER`` / ``ALTIPLANO_PASSWORD``.
+  """
+    from config import get_altiplano_operator_credentials
+
+    user, pwd = get_altiplano_operator_credentials(entorno_nbi)
+    if not user or not pwd:
+        return (
+            "",
+            "",
+            (
+                {
+                    "ok": False,
+                    "message": (
+                        "Credenciales Altiplano no configuradas en .env "
+                        "(ALTIPLANO_USER / ALTIPLANO_PASSWORD)."
+                    ),
+                },
+                503,
+            ),
+        )
+    return user, pwd, None
 
 
 def _nbi_entorno_for_operador(operador: str) -> str:
@@ -889,9 +910,7 @@ def register(app):
     @app.route("/dashboard")
     def dashboard_entry():
         tab = request.args.get("tab", "id").lower()
-        if tab == "rama":
-            return redirect(url_for("dash_rama"))
-        if tab == "lt":
+        if tab in ("rama", "lt"):
             return redirect(url_for("dash_olt"))
         if tab in ("camino", "camino-optico", "optico"):
             return redirect(url_for("dash_camino_optico"))
@@ -1003,7 +1022,7 @@ def register(app):
             count_consulta_in_service_ont_rows=count_consulta_in_service_ont_rows,
         )
 
-    def _potencias_payload_for_valor(valor: str, *, carga_masiva: bool = False):
+    def _potencias_payload_for_valor(valor: str, *, carga_masiva: bool = False, refresh: bool = False):
         valor = (valor or "").strip()
         if not valor:
             return None
@@ -1013,8 +1032,8 @@ def register(app):
             return consultar_access_id_potencias(valor)
 
         if "FATC" in valor_upper:
-            if carga_masiva:
-                return consultar_cto_potencias(valor, carga_masiva=True)
+            if carga_masiva or refresh:
+                return consultar_cto_potencias(valor, carga_masiva=carga_masiva)
             return consultar_cto_potencias_cached(valor)
 
         if "RATC" in valor_upper:
@@ -1048,7 +1067,12 @@ def register(app):
         valor = (request.form.get("value") or "").strip()
         if not valor:
             return jsonify({"error": "Parámetro value requerido"}), 400
-        payload = _potencias_payload_for_valor(valor)
+        refresh = (request.form.get("refresh") or "").strip().lower() in (
+            "1",
+            "true",
+            "yes",
+        )
+        payload = _potencias_payload_for_valor(valor, refresh=refresh)
         if payload is None:
             return jsonify({"error": "Parámetro value requerido"}), 400
         return jsonify(payload)
@@ -1104,7 +1128,6 @@ def register(app):
         operador = (data.get("operador") or "").strip()
         ont_target = (data.get("ont_target") or "").strip()
         new_sn = (data.get("new_sn") or "").strip()
-        alt_user, alt_pwd = _extract_altiplano_ui_credentials(data)
 
         if not access_id:
             return jsonify({"ok": False, "message": "access_id requerido"}), 400
@@ -1126,11 +1149,11 @@ def register(app):
         if sn_fmt_err:
             return jsonify({"ok": False, "message": sn_fmt_err}), 400
 
-        auth_err = _validate_altiplano_ui_credentials(
-            _nbi_entorno_for_operador(operador), alt_user, alt_pwd
+        alt_user, alt_pwd, cred_err = _altiplano_creds_from_env(
+            _nbi_entorno_for_operador(operador)
         )
-        if auth_err:
-            return jsonify(auth_err[0]), auth_err[1]
+        if cred_err:
+            return jsonify(cred_err[0]), cred_err[1]
 
         result = cambiar_sn_ont(
             access_id=access_id,
@@ -1152,10 +1175,13 @@ def register(app):
         admin_status = (data.get("admin_status") or "").strip().upper()
         toggle = str(data.get("toggle") or "").lower() in ("1", "true", "yes")
         current = (data.get("current_admin") or "").strip().upper()
-        alt_user, alt_pwd = _extract_altiplano_ui_credentials(data)
 
         if not access_id:
             return jsonify({"ok": False, "message": "access_id requerido"}), 400
+
+        alt_user, alt_pwd, cred_err = _altiplano_creds_from_env("INP")
+        if cred_err:
+            return jsonify(cred_err[0]), cred_err[1]
 
         if toggle:
             if current == "LOCKED":
@@ -1171,10 +1197,6 @@ def register(app):
             return jsonify(
                 {"ok": False, "message": "admin_status debe ser LOCKED o UNLOCKED"}
             ), 400
-
-        auth_err = _validate_altiplano_ui_credentials("INP", alt_user, alt_pwd)
-        if auth_err:
-            return jsonify(auth_err[0]), auth_err[1]
 
         result = cambiar_admin_status_access_id(
             access_id,
@@ -1196,10 +1218,13 @@ def register(app):
         admin_status = (data.get("admin_status") or "").strip().upper()
         toggle = str(data.get("toggle") or "").lower() in ("1", "true", "yes")
         current = (data.get("current_pon_admin") or "").strip().upper()
-        alt_user, alt_pwd = _extract_altiplano_ui_credentials(data)
 
         if not access_id:
             return jsonify({"ok": False, "message": "access_id requerido"}), 400
+
+        alt_user, alt_pwd, cred_err = _altiplano_creds_from_env("INP")
+        if cred_err:
+            return jsonify(cred_err[0]), cred_err[1]
 
         if toggle:
             if current == "LOCKED":
@@ -1213,10 +1238,6 @@ def register(app):
             return jsonify(
                 {"ok": False, "message": "admin_status debe ser LOCKED o UNLOCKED"}
             ), 400
-
-        auth_err = _validate_altiplano_ui_credentials("INP", alt_user, alt_pwd)
-        if auth_err:
-            return jsonify(auth_err[0]), auth_err[1]
 
         from services.inventory import cambiar_pon_admin_access_id
 
@@ -1241,12 +1262,9 @@ def register(app):
 
     @app.route("/dashboard/rama")
     def dash_rama():
-        data = dashboard_rama_bundle()
-        return render_template(
-            "dashboard_rama.html",
-            ramas=data["bloques"],
-            ram_totales=data["totales"],
-        )
+        """Página retirada: redirige al árbol OLT/LT (APIs bajo /dashboard/rama/* siguen activas)."""
+        args = request.args.to_dict(flat=True)
+        return redirect(url_for("dash_olt", **args))
 
     @app.route("/dashboard/rama/consultar", methods=["POST"])
     def dash_rama_consultar():
@@ -1352,8 +1370,12 @@ def register(app):
 
     @app.route("/dashboard/olt")
     def dash_olt():
-        olts = dashboard_olts()
-        return render_template("dashboard_olt.html", olts=olts)
+        return render_template(
+            "dashboard_olt.html",
+            olts=dashboard_olts(),
+            olt_totales=dashboard_olt_totales(),
+            operador_metric_pill_slug=operador_metric_pill_slug,
+        )
 
     @app.route("/dashboard/olt/consultar", methods=["POST"])
     def dash_olt_consultar():
@@ -1573,11 +1595,7 @@ def register(app):
 
     @app.route("/dashboard/alarm-analyzer")
     def dash_alarm_analyzer():
-        from datetime import datetime
-        from zoneinfo import ZoneInfo
-
-        fecha_hoy_art = datetime.now(ZoneInfo("America/Argentina/Buenos_Aires")).date().isoformat()
-        return render_template("dashboard_cortes_rama.html", fecha_hoy_art=fecha_hoy_art)
+        return render_template("dashboard_cortes_rama.html")
 
     @app.route("/dashboard/cortes-rama")
     def dash_cortes_rama_legacy():
@@ -2607,14 +2625,12 @@ def register(app):
             or hsi.get("upstream_profile")
             or ""
         )
-        alt_user, alt_pwd = _extract_altiplano_ui_credentials(data)
         operator = (vno.get("operator") or "TASA").strip().upper()
-        if alt_user and alt_pwd is not None and str(alt_pwd) != "":
-            auth_err = _validate_altiplano_ui_credentials(
-                _nbi_entorno_for_operador(operator), alt_user, alt_pwd
-            )
-            if auth_err:
-                return jsonify(auth_err[0]), auth_err[1]
+        alt_user, alt_pwd, cred_err = _altiplano_creds_from_env(
+            _nbi_entorno_for_operador(operator)
+        )
+        if cred_err:
+            return jsonify(cred_err[0]), cred_err[1]
         out = actualizar_tasa_composite_profiles_nbi(
             operator,
             vno["target"],
@@ -2657,14 +2673,12 @@ def register(app):
         tasa_hsi = data.get("tasa_hsi")
         if tasa_hsi is not None and not isinstance(tasa_hsi, dict):
             tasa_hsi = None
-        alt_user, alt_pwd = _extract_altiplano_ui_credentials(data)
         operator = (vno.get("operator") or "TASA").strip().upper()
-        if alt_user and alt_pwd is not None and str(alt_pwd) != "":
-            auth_err = _validate_altiplano_ui_credentials(
-                _nbi_entorno_for_operador(operator), alt_user, alt_pwd
-            )
-            if auth_err:
-                return jsonify(auth_err[0]), auth_err[1]
+        alt_user, alt_pwd, cred_err = _altiplano_creds_from_env(
+            _nbi_entorno_for_operador(operator)
+        )
+        if cred_err:
+            return jsonify(cred_err[0]), cred_err[1]
         out = reinyectar_tasa_composite_nbi(
             operator,
             vno["target"],
@@ -2811,54 +2825,23 @@ def register(app):
 
     @app.route("/dashboard/camino-optico/consultar", methods=["POST"])
     def dash_camino_optico_consultar():
-        """Dispatcher JSON para consultas del dashboard Camino Óptico."""
+        """Dispatcher JSON para consultas del dashboard Camino Óptico (solo rama RATC/NATC)."""
         data = request.get_json(silent=True) or {}
         tipo = (data.get("tipo") or "").strip().lower()
         valor = (data.get("valor") or "").strip()
         if not valor:
             return jsonify({"error": "Parámetro valor requerido"}), 400
-        if not tipo or tipo == "auto":
-            tipo = infer_camino_consulta_tipo(valor) or ""
-            if tipo == "access_id":
-                valor = re.sub(r"\s+", "", valor)
-            if not tipo:
-                return (
-                    jsonify(
-                        {
-                            "error": (
-                                "No se reconoce el formato. Usá «FATC» (CTO), «RATC» (rama), "
-                                "fusión planta (ej. SF01-R1301-010), solo dígitos (Access ID), "
-                                "un LT tipo BA_OLTA_….LT1, o sitio / región (ej. Moreno, MR01)."
-                            ),
-                        }
-                    ),
-                    400,
-                )
-        else:
-            if tipo in ("access_id", "aid", "id"):
-                valor = re.sub(r"\s+", "", valor)
+        _CAMINO_SOLO_RAMA_ERR = (
+            "Solo se admite consulta por rama RATC (…-RATC-…). "
+            "No se consulta por CTO, Access ID, LT ni sitio."
+        )
+        if tipo and tipo not in ("rama", "auto", ""):
+            return jsonify({"error": _CAMINO_SOLO_RAMA_ERR}), 400
+        inferred = infer_camino_consulta_tipo(valor) or ""
+        if inferred != "rama":
+            return jsonify({"error": _CAMINO_SOLO_RAMA_ERR}), 400
         try:
-            if tipo == "cto":
-                return jsonify(dashboard_camino_optico_cto(valor))
-            if tipo == "rama":
-                return jsonify(dashboard_camino_optico_rama(valor))
-            if tipo == "fusion_planta":
-                return jsonify(dashboard_camino_optico_fusion_planta(valor))
-            if tipo in ("access_id", "aid", "id"):
-                return jsonify(dashboard_camino_optico_access_id(valor))
-            if tipo == "lt":
-                return jsonify(dashboard_camino_optico_lt(valor))
-            if tipo in ("equipo", "olt"):
-                return jsonify(dashboard_camino_optico_equipo(valor))
-            if tipo == "sitio":
-                return jsonify(dashboard_camino_optico_sitio(valor))
-            return jsonify(
-                {
-                    "error": (
-                        "tipo inválido. Use: cto, rama, access_id, lt, equipo, sitio o auto"
-                    )
-                }
-            ), 400
+            return jsonify(dashboard_camino_optico_rama(valor))
         except Exception:
             return _log_and_internal_error("Error al consultar camino óptico")
 
@@ -2916,73 +2899,13 @@ def register(app):
             return jsonify(out), 400
         return jsonify(out)
 
-    @app.route("/dashboard/camino-optico/export-fusion")
-    def dash_camino_optico_export_fusion():
-        """Reporte imprimible tipo PDF (report_fusiones) para una fusión planta interna."""
-        from flask import Response
+    @app.route("/dashboard/camino-optico/fosc-detalle")
+    def dash_camino_fosc_detalle():
+        from services.camino_gis import consultar_fosc_detalle_interno
 
-        from services.camino_fusion_export import consultar_reporte_fusion_export
-
-        fusion = (request.args.get("fusion") or request.args.get("id") or "").strip()
+        fosc = (request.args.get("fosc") or request.args.get("id") or "").strip()
         rama = (request.args.get("rama") or "").strip() or None
-        pdf_mode = request.args.get("pdf") in ("1", "true", "yes")
-
-        def _fusion_watermark_src(*, for_pdf: bool) -> str:
-            from services.camino_fusion_pdf import prepare_watermark_asset, watermark_placeholder
-
-            if for_pdf:
-                return watermark_placeholder()
-            prepare_watermark_asset()
-            return url_for("static", filename="img/american-tower-watermark.png")
-
-        def _fusion_logo_src(*, for_pdf: bool) -> str:
-            from services.camino_fusion_pdf import header_logo_placeholder
-
-            if for_pdf:
-                return header_logo_placeholder()
-            return url_for("static", filename="img/american-tower-logo.svg")
-
-        if not fusion:
-            return render_template(
-                "camino_fusion_export.html",
-                report={"ok": False, "error": "Parámetro fusion requerido (ej. SF01-R1301-010)."},
-                pdf_mode=False,
-            ), 400
         try:
-            report = consultar_reporte_fusion_export(fusion, rama=rama)
+            return jsonify(consultar_fosc_detalle_interno(fosc, rama=rama))
         except Exception:
-            return _log_and_internal_error("Error generando export de fusión")
-        if not report.get("ok"):
-            return (
-                render_template("camino_fusion_export.html", report=report, pdf_mode=False),
-                404,
-            )
-        if pdf_mode:
-            try:
-                from services.camino_fusion_pdf import fusion_html_to_pdf
-
-                html = render_template(
-                    "camino_fusion_export.html",
-                    report=report,
-                    pdf_mode=True,
-                    watermark_src=_fusion_watermark_src(for_pdf=True),
-                    logo_src=_fusion_logo_src(for_pdf=True),
-                )
-                pdf_bytes = fusion_html_to_pdf(html, base_url=request.url_root)
-                fname = f"{fusion}.pdf"
-                return Response(
-                    pdf_bytes,
-                    mimetype="application/pdf",
-                    headers={
-                        "Content-Disposition": f'inline; filename="{fname}"',
-                    },
-                )
-            except Exception:
-                return _log_and_internal_error("Error generando PDF de fusión")
-        return render_template(
-            "camino_fusion_export.html",
-            report=report,
-            pdf_mode=False,
-            watermark_src=_fusion_watermark_src(for_pdf=False),
-            logo_src=_fusion_logo_src(for_pdf=False),
-        )
+            return _log_and_internal_error("Error consultando detalle FOSC")

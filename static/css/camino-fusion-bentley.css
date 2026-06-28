@@ -1,6 +1,6 @@
-/* Ancho Bentley SF01-R1301-010; alto de hoja según contenido (una sola hoja continua). */
+/* Hoja Bentley fija 1368×943 pt (ConnectMaster). */
 @page {
-  size: 1368pt auto;
+  size: 1368pt 943pt;
   margin: 0;
 }
 
@@ -17,8 +17,7 @@
   --b-page-w: 1368pt;
   --b-page-h: 943pt;
   --b-table-w: 1234pt;
-  /* Centrado en página; mismo valor = margen lateral y margen inferior */
-  --b-table-x: calc((var(--b-page-w) - var(--b-table-w)) / 2);
+  --b-table-x: 67pt;
 }
 
 * { box-sizing: border-box; }
@@ -77,13 +76,23 @@ body.bentley-export--pdf {
   position: relative;
   width: var(--b-page-w);
   min-width: var(--b-page-w);
-  min-height: auto;
-  height: auto;
+  max-width: var(--b-page-w);
+  min-height: var(--b-page-h);
+  height: var(--b-page-h);
   margin: 8px auto;
-  padding-bottom: var(--b-table-x);
+  padding-bottom: 0;
   background: var(--b-white);
-  page-break-after: avoid;
-  overflow: visible;
+  overflow: hidden;
+  box-sizing: border-box;
+  page-break-after: always;
+}
+
+.bentley-page--sheet:last-child {
+  page-break-after: auto;
+}
+
+body.bentley-export--pdf .bentley-page:last-child {
+  page-break-after: auto;
 }
 
 body.bentley-export .bentley-wm {
@@ -243,7 +252,7 @@ body.bentley-export .bentley-wm {
   line-height: 1.15;
   min-height: 18pt;
   height: auto;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .bentley-grid thead th {
@@ -311,6 +320,8 @@ body.bentley-export .bentley-wm {
 .bentley-grid .left {
   text-align: left;
   font-size: 9pt;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .bentley-grid .path-cell,
@@ -329,7 +340,7 @@ body.bentley-export .bentley-wm {
   white-space: nowrap;
 }
 
-.bentley-grid tr.highlight td {
+.bentley-grid tr.highlight td:not(.fc) {
   background: var(--b-hi) !important;
 }
 
@@ -355,9 +366,11 @@ body.bentley-export .bentley-wm {
   body.bentley-export { background: #fff; }
   .bentley-toolbar { display: none !important; }
   .bentley-page {
-    margin: 0 auto;
-    padding-bottom: var(--b-table-x);
-    page-break-after: avoid;
+    margin: 0;
+    page-break-after: always;
+  }
+  .bentley-page:last-child {
+    page-break-after: auto;
   }
 }
 

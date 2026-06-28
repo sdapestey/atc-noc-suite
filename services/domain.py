@@ -173,10 +173,12 @@ def natural_sort_key_str(s: str | None):
     parts = re.split(r"(\d+)", str(s))
     key = []
     for p in parts:
+        if not p:
+            continue
         if p.isdigit():
-            key.append(int(p))
-        elif p:
-            key.append(p.lower())
+            key.append((0, int(p)))
+        else:
+            key.append((1, p.lower()))
     return tuple(key)
 
 

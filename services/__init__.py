@@ -25,7 +25,7 @@ from .dashboard_calidad_inventario import (
     dashboard_calidad_inventario_resumen_general,
     export_dashboard_calidad_inventario_csv,
 )
-from .dashboard_olt import dashboard_olts, estructura_dashboard_lt
+from .dashboard_olt import dashboard_olts, dashboard_olt_totales, estructura_dashboard_lt
 from .dashboard_rama import (
     consultar_dashboard_rama,
     dashboard_rama_bundle,
@@ -98,6 +98,7 @@ __all__ = [
     "dashboard_calidad_fat_sin_nfc_tabla",
     "dashboard_calidad_fat_nfc_duplicados_tabla",
     "dashboard_olts",
+    "dashboard_olt_totales",
     "consultar_dashboard_rama",
     "inventario_dashboard_rama",
     "estructura_dashboard_lt",

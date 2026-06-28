@@ -78,7 +78,8 @@ html[data-theme="light"] .theme-devops :is(
   white-space: nowrap;
 }
 
-.theme-devops :is(.suite-panel-head, .consulta-panel-head).orquestador-panel-head {
+.theme-devops :is(.suite-panel-head, .consulta-panel-head).orquestador-panel-head,
+.theme-devops .consulta-search-card > :is(.suite-panel-head, .consulta-panel-head) {
   margin: 0 0 14px;
 }
 
@@ -119,7 +120,7 @@ html[data-theme="light"] .theme-devops :is(
 }
 
 .theme-devops :is(.suite-query-row, .consulta-query-row).suite-query-row--center,
-.theme-devops .consulta-query-row:not(:has(#consulta-panel-masivo:not([hidden]))) {
+.theme-devops .consulta-query-row:not(:has(#consulta-panel-masivo:not([hidden]))):not(:has(#camino-panel-masivo:not([hidden]))) {
   align-items: center;
 }
 
@@ -366,7 +367,7 @@ html[data-theme="light"] .theme-devops :is(
   box-shadow: inset var(--tree-row-accent-bar-w) 0 0 var(--tree-row-accent-bar);
 }
 
-/* OLT/LT: degradado en la fila <tr>; celdas transparentes */
+/* OLT/LT: hover y expandido con degradado vidrio; celdas siempre transparentes */
 .theme-devops.page-tree-dashboard .olt-lt-summary-table tr.ltrow.lt-row-trigger:hover,
 .theme-devops.page-tree-dashboard .olt-lt-summary-table tr.ltrow.olt-lt-row-accent,
 .theme-devops.page-tree-dashboard tr.ltrow.olt-lt-search-hit,
@@ -388,10 +389,13 @@ html[data-theme="light"] .theme-devops :is(
   box-shadow: inset var(--tree-row-accent-bar-w) 0 0 var(--tree-row-accent-bar);
 }
 
-/* Inventario LT: filas con data-olt-tree-kind (PON / RAMA / FATC / CTO) */
+/* Inventario LT: filas con data-olt-tree-kind (PON / RAMA / FATC / CTO) — vidrio */
 .theme-devops.page-tree-dashboard.page-olt td[colspan] .olt-tree-row[data-olt-tree-kind] {
   border: 1px solid var(--tree-glass-border);
   background: color-mix(in srgb, var(--canvas-subtle) 52%, transparent);
+  box-shadow: var(--tree-glass-inset);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   padding: 12px 14px;
   font-weight: 600;
   transition:
@@ -449,10 +453,13 @@ html[data-theme="light"] .theme-devops :is(
   padding: 12px 14px;
 }
 
-.theme-devops.page-tree-dashboard .olt-lt-table-shell {
+.theme-devops.page-tree-dashboard.page-olt .olt-lt-table-shell {
   background: color-mix(in srgb, var(--canvas-subtle) 45%, transparent);
   border: 1px solid var(--tree-glass-border);
   border-radius: var(--radius);
+  box-shadow: var(--tree-glass-inset);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
 
 

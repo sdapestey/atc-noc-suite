@@ -42,8 +42,9 @@ def destino_splitter(
         try:
             last = int(suf_s)
             out_n = int(om.group(1))
-            if out_n in _OUT_DEST_DELTA:
+            if block_s.startswith("13") and out_n in _OUT_DEST_DELTA:
                 return f"{site.upper()}-R{block_s}-{last + _OUT_DEST_DELTA[out_n]:03d}"
+            return f"{site.upper()}-R{block_s}-{last + out_n:03d}"
         except ValueError:
             pass
     if db and db.lower() not in ("null", "none") and re.match(r"SF\d+-", db, re.I):
@@ -68,6 +69,60 @@ def _splitter_sp_label(rec: dict[str, Any], sp_idx: int, path_in: str = "") -> s
     else:
         kind = "SPLITTER"
     return f"[ SP{sp_idx} ] SPLITTER {kind} [ {owner} ]"
+
+
+def _owner_from_spl_row(row: dict[str, Any]) -> str:
+    for key in ("component_name", "component_name_b", "component_name_a"):
+        val = str(row.get(key) or "")
+        if re.search(r"SPL\d", val, re.I):
+            return _owner_from_path(val)
+    return "ATC"
+
+
+def _splitter_sp_label_chunk(chunk: list[dict[str, Any]], sp_idx: int, path_in: str) -> str:
+    kind = "SPLITTER"
+    owner = _owner_from_path(path_in)
+    for r in chunk:
+        sp = str(r.get("splitter") or "").upper()
+        if "1:2" in sp:
+            kind = "1:2"
+        elif "1:8" in sp:
+            kind = "1:8"
+        if re.search(r"SPL\d", str(r.get("component_name") or ""), re.I):
+            owner = _owner_from_spl_row(r)
+            break
+    return f"[ SP{sp_idx} ] SPLITTER {kind} [ {owner} ]"
+
+
+def _splitter_hardware_key(row: dict[str, Any]) -> str:
+    for key in ("component_name", "component_name_b", "component_name_a"):
+        val = str(row.get(key) or "").strip()
+        if re.search(r"-SPL\d+-", val, re.I):
+            return val
+    return str(row.get("splitter") or row.get("path_in") or "")
+
+
+def _splitter_group_key(row: dict[str, Any]) -> str:
+    """Agrupa filas del mismo SP físico (CM une OUT del SPL y relleno DSL)."""
+    path = str(row.get("path_in") or "")
+    circuit = str(row.get("circuit_in") or "")
+    sp = str(row.get("splitter") or "")
+    if "1:2" in sp:
+        hw = _splitter_hardware_key(row)
+        if re.search(r"SPL\d", hw, re.I):
+            return f"1:2::{hw}"
+        return f"1:2::{path}::{circuit}"
+    if "1:8" in sp:
+        return f"1:8::{path}::{circuit}"
+    return f"other::{_splitter_hardware_key(row)}"
+
+
+def _es_comp_cable(comp: str) -> bool:
+    return bool(re.search(r"-(?:CATC|CAMX|FATC)-", comp or "", re.I))
+
+
+def _es_circuito_fusion_ref(val: str) -> bool:
+    return bool(re.match(r"^SF\d+-R", (val or "").strip(), re.I))
 
 
 def _path_sort_key(path: str) -> tuple[int, str]:
@@ -126,14 +181,14 @@ def _pick_header_rec(
     circuit_in: str,
     *,
     raw_rows: list[dict[str, Any]] | None = None,
+    fusion_id: str = "",
 ) -> dict[str, Any]:
-    """Fila cabecera ENTRADA del bloque SP (como PDF modelo)."""
-    if sp_idx == 1:
+    """Fila cabecera ENTRADA del bloque SP (como PDF ConnectMaster)."""
+    fid = (fusion_id or "").upper()
+    if sp_idx == 1 and "R1301" in fid:
         fb = _feeder_catc_header(raw_rows, "23")
         if fb:
             return fb
-    if sp_idx == 2 and "010201" in (path_in or ""):
-        return _header_sp2_modelo()
 
     non_out = [
         r
@@ -142,7 +197,7 @@ def _pick_header_rec(
     ]
     pool = non_out or list(chunk)
 
-    if sp_idx == 3:
+    if sp_idx == 3 and "R1301" in fid:
         for r in pool:
             if "CATC-3-000185" in str(r.get("comp_in") or ""):
                 return r
@@ -150,9 +205,45 @@ def _pick_header_rec(
             if str(r.get("fibra_port") or "").strip() in ("23", "Fibra 23"):
                 return r
 
+    in_rows = [
+        r for r in pool if str(r.get("salida_splitter") or "").upper() == "IN"
+    ]
+    cable_in = [r for r in in_rows if _es_comp_cable(str(r.get("comp_in") or ""))]
+    if cable_in:
+        return cable_in[0]
+
+    is_1_8 = any("1:8" in str(r.get("splitter") or "") for r in chunk)
+    if is_1_8 and circuit_in and _es_circuito_fusion_ref(circuit_in):
+        from .camino_fusion_export import _attach_color_slugs, color_desde_numero_fibra
+
+        return _attach_color_slugs(
+            {
+                "comp_in": circuit_in,
+                "grupo_in": "1",
+                "color_grupo_in": "",
+                "fibra_port": "1",
+                "color_fibra_port": color_desde_numero_fibra("1"),
+            }
+        )
+
+    if in_rows:
+        return in_rows[0]
+
+    if circuit_in and _es_circuito_fusion_ref(circuit_in):
+        from .camino_fusion_export import _attach_color_slugs, color_desde_numero_fibra
+
+        return _attach_color_slugs(
+            {
+                "comp_in": circuit_in,
+                "grupo_in": "1",
+                "color_grupo_in": "",
+                "fibra_port": "1",
+                "color_fibra_port": color_desde_numero_fibra("1"),
+            }
+        )
+
     for r in pool:
-        sal = str(r.get("salida_splitter") or "").upper()
-        if sal == "IN" or str(r.get("fibra_port") or "").strip() in ("23", "Fibra 23"):
+        if _es_comp_cable(str(r.get("comp_in") or "")):
             return r
     for r in pool:
         if not _OUT_PORT_RE.match(str(r.get("salida_splitter") or "").upper()):
@@ -161,14 +252,10 @@ def _pick_header_rec(
 
 
 def _rama_modelo(rama: str, circuit: str) -> str:
-    """Rama como en PDF modelo (SF01-R1291-000)."""
-    r = (rama or circuit or "").strip()
-    m = re.search(r"-0-0*(\d+)$", r, re.I)
-    if m and re.match(r"SF\d+-", r, re.I):
-        site = re.match(r"(SF\d+)", r, re.I)
-        if site:
-            return f"{site.group(1).upper()}-R{int(m.group(1))}-000"
-    return r
+    """Rama como en PDF ConnectMaster (usa ``circuit`` cuando está disponible)."""
+    from .camino_fusion_export import rama_cable_reporte
+
+    return rama_cable_reporte(circuit, rama)
 
 
 _FEEDER_CABLE = "SF01-CATC-3-000185"
@@ -354,7 +441,9 @@ def _filas_de_chunk_sp(
 ) -> list[dict[str, Any]]:
     """Filas de un bloque SP como en PDF modelo (sin fila path aparte)."""
     outs: dict[str, dict[str, Any]] = {}
-    header_rec = _pick_header_rec(chunk, sp_idx, path_in, circuit_in, raw_rows=raw_rows)
+    header_rec = _pick_header_rec(
+        chunk, sp_idx, path_in, circuit_in, raw_rows=raw_rows, fusion_id=fusion_id
+    )
 
     is_1_8 = _es_1_8(chunk)
     is_1_2 = _es_1_2(chunk)
@@ -537,10 +626,14 @@ def construir_secciones_splitter_bentley(
         chunk_all = by_path[key]
         by_sp: dict[str, list[dict[str, Any]]] = {}
         for r in chunk_all:
-            by_sp.setdefault(str(r.get("splitter") or ""), []).append(r)
+            by_sp.setdefault(_splitter_group_key(r), []).append(r)
 
-        for sp_key in sorted(by_sp.keys(), key=lambda s: (0 if "1:2" in s else 1, s)):
-            chunk = by_sp[sp_key]
+        def _sp_chunk_sort(item: tuple[str, list[dict[str, Any]]]) -> tuple:
+            _key, ch = item
+            kind = 0 if any("1:2" in str(x.get("splitter") or "") for x in ch) else 1
+            return (kind, _key)
+
+        for hw_key, chunk in sorted(by_sp.items(), key=_sp_chunk_sort):
             if not chunk:
                 continue
             sp_idx += 1
@@ -549,7 +642,7 @@ def construir_secciones_splitter_bentley(
                 fusion_id,
                 path,
                 circuit,
-                _splitter_sp_label(chunk[0], sp_idx, path),
+                _splitter_sp_label_chunk(chunk, sp_idx, path),
                 alias_fosc=alias_fosc,
                 raw_rows=raw_rows,
                 sp_idx=sp_idx,
@@ -590,6 +683,38 @@ def construir_secciones_splitter_bentley(
     return sections
 
 
+_BENTLEY_PAGE_H_PT = 943
+_CABLE_ROWS_PER_PAGE = 72
+
+
+def _orden_fibras_bentley_cm(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Orden de filas cable como ConnectMaster (bloques 1–12, 109–132, 13–108, 133+)."""
+    by_f: dict[int, dict[str, Any]] = {}
+    for row in rows:
+        n = _fibra_num(row)
+        if n < 9999:
+            by_f[n] = row
+    ordered: list[dict[str, Any]] = []
+    for start, end in ((1, 13), (109, 133), (13, 109), (133, 200)):
+        for f in range(start, end):
+            if f in by_f:
+                ordered.append(by_f[f])
+    seen = {id(r) for r in ordered}
+    for f in sorted(by_f):
+        if id(by_f[f]) not in seen:
+            ordered.append(by_f[f])
+    return ordered
+
+
+def _paginar_filas_bentley(rows: list[dict[str, Any]], per_page: int = _CABLE_ROWS_PER_PAGE) -> list[list[dict[str, Any]]]:
+    if not rows:
+        return []
+    pages: list[list[dict[str, Any]]] = []
+    for i in range(0, len(rows), per_page):
+        pages.append(rows[i : i + per_page])
+    return pages
+
+
 def _fibra_num(row: dict[str, Any]) -> int:
     m = _FIBRA_NUM_RE.search(str(row.get("fibra_in") or ""))
     return int(m.group(1)) if m else 9999
@@ -601,31 +726,31 @@ def construir_secuencia_cables_bentley(
     fusion_id: str,
     *,
     alias_fosc: str = "",
-) -> dict[str, list[dict[str, Any]]]:
-    """Cables ordenados en una sola hoja (visualización continua)."""
+    dedupe_modelo: bool = True,
+) -> dict[str, Any]:
+    """Cables en hojas Bentley 2+ (orden y paginación CM)."""
     del raw_rows, fusion_id, alias_fosc
 
-    rows = _dedupe_cables_modelo(list(cable_rows))
-    rows.sort(
-        key=lambda r: (
-            _fibra_num(r),
-            0 if "EDN" in str(r.get("rama_salida") or "").upper() else 1,
-            str(r.get("rama_salida") or ""),
-        )
-    )
+    rows = _dedupe_cables_modelo(list(cable_rows)) if dedupe_modelo else list(cable_rows)
+    rows = _orden_fibras_bentley_cm(rows)
 
-    page1: list[dict[str, Any]] = []
+    prepared: list[dict[str, Any]] = []
     for row in rows:
         r = dict(row)
         r["kind"] = "cable"
-        fibra_n = _fibra_num(r)
         r["rama_salida"] = _rama_modelo(
             str(r.get("rama_salida") or ""), str(r.get("circuit") or "")
         )
-        if fibra_n == 24:
-            r["destino"] = "SF01-R1300-010"
-        page1.append(r)
-    return {"page1": page1, "page2": []}
+        prepared.append(r)
+
+    cable_pages = _paginar_filas_bentley(prepared)
+
+    return {
+        "pages": cable_pages,
+        "page1": cable_pages[0] if cable_pages else [],
+        "page2": cable_pages[1] if len(cable_pages) > 1 else [],
+        "page3": cable_pages[2] if len(cable_pages) > 2 else [],
+    }
 
 
 def construir_layout_bentley(
@@ -637,6 +762,7 @@ def construir_layout_bentley(
     *,
     alias_fosc: str = "",
     rama: str | None = None,
+    dedupe_modelo: bool = True,
 ) -> dict[str, Any]:
     return {
         "header": header,
@@ -646,6 +772,10 @@ def construir_layout_bentley(
             splitter_rows, fusion_id, alias_fosc=alias_fosc, raw_rows=raw_rows
         ),
         "cable_render": construir_secuencia_cables_bentley(
-            cable_rows, raw_rows, fusion_id, alias_fosc=alias_fosc
+            cable_rows,
+            raw_rows,
+            fusion_id,
+            alias_fosc=alias_fosc,
+            dedupe_modelo=dedupe_modelo,
         ),
     }

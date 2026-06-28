@@ -14,11 +14,10 @@
 
   function shouldForceCollapseOnSwitch(_fromPath, toPath) {
     var to = normalizePath(toPath);
-    var toRama = to === "/dashboard/rama";
     var toOlt = to === "/dashboard/olt";
     // Desde cualquier pestaña, si el destino es un dashboard pesado en árbol,
     // se fuerza inicio colapsado para evitar restaurar expansiones previas.
-    return toRama || toOlt;
+    return toOlt;
   }
 
   function setCaptionVisible(on) {

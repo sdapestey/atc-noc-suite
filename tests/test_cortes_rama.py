@@ -274,6 +274,7 @@ def test_build_grupos_sitio_lt():
     assert grupos[0]["ont_total"] == 7
     assert grupos[0]["losi"] == 1
     assert grupos[0]["dying"] == 1
+    assert grupos[0]["olt_count"] == 1
     assert set(grupos[0]["ramas"]) == {"TG02-RATC-0-001", "TG02-RATC-0-002"}
 
 
@@ -286,9 +287,9 @@ def test_batch_inventario_por_pon_keys(monkeypatch):
 
         def fetchall(self):
             return [
-                ("BA_OLTA_TG02_02-13-3-18", "TG02-RATC-0-001047", 1001),
-                ("BA_OLTA_TG02_02:1-1-13-3-5", "TG02-RATC-0-001048", 3001),
-                ("BA_OLTA_TG02_02-13-3-99", "TG02-FATC-8-100987", 1001),
+                ("BA_OLTA_TG02_02-13-3-18", "TG02-RATC-0-001047", "CTO-A", 1001),
+                ("BA_OLTA_TG02_02:1-1-13-3-5", "TG02-RATC-0-001048", "CTO-B", 3001),
+                ("BA_OLTA_TG02_02-13-3-99", "TG02-FATC-8-100987", "CTO-C", 1001),
             ]
 
     class FakeCtx:
@@ -304,6 +305,7 @@ def test_batch_inventario_por_pon_keys(monkeypatch):
     assert set(row["ramas_ratc"]) == {"TG02-RATC-0-001047", "TG02-RATC-0-001048"}
     assert row["ramas_fatc"] == ["TG02-FATC-8-100987"]
     assert row["ont_total"] == 3
+    assert row["cto_count"] == 3
     assert row["vnos"]["TASA"] == 2
     assert row["vnos"]["DIRECTV"] == 1
 
@@ -478,7 +480,8 @@ def test_clasificar_impacto():
 
     assert _clasificar_impacto(0) == "MODERADO"
     assert _clasificar_impacto(15) == "MODERADO"
-    assert _clasificar_impacto(16) == "URGENTE"
+    assert _clasificar_impacto(16) == "MODERADO"
+    assert _clasificar_impacto(17) == "URGENTE"
     assert _clasificar_impacto(249) == "URGENTE"
     assert _clasificar_impacto(250) == "EMERGENCIA"
 
@@ -815,7 +818,9 @@ def test_dashboard_alarm_analyzer_get_renders(client):
     assert 'id="cortes-table"' in html
     assert "Clientes afectados" in html
     assert "cortes-vno-resumen" in html
-    assert "Por sitio / LT" in html
+    assert 'class="cortes-view-row"' in html
+    assert "Ordenar" in html
+    assert "Por sitio / LT" not in html
     assert "Solo con RAMA" not in html
     assert "Solo nuevos" not in html
     assert 'id="cortes-sort"' in html
@@ -824,22 +829,27 @@ def test_dashboard_alarm_analyzer_get_renders(client):
     assert "estadisticas-flatpickr.css" in html
     assert "noc-estadisticas-flatpickr.js" in html
     assert "calidad-estadisticas-fecha-wrap" in html
-    assert 'value="20' in html
+    assert 'placeholder="Hoy"' in html
     assert 'id="cortes-fecha-preset"' not in html
-    assert 'id="cortes-impacto"' in html
     assert 'id="cortes-estado"' in html
-    assert "Activas + Cleared" in html
+    assert "Activas + Cleared" not in html
+    assert 'value="todas"' not in html
     assert "eventos masivos" in html.lower()
     assert 'id="cortes-refresh"' in html
     assert "Auto-refresh" in html
     assert "15 segundos" in html
-    assert "Todas las fechas" not in html
     assert '<option value="ayer">' not in html
     assert "dashboard-cortes-rama.js" in html
     assert "dashboard-cortes-rama.css" in html
     js = open("static/js/dashboard-cortes-rama.js", encoding="utf-8").read()
+    assert "_setCortesFechaHoy" in js
+    assert "noc-fp-footer-btn" in js
+    assert "Todas las fechas" in js
     assert "cortesRamaSeenPonKeysV1" in js
-    assert "cortes-view-grupo" in js
+    assert "_buildDisplayBlocks" in js
+    assert "_renderEventoTableGroupRow" in js
+    assert "_formatVentanaArt" in js
+    assert "_isEventoBlockExpanded" in js
     assert "initCortesRamaDashboard" in js
     assert "bootCortesRamaDashboard" in js
     assert "window.fetchCortes = fetchCortes" in js
@@ -851,6 +861,9 @@ def test_dashboard_alarm_analyzer_get_renders(client):
     assert "cortes-evento-reporte-btn" in js
     assert "cortes-evento-olt-btn" in js
     assert "_buildOltUrlFromPonKeys" in js
+    assert "_renderIdListCell" in js
+    assert "_renderRamasCell" in js
+    assert "cortes-cto-count" in js
     assert "select_pon=" in js
     assert "cortes-tbody" in js
     assert "data-pon-key" in js

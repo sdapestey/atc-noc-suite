@@ -18,7 +18,7 @@
          width="791"
          height="593"
          decoding="async">
-    <h1 id="noc-splash-title" class="noc-splash-title">ATC NOC Suite</h1>
+    <h1 id="noc-splash-title" class="noc-splash-title noc-splash-title--reveal">ATC NOC Suite</h1>
     <p class="noc-splash-lead muted">Consultas, dashboards e inventario GPON</p>
   </div>
 </div>
@@ -68,6 +68,31 @@
   overlay.classList.add("noc-splash--visible", "noc-splash--in");
   var root = document.body || document.documentElement;
   if (root) root.classList.add("noc-splash-open");
+
+  var title = document.getElementById("noc-splash-title");
+  if (title && title.classList.contains("noc-splash-title--reveal") && !title.dataset.split) {
+    var text = title.textContent || "";
+    title.textContent = "";
+    title.classList.add("noc-splash-title--split");
+    var reduceMotion = false;
+    try {
+      reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    } catch (e3) {}
+    for (var i = 0; i < text.length; i++) {
+      var ch = text.charAt(i);
+      var wrap = document.createElement("span");
+      wrap.className = "noc-splash-title-char-wrap";
+      if (!reduceMotion) {
+        wrap.style.setProperty("--char-delay", (0.25 + i * 0.12) + "s");
+      }
+      var inner = document.createElement("span");
+      inner.className = "noc-splash-title-char";
+      inner.textContent = ch === " " ? "\u00a0" : ch;
+      wrap.appendChild(inner);
+      title.appendChild(wrap);
+    }
+    title.dataset.split = "1";
+  }
 })();
 </script>
 <script defer src="{{ url_for('static', filename='js/splash.js') }}?v=splash-ls3"></script>

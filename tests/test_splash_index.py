@@ -24,15 +24,8 @@ def test_index_includes_splash_partial(client):
     assert "10.90.1.196:6875" in html
 
 
-def test_dashboard_rama_does_not_include_splash_overlay(client, monkeypatch):
-    import web.routes as routes
-
-    monkeypatch.setattr(
-        routes,
-        "dashboard_rama_bundle",
-        lambda: {"bloques": [], "totales": {"RAMAS": 0, "CTO": 0, "ONT": 0}},
-    )
-    r = client.get("/dashboard/rama")
+def test_dashboard_rama_does_not_include_splash_overlay(client):
+    r = client.get("/dashboard/rama", follow_redirects=True)
     assert r.status_code == 200
     html = r.get_data(as_text=True)
     assert 'id="noc-splash-overlay"' not in html
@@ -49,3 +42,5 @@ def test_splash_skips_on_index_deep_link_query():
     assert "hasDeepLinkIntent" in partial
     assert 'params.get("q")' in partial
     assert 'params.get("rama")' in partial
+    assert "noc-splash-title--reveal" in partial
+    assert "noc-splash-title-char-in" in Path("static/css/splash.css").read_text(encoding="utf-8")

@@ -18,6 +18,27 @@ def test_filter_alarmas_por_serial_ont_descarta_serial_distinto():
     assert out[1]["type"] == "other"
 
 
+def test_filter_alarmas_por_recurso_ont_descarta_onu_colindante():
+    import altiplano
+
+    ont = "BA_OLTA_ES01_01-1-1-1"
+    alarmas = [
+        {
+            "type": "absence-of-phy",
+            "resource": "interface:BA_OLTA_ES01_01.LT1:v7~BA_OLTA_ES01_01-1-1-100_GPON",
+            "text": "Serial-Number=, Reg-ID=, CT-Name=CT_X",
+        },
+        {
+            "type": "onu-dying-gasp",
+            "resource": "interface:BA_OLTA_ES01_01.LT1:v1~BA_OLTA_ES01_01-1-1-1_GPON",
+            "text": "Serial-Number=MSTC8CBFF3AF, Reg-ID=, CT-Name=CT_X",
+        },
+    ]
+    out = altiplano.filter_alarmas_para_ont(alarmas, "MSTC8CBFF3AF", ont)
+    assert len(out) == 1
+    assert out[0]["type"] == "onu-dying-gasp"
+
+
 def test_reconcile_ont_nv_oper_status_stale_inp_down_con_potencia():
     import altiplano
 

@@ -1209,7 +1209,7 @@ def test_dashboard_altiplano_actualizar_tasa_profiles_ok(client, monkeypatch):
     assert r.get_json()["ok"] is True
 
 
-def test_dashboard_altiplano_actualizar_tasa_profiles_con_credenciales_ui(
+def test_dashboard_altiplano_actualizar_tasa_profiles_usa_credenciales_env(
     client, monkeypatch
 ):
     import web.routes as routes
@@ -1223,8 +1223,8 @@ def test_dashboard_altiplano_actualizar_tasa_profiles_con_credenciales_ui(
     monkeypatch.setattr(routes, "actualizar_tasa_composite_profiles_nbi", fake_update)
     monkeypatch.setattr(
         routes,
-        "obtener_token_entorno_nbi",
-        lambda *_a, **_k: "tok-ui",
+        "_altiplano_creds_from_env",
+        lambda _entorno: ("env_user", "env_secret", None),
     )
 
     r = client.post(
@@ -1236,13 +1236,11 @@ def test_dashboard_altiplano_actualizar_tasa_profiles_con_credenciales_ui(
             "intent_type": "tasa-composite",
             "downstream_profile": "TASA_SH100MB_DN",
             "upstream_profile": "TASA_BW100MB_UP",
-            "altiplano_user": "noc_user",
-            "altiplano_password": "secret",
         },
     )
     assert r.status_code == 200
-    assert captured.get("nbi_username") == "noc_user"
-    assert captured.get("nbi_password") == "secret"
+    assert captured.get("nbi_username") == "env_user"
+    assert captured.get("nbi_password") == "env_secret"
 
 
 def test_dashboard_altiplano_actualizar_rn_by_id_con_hash_se_normaliza(client, monkeypatch):

@@ -11,6 +11,7 @@ import os
 import re
 from decimal import Decimal
 from typing import Any
+from urllib.parse import quote_plus
 
 from db import db_cursor
 
@@ -50,7 +51,8 @@ def _env_float(name: str, default: float) -> float:
 
 
 def _env_fosc_max_dist_traz_m() -> float:
-    return _env_float("CAMINO_GIS_FOSC_MAX_DIST_TRAZ_M", 100.0)
+    """Tolerancia máx. (m) para considerar una FOSC «sobre» el trazado ci_op (no «cerca»)."""
+    return _env_float("CAMINO_GIS_FOSC_MAX_DIST_TRAZ_M", 6.0)
 
 
 def _env_fosc_max_snap_m() -> float:
@@ -146,6 +148,369 @@ def cabecera_para_fosc(rama: str, gis: dict | None = None) -> str:
     return cabecera_desde_rama(rama)
 
 
+def _dedupe_fosc_markers(markers: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]:
+    """Una entrada por ``id_cm`` (o ``id_botella``), conservando el orden cabecera → CTO."""
+    seen: set[str] = set()
+    out: list[dict[str, Any]] = []
+    for m in markers:
+        id_cm = (m.get("id_cm") or "").strip().upper()
+        id_bot = m.get("id_botella")
+        key = id_cm if id_cm else (f"#{id_bot}" if id_bot is not None else "")
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        out.append(dict(m))
+    removed = max(0, len(markers) - len(out))
+    for i, m in enumerate(out, 1):
+        m["orden"] = i
+    return out, removed
+
+
+_FOSC_CM_ID_RE = re.compile(r"^.+-FOSC-.+$", re.I)
+
+
+def es_id_fosc_cm(valor: str) -> bool:
+    """True si el token parece id de botella ConnectMaster (``…-FOSC-…``)."""
+    return bool(_FOSC_CM_ID_RE.match((valor or "").strip()))
+
+
+def _lookup_ci_fosc_meta(cur, schema: str, fosc_id: str) -> dict[str, str]:
+    out: dict[str, str] = {}
+    if not fosc_id or not _table_exists(cur, schema, "ci_fosc"):
+        return out
+    cols = set(_list_data_columns(cur, schema, "ci_fosc"))
+    want = [
+        c
+        for c in ("direccion", "nombre_atc", "partido_despliegue", "cabecera", "id_botella")
+        if c in cols
+    ]
+    if "id_cm" not in cols or not want:
+        return out
+    sel = ", ".join(_quote_ident(c) for c in want)
+    cur.execute(
+        f"""
+        SELECT {sel}
+        FROM {_quote_ident(schema)}.{_quote_ident("ci_fosc")}
+        WHERE id_cm = %s LIMIT 1
+        """,
+        (fosc_id,),
+    )
+    row = cur.fetchone()
+    if not row:
+        return out
+    for i, c in enumerate(want):
+        out[c] = str(row[i]).strip() if row[i] is not None else ""
+    return out
+
+
+def _componente_cm_desde_filas(fullname_a: object, fullname_b: object) -> str:
+    """Componente visible en CM (prefiere ``component_fullname_a`` en feeder/FEL)."""
+    for raw in (fullname_a, fullname_b):
+        head = (str(raw or "")).split(">")[0].strip()
+        if not head:
+            continue
+        u = head.upper()
+        if any(t in u for t in ("FEL", "DSL", "CATC", "FOSC")):
+            return head
+    for raw in (fullname_a, fullname_b):
+        head = (str(raw or "")).split(">")[0].strip()
+        if head:
+            return head
+    return ""
+
+
+def _es_etiqueta_alias_cm(etiqueta: str) -> bool:
+    return bool(re.match(r"^SF\d+-FATC-3-", (etiqueta or "").strip(), re.I))
+
+
+def _alias_visible_cm(etiqueta: str, nombre_atc: str) -> str:
+    """Alias como en CM: FATC-3 en etiqueta; fusión con/sin ``nombre_atc``."""
+    etiq = (etiqueta or "").strip()
+    nom = (nombre_atc or "").strip()
+    if _es_etiqueta_alias_cm(etiq):
+        return etiq
+    if nom and nom.upper() != etiq.upper():
+        return nom
+    if es_codigo_fusion_planta(etiq):
+        return "Sin alias"
+    return nom or etiq or "Sin alias"
+
+
+def consultar_fosc_camino_logico_rama(rama: str) -> dict[str, Any]:
+    """Camino lógico de la rama en ``report_fusiones`` (botellas + fusiones), como ConnectMaster."""
+    rama = (rama or "").strip()
+    if not rama:
+        return {"ok": False, "error": "Rama vacía.", "markers": []}
+
+    schema = _env_schema()
+    table = _env_fusiones_table()
+    if not _validate_ident(schema, table):
+        return {"ok": False, "error": "Tabla fusiones inválida.", "markers": []}
+
+    with db_cursor() as cur:
+        if not _table_exists(cur, schema, table):
+            return {
+                "ok": False,
+                "error": f"No existe {schema}.{table}.",
+                "markers": [],
+            }
+        schema_q = _quote_ident(schema)
+        table_q = _quote_ident(table)
+        cur.execute(
+            f"""
+            SELECT
+                f.location_description,
+                MIN(f.location_name) AS location_name,
+                MIN(f.location_type) AS location_type,
+                MIN(f.location_status) AS location_status,
+                MIN(f.geo_y) AS lat,
+                MIN(f.geo_x) AS lon,
+                MIN(f.phgr_id) AS phgr_id,
+                MIN(f.physical_path) AS physical_path,
+                COUNT(*)::int AS filas,
+                (array_agg(
+                  COALESCE(
+                    CASE WHEN split_part(f.component_fullname_a, '>', 1) ~* 'FEL|DSL'
+                      THEN split_part(f.component_fullname_a, '>', 1) END,
+                    CASE WHEN split_part(f.component_fullname_b, '>', 1) ~* 'FEL|DSL'
+                      THEN split_part(f.component_fullname_b, '>', 1) END
+                  )
+                  ORDER BY
+                    CASE WHEN f.description_b IS NOT NULL AND TRIM(f.description_b) <> '' THEN 0 ELSE 1 END,
+                    CASE WHEN f.splice = 'EMPALME' THEN 0 WHEN f.splice = 'CONTINUIDAD' THEN 1 ELSE 2 END,
+                    f.phgr_id NULLS LAST
+                ))[1] AS componente,
+                (array_agg(f.description_a
+                  ORDER BY CASE WHEN f.component_fullname_a ILIKE '%%FEL%%' THEN 0 ELSE 1 END))[1]
+                  AS cable_a,
+                (array_agg(f.subcategory_a
+                  ORDER BY CASE WHEN f.component_fullname_a ILIKE '%%FEL%%' THEN 0 ELSE 1 END))[1]
+                  AS subcat_a,
+                MIN(f.splice) AS splice,
+                MIN(cf.id_botella) AS id_botella
+            FROM {schema_q}.{table_q} f
+            LEFT JOIN {_quote_ident(schema)}.{_quote_ident("ci_fosc")} cf
+              ON cf.id_cm = f.location_name
+            WHERE f.path_atc = %s
+              AND f.location_description IS NOT NULL
+              AND TRIM(f.location_description) <> ''
+              AND (
+                f.location_description ~ '^SF[0-9]+-FATC-3-'
+                OR f.location_description ~ '^[A-Za-z0-9]{{2,12}}-R[0-9]+-[0-9]{{3}}$'
+              )
+            GROUP BY f.location_description
+            ORDER BY
+              MIN(CASE
+                WHEN f.component_fullname_a ILIKE '%%FEL1%%'
+                  OR f.component_fullname_b ILIKE '%%FEL1%%' THEN 1
+                WHEN f.component_fullname_a ILIKE '%%FEL2%%'
+                  OR f.component_fullname_b ILIKE '%%FEL2%%' THEN 2
+                WHEN f.component_fullname_a ILIKE '%%FEL3%%'
+                  OR f.component_fullname_b ILIKE '%%FEL3%%' THEN 3
+                WHEN f.component_fullname_b ILIKE '%%DSL%%' THEN 4
+                ELSE 5
+              END),
+              MAX(NULLIF(
+                regexp_replace(
+                  split_part(split_part(COALESCE(f.component_fullname_a, ''), '>', 1), '-', 7),
+                  '[^0-9]', '', 'g'
+                ),
+                ''
+              )::int) DESC NULLS LAST,
+              MIN(cf.id_botella) NULLS LAST,
+              f.location_description
+            """,
+            (rama,),
+        )
+        rows = cur.fetchall()
+
+    markers: list[dict[str, Any]] = []
+    for i, row in enumerate(rows, start=1):
+        etiqueta = (row[0] or "").strip()
+        if not etiqueta:
+            continue
+        id_cm = (row[1] or "").strip()
+        es_fusion = es_codigo_fusion_planta(etiqueta)
+        lat = lon = None
+        try:
+            if row[4] is not None and row[5] is not None:
+                lat = round(float(row[4]), 6)
+                lon = round(float(row[5]), 6)
+        except (TypeError, ValueError):
+            lat = lon = None
+        componente = (row[9] or "").strip() if row[9] else _componente_cm_desde_filas("", "")
+        mk: dict[str, Any] = {
+            "orden": i,
+            "etiqueta": etiqueta,
+            "id_cm": id_cm,
+            "tipo": (row[2] or ("Fusión" if es_fusion else "FOSC")).strip(),
+            "estado": (row[3] or "").strip(),
+            "componente": componente,
+            "cable": (row[10] or "").strip() if row[10] else "",
+            "subcategory": (row[11] or "").strip() if row[11] else "",
+            "splice": (row[12] or "").strip() if row[12] else "",
+            "lat": lat,
+            "lon": lon,
+            "phgr_id": row[6],
+            "physical_path": (row[7] or "").strip() if row[7] else "",
+            "filas_reporte": int(row[8] or 0),
+            "camino_logico": True,
+            "es_fusion": es_fusion,
+            "fusion_id": etiqueta if es_fusion else None,
+            "fosc_id_cm": id_cm if es_id_fosc_cm(id_cm) else "",
+            "fuera_trazado": True,
+        }
+        if lat is not None and lon is not None:
+            mk["maps_url"] = f"https://www.google.com/maps?q={lat},{lon}"
+        try:
+            if row[13] is not None:
+                mk["id_botella"] = int(row[13])
+        except (TypeError, ValueError):
+            pass
+        markers.append(mk)
+
+    if markers:
+        with db_cursor() as cur:
+            for mk in markers:
+                fid = (mk.get("id_cm") or "").strip()
+                if not fid:
+                    continue
+                meta = _lookup_ci_fosc_meta(cur, schema, fid)
+                nom = (meta.get("nombre_atc") or "").strip()
+                mk["alias"] = _alias_visible_cm(mk.get("etiqueta") or "", nom)
+                if meta.get("direccion"):
+                    mk["direccion"] = meta["direccion"]
+                if nom and _es_etiqueta_alias_cm(mk.get("etiqueta") or ""):
+                    mk["fosc_alias"] = nom
+                elif nom and not es_codigo_fusion_planta(mk.get("etiqueta") or ""):
+                    mk["fosc_alias"] = nom
+                if not mk.get("id_botella") and meta.get("id_botella"):
+                    try:
+                        mk["id_botella"] = int(meta["id_botella"])
+                    except (TypeError, ValueError):
+                        pass
+
+    return {
+        "ok": True,
+        "rama": rama,
+        "markers": markers,
+        "fuente": "report_fusiones",
+        "cabecera_filtrada": True,
+        "nota": (
+            "Camino lógico ConnectMaster (report_fusiones): botellas FATC-3 y fusiones "
+            "de verificación con componente y estado."
+        ),
+    }
+
+
+def consultar_fosc_detalle_interno(fosc_id: str, *, rama: str | None = None) -> dict[str, Any]:
+    """Árbol interno de la botella: feeder, FOSC y bandejas splice (como árbol CM)."""
+    fosc_id = (fosc_id or "").strip()
+    rama = (rama or "").strip() or None
+    if not es_id_fosc_cm(fosc_id):
+        return {"ok": False, "error": "Id de FOSC inválido."}
+
+    schema = _env_schema()
+    table = _env_fusiones_table()
+    if not _validate_ident(schema, table):
+        return {"ok": False, "error": "Tabla fusiones inválida."}
+
+    with db_cursor() as cur:
+        if not _table_exists(cur, schema, table):
+            return {"ok": False, "error": f"No existe {schema}.{table}."}
+        schema_q = _quote_ident(schema)
+        table_q = _quote_ident(table)
+        cur.execute(
+            f"""
+            SELECT DISTINCT description_a, subcategory_a
+            FROM {schema_q}.{table_q}
+            WHERE location_name = %s
+              AND description_a IS NOT NULL
+              AND description_a <> ''
+              AND (
+                subcategory_a ILIKE '%%FEEDER%%'
+                OR subcategory_a ILIKE '%%BACKHAUL%%'
+                OR description_a ILIKE '%%CATC%%'
+              )
+            ORDER BY description_a
+            """,
+            (fosc_id,),
+        )
+        feeders = [
+            {"label": (r[0] or "").strip(), "subcategory": (r[1] or "").strip()}
+            for r in cur.fetchall()
+            if (r[0] or "").strip()
+        ]
+        cur.execute(
+            f"""
+            SELECT DISTINCT component_name_a
+            FROM {schema_q}.{table_q}
+            WHERE location_name = %s
+              AND component_name_a ILIKE '%%SPLICE TRAY%%'
+            ORDER BY component_name_a
+            """,
+            (fosc_id,),
+        )
+        trays = []
+        for (tray_name,) in cur.fetchall():
+            tray = (tray_name or "").strip()
+            if not tray:
+                continue
+            filas_rama = None
+            if rama:
+                cur.execute(
+                    f"""
+                    SELECT COUNT(*)::int
+                    FROM {schema_q}.{table_q}
+                    WHERE location_name = %s
+                      AND component_name_a = %s
+                      AND path_atc = %s
+                    """,
+                    (fosc_id, tray, rama),
+                )
+                filas_rama = int(cur.fetchone()[0] or 0)
+            trays.append(
+                {
+                    "tray": tray,
+                    "filas_circuito": filas_rama,
+                }
+            )
+        meta = _lookup_ci_fosc_meta(cur, schema, fosc_id)
+        cur.execute(
+            f"""
+            SELECT MAX(usedby), MAX(location_fullname), MAX(location_status), MAX(owner)
+            FROM {schema_q}.{table_q}
+            WHERE location_name = %s
+            """,
+            (fosc_id,),
+        )
+        h = cur.fetchone() or (None, None, None, None)
+
+    return {
+        "ok": True,
+        "fosc_id": fosc_id,
+        "rama": rama,
+        "alias": meta.get("nombre_atc") or (h[0] or "").strip() or fosc_id,
+        "location_fullname": (h[1] or "").strip(),
+        "status": (h[2] or "").strip(),
+        "owner": (h[3] or "").strip(),
+        "direccion": meta.get("direccion") or "",
+        "feeders": feeders,
+        "trays": trays,
+    }
+
+
+def _normalize_fosc_direccion(val: Any) -> str:
+    """Quita direcciones vacías o placeholders tipo 'None, None' de CM."""
+    s = str(val or "").strip()
+    if not s or s == "-":
+        return ""
+    parts = [p.strip() for p in s.split(",")]
+    if parts and all(not p or p.lower() in ("none", "null") for p in parts):
+        return ""
+    return s
+
+
 def _fosc_row_to_marker(row: tuple, colnames: list[str]) -> dict[str, Any]:
     rec = dict(zip(colnames, row))
     lat = rec.get("lat")
@@ -161,7 +526,7 @@ def _fosc_row_to_marker(row: tuple, colnames: list[str]) -> dict[str, Any]:
         dist_traz_f = round(float(dist_traz), 1) if dist_traz is not None else None
     except (TypeError, ValueError):
         dist_traz_f = None
-    direccion = (rec.get("direccion") or "").strip()
+    direccion = _normalize_fosc_direccion(rec.get("direccion"))
     return {
         "id_botella": rec.get("id_botella"),
         "tipo": (rec.get("tipo") or "FOSC").strip(),
@@ -179,13 +544,14 @@ def consultar_fosc_cerca_trazado_ramas(
     *,
     max_dist_traz_m: float | None = None,
     limit: int | None = None,
+    filtrar_cabecera: bool = False,
 ) -> dict[str, Any]:
-    """Botellas (FOSC) en `cm.ci_fosc` a ≤N m del trazado unificado de las ramas."""
+    """Botellas (FOSC) sobre el trazado ci_op de las ramas (≤ tolerancia de encastre en m)."""
     ramas = [str(r).strip() for r in (ramas or []) if str(r).strip()]
     if not ramas:
         return {"ok": False, "error": "Sin ramas.", "markers": []}
-    cabecera = (cabecera or cabecera_desde_rama(ramas[0])).strip().upper()
-    if not cabecera:
+    cab = (cabecera or cabecera_desde_rama(ramas[0])).strip().upper()
+    if filtrar_cabecera and not cab:
         return {"ok": False, "error": "No se pudo inferir cabecera.", "markers": []}
 
     schema = _env_schema()
@@ -226,6 +592,7 @@ def consultar_fosc_cerca_trazado_ramas(
 
         op_q = _quote_ident(op_col)
         ci_op_q = _quote_ident(ci_op_table)
+        cabecera_clause = "AND f.cabecera = %s" if filtrar_cabecera and cab else ""
 
         sql = f"""
             WITH traz AS (
@@ -246,9 +613,9 @@ def consultar_fosc_cerca_trazado_ramas(
                         (SELECT g FROM traz)::geography
                     ) AS dist_traz_m
                 FROM {schema_q}.{table_q} f
-                WHERE f.cabecera = %s
-                  AND f.{geom_q} IS NOT NULL
+                WHERE f.{geom_q} IS NOT NULL
                   AND (SELECT g FROM traz) IS NOT NULL
+                  {cabecera_clause}
                   AND ST_DWithin(
                       f.{geom_q}::geography,
                       (SELECT g FROM traz)::geography,
@@ -259,8 +626,12 @@ def consultar_fosc_cerca_trazado_ramas(
             ORDER BY dist_traz_m ASC
             LIMIT %s
         """
+        params: tuple[Any, ...] = (ramas,)
+        if filtrar_cabecera and cab:
+            params = params + (cab,)
+        params = params + (max_dist, lim)
         try:
-            cur.execute(sql, (ramas, cabecera, max_dist, lim))
+            cur.execute(sql, params)
         except Exception as exc:
             logger.exception("consultar_fosc_cerca_trazado_ramas falló")
             return {"ok": False, "error": f"Error SQL FOSC: {str(exc)[:400]}", "markers": []}
@@ -272,13 +643,18 @@ def consultar_fosc_cerca_trazado_ramas(
             if m:
                 markers.append(m)
 
-    return {
+    markers, deduped = _dedupe_fosc_markers(markers)
+    result: dict[str, Any] = {
         "ok": True,
-        "cabecera": cabecera,
+        "cabecera": cab or None,
+        "cabecera_filtrada": bool(filtrar_cabecera and cab),
         "table": f"{schema}.{table}",
         "max_dist_traz_m": max_dist,
         "markers": markers,
     }
+    if deduped:
+        result["deduplicadas"] = deduped
+    return result
 
 
 def consultar_fosc_ordenadas_en_rama(
@@ -290,9 +666,9 @@ def consultar_fosc_ordenadas_en_rama(
     focal_lon: float | None = None,
     max_dist_traz_m: float | None = None,
     limit: int | None = None,
-    filtrar_cabecera: bool = True,
+    filtrar_cabecera: bool = False,
 ) -> dict[str, Any]:
-    """Botellas FOSC sobre el trazado, ordenadas cabecera → CTO (como recorrido QGIS)."""
+    """Botellas FOSC sobre el trazado ci_op de la(s) rama(s), ordenadas cabecera → CTO."""
     ramas = [str(r).strip() for r in (ramas or []) if str(r).strip()]
     if not ramas:
         return {"ok": False, "error": "Sin ramas.", "markers": []}
@@ -452,6 +828,7 @@ def consultar_fosc_ordenadas_en_rama(
                 cab or cabecera_para_fosc(ramas[0], gis) or None,
                 max_dist_traz_m=max_dist,
                 limit=lim,
+                filtrar_cabecera=filtrar_cabecera,
             )
             if not fallback.get("ok"):
                 return {
@@ -494,13 +871,17 @@ def consultar_fosc_ordenadas_en_rama(
             m["maps_url"] = f"https://www.google.com/maps?q={m['lat']},{m['lon']}"
             markers.append(m)
 
-    return {
+    markers, deduped = _dedupe_fosc_markers(markers)
+    result: dict[str, Any] = {
         "ok": True,
         "cabecera": cab or None,
         "cabecera_filtrada": bool(filtrar_cabecera and cab),
         "markers": markers,
         "max_dist_traz_m": max_dist,
     }
+    if deduped:
+        result["deduplicadas"] = deduped
+    return result
 
 
 def consultar_feeder_distribucion_planta_interna(
@@ -835,6 +1216,34 @@ def _fosc_id_desde_component_fullname(raw: object) -> str:
     return ""
 
 
+def _fosc_id_desde_fila_fusion(location_name: object, component_fullname_b: object) -> str:
+    """FOSC de la fila: ``location_name`` (CM) o cabecera de ``component_fullname_b``."""
+    loc = (str(location_name or "")).strip()
+    if es_id_fosc_cm(loc):
+        return loc
+    return _fosc_id_desde_component_fullname(component_fullname_b)
+
+
+def _enriquecer_fosc_alias_en_markers(
+    markers: list[dict[str, Any]], schema: str
+) -> None:
+    """Agrega ``fosc_alias`` (``ci_fosc.nombre_atc``, ej. SF01-FATC-3-002759)."""
+    ids = sorted({(m.get("fosc_id_cm") or "").strip() for m in markers} - {""})
+    if not ids:
+        return
+    alias_by_id: dict[str, str] = {}
+    with db_cursor() as cur:
+        for fosc_id in ids:
+            meta = _lookup_ci_fosc_meta(cur, schema, fosc_id)
+            alias = (meta.get("nombre_atc") or "").strip()
+            if alias:
+                alias_by_id[fosc_id] = alias
+    for mk in markers:
+        fid = (mk.get("fosc_id_cm") or "").strip()
+        if fid and fid in alias_by_id:
+            mk["fosc_alias"] = alias_by_id[fid]
+
+
 def _rama_tail_desde_fusion(codigo: str) -> str | None:
     """``SF01-R1301-010`` → sufijo de rama ``001301`` (segmento R1301)."""
     m = _FUSION_PLANTA_RE.match((codigo or "").strip().upper())
@@ -982,6 +1391,7 @@ def consultar_fusiones_verificacion_rama(
                 SELECT DISTINCT ON (f.location_description)
                     f.location_description,
                     f.path_atc,
+                    f.location_name,
                     f.component_fullname_b,
                     f.splice,
                     f.geo_y AS lat,
@@ -1009,6 +1419,7 @@ def consultar_fusiones_verificacion_rama(
                     SELECT DISTINCT ON (f.location_description)
                         f.location_description,
                         f.path_atc,
+                        f.location_name,
                         f.component_fullname_b,
                         f.splice,
                         f.geo_y AS lat,
@@ -1034,17 +1445,17 @@ def consultar_fusiones_verificacion_rama(
             continue
         seen.add(fusion_id)
         try:
-            la, lo = float(row[4]), float(row[5])
+            la, lo = float(row[5]), float(row[6])
         except (TypeError, ValueError, IndexError):
             continue
         if abs(la) > 90 or abs(lo) > 180:
             continue
-        fosc_id = _fosc_id_desde_component_fullname(row[2] if len(row) > 2 else "")
+        fosc_id = _fosc_id_desde_fila_fusion(row[2] if len(row) > 2 else "", row[3] if len(row) > 3 else "")
         mk = {
             "fusion_id": fusion_id,
             "path_atc": (row[1] or "").strip(),
             "fosc_id_cm": fosc_id,
-            "splice": (row[3] or "").strip(),
+            "splice": (row[4] or "").strip() if len(row) > 4 else "",
             "lat": round(la, 6),
             "lon": round(lo, 6),
             "maps_url": f"https://www.google.com/maps?q={la},{lo}",
@@ -1065,7 +1476,7 @@ def consultar_fusiones_verificacion_rama(
                     cur2.execute(
                         f"""
                         SELECT DISTINCT ON (location_description)
-                            location_description, path_atc, component_fullname_b,
+                            location_description, path_atc, location_name, component_fullname_b,
                             splice, geo_y, geo_x
                         FROM {schema_q}.{table_q}
                         WHERE location_description = %s
@@ -1077,14 +1488,14 @@ def consultar_fusiones_verificacion_rama(
                     extra = cur2.fetchone()
                     if extra:
                         try:
-                            la, lo = float(extra[4]), float(extra[5])
+                            la, lo = float(extra[5]), float(extra[6])
                             markers.insert(
                                 0,
                                 {
                                     "fusion_id": destacar,
                                     "path_atc": (extra[1] or "").strip(),
-                                    "fosc_id_cm": _fosc_id_desde_component_fullname(extra[2]),
-                                    "splice": (extra[3] or "").strip(),
+                                    "fosc_id_cm": _fosc_id_desde_fila_fusion(extra[2], extra[3]),
+                                    "splice": (extra[4] or "").strip(),
                                     "lat": round(la, 6),
                                     "lon": round(lo, 6),
                                     "maps_url": f"https://www.google.com/maps?q={la},{lo}",
@@ -1094,6 +1505,8 @@ def consultar_fusiones_verificacion_rama(
                             )
                         except (TypeError, ValueError):
                             pass
+
+    _enriquecer_fosc_alias_en_markers(markers, schema)
 
     return {
         "ok": True,

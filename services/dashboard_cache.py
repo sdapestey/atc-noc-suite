@@ -8,6 +8,7 @@ T = TypeVar("T")
 
 _lock_rama = threading.Lock()
 _lock_olt = threading.Lock()
+_lock_olt_totales = threading.Lock()
 _lock_rama_potencias = threading.Lock()
 _lock_rama_inventario = threading.Lock()
 _lock_calidad_resumen = threading.Lock()
@@ -19,6 +20,7 @@ _lock_olt_lt = threading.Lock()
 _lock_historico_potencias = threading.Lock()
 _rama = {"payload": None, "expires_at": 0.0}
 _olt = {"payload": None, "expires_at": 0.0}
+_olt_totales = {"payload": None, "expires_at": 0.0}
 _rama_potencias = {}
 _rama_inventario = {}
 _cto_potencias: dict[str, dict] = {}
@@ -88,6 +90,20 @@ def get_cached_olt(ttl_seconds: int, factory: Callable[[], T]) -> T:
         data = factory()
         _olt["payload"] = data
         _olt["expires_at"] = time.monotonic() + ttl_seconds
+        return data
+
+
+def get_cached_olt_totales(ttl_seconds: int, factory: Callable[[], T]) -> T:
+    """Devuelve totales globales OLT/LT (RAMA/CTO/ONT + operadores) cacheados por TTL."""
+    if ttl_seconds <= 0:
+        return factory()
+    with _lock_olt_totales:
+        now = time.monotonic()
+        if _olt_totales["payload"] is not None and now < _olt_totales["expires_at"]:
+            return _olt_totales["payload"]
+        data = factory()
+        _olt_totales["payload"] = data
+        _olt_totales["expires_at"] = time.monotonic() + ttl_seconds
         return data
 
 

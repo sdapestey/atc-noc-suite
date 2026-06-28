@@ -26,7 +26,7 @@ def test_noc_topbar_renders_theme_toggle_button():
 
 
 def test_head_leaflet_partial_in_map_pages(client):
-    for path in ("/", "/dashboard/rama", "/dashboard/camino-optico"):
+    for path in ("/", "/dashboard/olt", "/dashboard/camino-optico"):
         html = client.get(path).get_data(as_text=True)
         assert "leaflet@1.9.4" in html, path
         assert "noc-map-tiles.js" in html, path
@@ -38,7 +38,6 @@ def test_dashboard_pages_have_no_attribution_line(client):
         "/",
         "/dashboard/olt",
         "/dashboard/estadisticas",
-        "/dashboard/rama",
         "/dashboard/potencias-historico",
         "/dashboard/radar-degradacion",
         "/dashboard/camino-optico",

@@ -113,10 +113,14 @@ def test_camino_template_has_masivo_ui():
     assert "caminoApplyDeepLinkFromUrl" in html
     assert "consultar-masivo" in html
     assert "camino-panel-masivo" in html
-    assert "camino-masivo-meta" in html
+    assert "consulta-search-card" in html
+    assert "consulta-masivo-input" in html
+    assert ">Masivo<" in html
+    assert "Ramas masivo" not in html
+    assert "empty-state-note" in html
+    assert "Lucas Gimenez" not in html
+    assert "orquestador-credit" not in html
     assert "parseCaminoMasivoTokens" in html
-    assert "camino-leyenda-details" in html
-    assert "Ctrl" in html
     assert "ramas_masivo" in html
     assert "sugerencias_medicion" in html
     assert "zonas_corte_probable" in html
@@ -155,15 +159,17 @@ def test_zonas_corte_probable_troncal_compartida():
     gis = {"ok": True, "geojson": {"type": "FeatureCollection", "features": features}}
     ramas = ["ES01-RATC-0-000388", "ES01-RATC-0-000389", "ES01-RATC-0-000390"]
     zonas, troncal = co._analisis_corte_masivo_gis(gis, ramas)
-    assert len(zonas) == 1
-    assert zonas[0]["rama_count"] >= 3
-    assert zonas[0]["tipo"] == "reparto"
-    assert zonas[0]["prioridad"] in ("critica", "alta", "media")
-    assert zonas[0].get("troncal_length_m", 0) > 0
+    assert len(zonas) == 2
+    tipos = {z["tipo"] for z in zonas}
+    assert tipos == {"reparto", "troncal_origen"}
+    reparto = next(z for z in zonas if z["tipo"] == "reparto")
+    assert reparto["rama_count"] >= 3
+    assert reparto["prioridad"] in ("critica", "alta", "media")
+    assert reparto.get("troncal_length_m", 0) > 0
     assert troncal.get("ok") is True
     assert len(troncal.get("points") or []) >= 2
     # Punto de reparto al final del tramo común (más lejos del origen que el inicio).
-    assert zonas[0]["lat"] > -34.351
+    assert reparto["lat"] > -34.351
 
 
 def test_analisis_corte_una_sola_zona():
@@ -182,10 +188,96 @@ def test_analisis_corte_una_sola_zona():
     ]
     gis = {"ok": True, "geojson": {"type": "FeatureCollection", "features": features}}
     zonas, troncal = co._analisis_corte_masivo_gis(gis, ["TG02-RATC-0-000403", "TG02-RATC-0-000404"])
-    assert len(zonas) == 1
+    assert len(zonas) == 2
     assert troncal["ok"] is True
     bif = troncal["bifurcacion"]
     assert bif["lat"] >= troncal["origen"]["lat"] - 0.001
+
+
+def test_elegir_zona_corte_prefer_origen_con_fosc_cercana():
+    zonas = [
+        {
+            "tipo": "troncal_origen",
+            "lat": -34.477737,
+            "lon": -58.488882,
+            "motivo": "Inicio troncal.",
+            "rama_count": 14,
+        },
+        {
+            "tipo": "reparto",
+            "lat": -34.501468,
+            "lon": -58.497466,
+            "motivo": "Reparto.",
+            "rama_count": 14,
+        },
+    ]
+    markers = [
+        {"id_botella": 1, "lat": -34.47774, "lon": -58.48888},
+        {"id_botella": 2, "lat": -34.47780, "lon": -58.48890},
+        {"id_botella": 3, "lat": -34.47785, "lon": -58.48891},
+        {"id_botella": 4, "lat": -34.47790, "lon": -58.48892},
+        {"id_botella": 5, "lat": -34.50104, "lon": -58.49746},
+    ]
+    troncal = {
+        "length_m": 19612,
+        "points": [
+            {"lat": -34.47767, "lon": -58.48887},
+            {"lat": -34.48, "lon": -58.49},
+            {"lat": -34.501468, "lon": -58.497466},
+        ],
+    }
+    out = co._elegir_zona_corte_principal(zonas, markers, troncal)
+    assert out[0]["tipo"] == "troncal_origen"
+    assert out[0]["selected"] is True
+    assert out[1]["tipo"] == "reparto"
+    assert out[1]["selected"] is False
+
+
+def test_elegir_zona_corte_prefer_reparto_corte_distribucion():
+    """Corte aguas abajo del reparto: más FOSC hacia distribución que en cabecera."""
+    zonas = [
+        {
+            "tipo": "troncal_origen",
+            "lat": -34.504132,
+            "lon": -58.52383,
+            "motivo": "Inicio.",
+            "rama_count": 4,
+        },
+        {
+            "tipo": "reparto",
+            "lat": -34.501043,
+            "lon": -58.53833,
+            "motivo": "Reparto.",
+            "rama_count": 4,
+        },
+    ]
+    markers = [{"id_botella": i, "lat": -34.50413 + i * 0.00001, "lon": -58.52383} for i in range(7)]
+    markers += [{"id_botella": 20 + i, "lat": -34.50104, "lon": -58.53833 + i * 0.00001} for i in range(6)]
+    troncal = {
+        "length_m": 24000,
+        "points": [{"lat": -34.504132, "lon": -58.52383}, {"lat": -34.501043, "lon": -58.53833}],
+    }
+    out = co._elegir_zona_corte_principal(zonas, markers, troncal)
+    assert out[0]["tipo"] == "reparto"
+    assert out[0]["selected"] is True
+
+
+def test_elegir_zona_corte_prefer_reparto_troncal_corto():
+    zonas = [
+        {"tipo": "troncal_origen", "lat": -34.40, "lon": -58.70, "motivo": "Inicio.", "rama_count": 2},
+        {"tipo": "reparto", "lat": -34.39, "lon": -58.69, "motivo": "Reparto.", "rama_count": 2},
+    ]
+    markers = [{"id_botella": 1, "lat": -34.39, "lon": -58.69}]
+    troncal = {
+        "length_m": 400,
+        "points": [
+            {"lat": -34.40, "lon": -58.70},
+            {"lat": -34.39, "lon": -58.69},
+        ],
+    }
+    out = co._elegir_zona_corte_principal(zonas, markers, troncal)
+    assert out[0]["tipo"] == "reparto"
+    assert out[0]["selected"] is True
 
 
 def test_zonas_corte_probable_sin_gis():
@@ -202,6 +294,16 @@ def test_cabecera_desde_rama():
     assert cabecera_desde_rama("") == ""
 
 
+def test_normalize_fosc_direccion():
+    from services.camino_gis import _normalize_fosc_direccion
+
+    assert _normalize_fosc_direccion("Cuyo, 3400") == "Cuyo, 3400"
+    assert _normalize_fosc_direccion("None, None") == ""
+    assert _normalize_fosc_direccion(" none , None ") == ""
+    assert _normalize_fosc_direccion(None) == ""
+    assert _normalize_fosc_direccion("-") == ""
+
+
 def test_enriquecer_masivo_con_infra_fosc_snap(monkeypatch):
     zonas = [
         {
@@ -213,8 +315,8 @@ def test_enriquecer_masivo_con_infra_fosc_snap(monkeypatch):
     ]
     gis = {"ok": True}
 
-    def fake_fosc(ramas, cabecera):
-        assert cabecera == "TG02"
+    def fake_fosc(ramas, cabecera=None, **kwargs):
+        assert kwargs.get("filtrar_cabecera") is False
         return {
             "ok": True,
             "markers": [
@@ -239,7 +341,9 @@ def test_enriquecer_masivo_con_infra_fosc_snap(monkeypatch):
     monkeypatch.setattr(co, "consultar_fosc_cerca_trazado_ramas", fake_fosc)
     monkeypatch.setattr(co, "snap_corte_a_fosc", fake_snap)
 
-    out = co._enriquecer_masivo_con_infra_fosc(["TG02-RATC-0-000403"], gis, zonas)
+    out = co._enriquecer_masivo_con_infra_fosc(
+        ["TG02-RATC-0-000403"], gis, zonas, {"length_m": 5000, "points": []}
+    )
     assert out["fosc"]["ok"] is True
     assert len(out["fosc"]["markers"]) == 2
     assert out["snap_corte"]["ok"] is True

@@ -138,6 +138,11 @@ def _embed_fusion_assets(html: str) -> str:
     return html
 
 
+_BENTLEY_PAGE_W_PT = 1368
+_BENTLEY_PAGE_H_PT = 943
+_PT_TO_PX = 96 / 72
+
+
 def _pdf_playwright(html: str, base_url: str) -> bytes:
     del base_url
     from playwright.sync_api import sync_playwright
@@ -146,25 +151,17 @@ def _pdf_playwright(html: str, base_url: str) -> bytes:
     if shutil.which("google-chrome") or shutil.which("chromium"):
         launch_opts["channel"] = "chrome"
 
+    viewport_w = int(_BENTLEY_PAGE_W_PT * _PT_TO_PX)
+    viewport_h = int(_BENTLEY_PAGE_H_PT * _PT_TO_PX)
+
     with sync_playwright() as pw:
         browser = pw.chromium.launch(**launch_opts)
-        page = browser.new_page(viewport={"width": 1368, "height": 800})
+        page = browser.new_page(viewport={"width": viewport_w, "height": viewport_h})
         page.set_content(html, wait_until="load")
-        page.wait_for_timeout(600)
-        height_px = page.evaluate(
-            "() => Math.max("
-            "document.documentElement.scrollHeight,"
-            "document.body ? document.body.scrollHeight : 0"
-            ")"
-        )
-        height_px = max(int(height_px), 400)
-        page.set_viewport_size({"width": 1368, "height": height_px})
-        page.wait_for_timeout(200)
+        page.wait_for_timeout(800)
         pdf = page.pdf(
             print_background=True,
-            prefer_css_page_size=False,
-            width="1368pt",
-            height=f"{height_px}px",
+            prefer_css_page_size=True,
             margin={"top": "0", "right": "0", "bottom": "0", "left": "0"},
         )
         browser.close()

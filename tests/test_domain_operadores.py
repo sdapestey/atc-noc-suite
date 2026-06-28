@@ -1,4 +1,13 @@
-from services.domain import nombre_operador
+from services.domain import natural_sort_key_str, nombre_operador
+
+
+def test_natural_sort_key_str_mezcla_aids_numericos_y_alias():
+    aids = ["1051573192", "Srvc_loc_1162", "99223497"]
+    assert sorted(aids, key=natural_sort_key_str) == [
+        "99223497",
+        "1051573192",
+        "Srvc_loc_1162",
+    ]
 
 
 def test_nombre_operador_mapea_codigos_atc():

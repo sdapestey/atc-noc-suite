@@ -365,3 +365,31 @@ html[data-theme="light"] .page-cortes-rama .calidad-estadisticas-fecha-wrap .fla
 html[data-theme="light"] .flatpickr-calendar.noc-estadisticas-cal .noc-fp-picker-panel {
   background: var(--canvas-subtle);
 }
+
+.flatpickr-calendar.noc-estadisticas-cal .noc-fp-footer {
+  padding: 8px 10px 10px;
+  border-top: 1px solid color-mix(in srgb, var(--border-muted) 72%, transparent);
+}
+
+.flatpickr-calendar.noc-estadisticas-cal .noc-fp-footer-btn {
+  appearance: none;
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  border: 1px dashed var(--border-default);
+  background: color-mix(in srgb, var(--canvas-subtle) 55%, transparent);
+  color: var(--fg-muted);
+  font-size: 12px;
+  font-weight: 650;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: center;
+}
+
+.flatpickr-calendar.noc-estadisticas-cal .noc-fp-footer-btn:hover {
+  color: var(--fg-default);
+  border-color: color-mix(in srgb, var(--accent-emphasis) 35%, var(--border-default));
+  background: color-mix(in srgb, var(--accent-emphasis) 8%, var(--canvas-inset));
+}

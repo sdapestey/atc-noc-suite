@@ -122,10 +122,26 @@
     var btnOk = el("consulta-altiplano-auth-ok");
     var btnCancel = el("consulta-altiplano-auth-cancel");
     var form = el("consulta-altiplano-auth-form");
+    var loadingEl = el("consulta-altiplano-auth-loading");
+    var loadingTxt = el("consulta-altiplano-auth-loading-text");
     if (dlg) dlg.classList.toggle("consulta-altiplano-auth-dialog--loading", dialogLoading);
+    if (loadingEl) loadingEl.hidden = !dialogLoading;
+    if (loadingTxt && dialogLoading) {
+      loadingTxt.textContent =
+        (lastDialogOpts && lastDialogOpts.loadingMessage) ||
+        "Procesando en Altiplano…";
+    }
     if (btnOk) {
       btnOk.disabled = dialogLoading;
       btnOk.setAttribute("aria-busy", dialogLoading ? "true" : "false");
+      btnOk.classList.toggle("altiplano-busy-spin", dialogLoading);
+      if (dialogLoading) {
+        btnOk.textContent =
+          (lastDialogOpts && lastDialogOpts.loadingOkLabel) ||
+          (btnOk.dataset.okLabel || btnOk.textContent || "Confirmar") + "…";
+      } else {
+        btnOk.textContent = btnOk.dataset.okLabel || "Confirmar";
+      }
     }
     if (btnCancel) btnCancel.disabled = dialogLoading;
     if (form) {
@@ -236,7 +252,9 @@
   }
 
   function finalizeSubmitSuccess(payload) {
-    writeCache(payload.username, payload.password);
+    if (payload && payload.username && payload.password) {
+      writeCache(payload.username, payload.password);
+    }
     var res = pendingResolve;
     pendingResolve = null;
     pendingReject = null;
@@ -300,6 +318,12 @@
     var confirmOnly =
       lastDialogOpts &&
       (lastDialogOpts.confirmOnly === true || lastDialogOpts.mode === "confirm");
+    if (confirmOnly) {
+      var credsWrap = el("consulta-altiplano-auth-creds-wrap");
+      if (!credsWrap || credsWrap.hidden) {
+        return {};
+      }
+    }
     var useCached =
       cache &&
       (confirmOnly ||
@@ -345,18 +369,27 @@
     if (pendingSubmit) {
       var submitFn = pendingSubmit;
       var commitStart = pendingOnCommitStart;
-      setDialogLoading(true);
+      var confirmOnly =
+        lastDialogOpts &&
+        (lastDialogOpts.confirmOnly === true || lastDialogOpts.mode === "confirm");
+      if (commitStart) commitStart(payload);
+      if (confirmOnly) {
+        dismissDialog();
+      } else {
+        setDialogLoading(true);
+      }
       submitFn(payload)
         .then(function () {
-          if (commitStart) commitStart(payload);
-          dismissDialog();
+          if (!confirmOnly) dismissDialog();
           finalizeSubmitSuccess(payload);
         })
         .catch(function (err) {
-          setDialogLoading(false);
+          if (!confirmOnly) setDialogLoading(false);
           if (err && err.authError) {
-            showError(err.message);
-            showCredentialsForm({ username: payload.username });
+            if (!confirmOnly) {
+              showError(err.message);
+              showCredentialsForm({ username: payload.username });
+            }
             return;
           }
           var rej = pendingReject;
@@ -396,6 +429,7 @@
     }
     if (btnOk) {
       btnOk.textContent = opts.okLabel || "Confirmar";
+      btnOk.dataset.okLabel = opts.okLabel || "Confirmar";
       btnOk.classList.toggle(
         "altiplano-confirm-dialog-btn-ok--danger",
         Boolean(opts.danger)
@@ -410,7 +444,11 @@
 
     var confirmOnly = opts.confirmOnly === true || opts.mode === "confirm";
     if (confirmOnly) {
-      setSessionBar(null, true);
+      var sessionBar = el("consulta-altiplano-auth-session");
+      if (sessionBar) {
+        sessionBar.hidden = true;
+        sessionBar.style.display = "none";
+      }
       setCredsVisible(false);
     } else if (cache && !opts.forceCredentials) {
       setSessionBar(cache, false);
@@ -690,31 +728,21 @@
   }
 
   /**
-   * Segundo paso: popup solo con el nuevo SN (requiere creds ya validadas).
+   * Segundo paso: popup solo con el nuevo SN (credenciales en servidor vía .env).
    */
   function runConsultaSnChange(opts) {
     opts = opts || {};
-    var creds = opts.creds;
-    if (!creds || !creds.username || !creds.password) {
-      return Promise.reject(new Error("Sesión Altiplano no disponible"));
-    }
 
     function handleResult(result) {
       var err = authErrorFromResult(result);
       if (err) throw err;
-      writeCache(creds.username, creds.password);
-      if (opts.onSuccess) opts.onSuccess(result.json, creds);
+      if (opts.onSuccess) opts.onSuccess(result.json);
     }
 
     return openSnChangeDialog(
       opts.dialog || {},
       function (snPayload) {
-        var merged = {
-          username: creds.username,
-          password: creds.password,
-          new_sn: snPayload.new_sn,
-        };
-        return Promise.resolve(opts.execute(merged)).then(function (result) {
+        return Promise.resolve(opts.execute(snPayload)).then(function (result) {
           handleResult(result);
         });
       },
@@ -770,32 +798,36 @@
   }
 
   /**
-   * Login (si hace falta) + confirmación + acción. Usado por PON / ONT.
+   * Confirmación + acción (credenciales Altiplano en servidor vía .env).
    */
   function runConsultaAltiplanoAction(opts) {
     opts = opts || {};
-    var loginDialog = Object.assign(
-      {
-        title: "Ingresar a Altiplano",
-        message: "Usuario y contraseña de Altiplano (INP).",
-        okLabel: "Ingresar",
-      },
-      opts.loginDialog || {}
+    var dialogOpts = Object.assign(
+      { confirmOnly: true, mode: "confirm" },
+      opts.dialog || {}
     );
 
-    return ensureConsultaAltiplanoSession({
-      operador: opts.operador || "INP",
-      forceCredentials: opts.forceCredentials,
-      dialog: loginDialog,
-    })
-      .then(function (creds) {
-        return runConsultaAltiplanoConfirm(
-          Object.assign({}, opts, { creds: creds })
-        );
-      })
+    function handleResult(result) {
+      var err = authErrorFromResult(result);
+      if (err) throw err;
+      if (opts.onSuccess) opts.onSuccess(result.json);
+    }
+
+    return openDialog(
+      dialogOpts,
+      function () {
+        return Promise.resolve(opts.execute()).then(function (result) {
+          handleResult(result);
+        });
+      },
+      opts.onCommitStart || null
+    )
       .catch(function (err) {
         if (err && err.message === "cancelled") return;
         throw err;
+      })
+      .finally(function () {
+        if (opts.onFinally) opts.onFinally();
       });
   }
 

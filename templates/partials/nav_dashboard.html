@@ -12,7 +12,6 @@
     <div id="global-nav-dd-menu" class="global-nav-dd-menu" role="menu" aria-labelledby="global-nav-dd-btn" hidden aria-hidden="true">
       <a class="global-nav-dd-link global-tab{% if nav_tab == 'index' %} global-nav-dd-link--current{% endif %}" role="menuitem" href="{{ url_for('index') }}">Consulta Potencias</a>
       <p class="global-nav-dd-section" role="presentation">Inventario</p>
-      <a class="global-nav-dd-link global-tab{% if nav_tab == 'rama' %} global-nav-dd-link--current{% endif %}" role="menuitem" href="{{ url_for('dash_rama') }}">RAMA / CTO</a>
       <a class="global-nav-dd-link global-tab{% if nav_tab == 'olt' %} global-nav-dd-link--current{% endif %}" role="menuitem" href="{{ url_for('dash_olt') }}">OLT / LT</a>
       <a class="global-nav-dd-link global-tab{% if nav_tab == 'camino' %} global-nav-dd-link--current{% endif %}" role="menuitem" href="{{ url_for('dash_camino_optico') }}">Camino Optico</a>
       <a class="global-nav-dd-link global-tab{% if nav_tab == 'altiplano' %} global-nav-dd-link--current{% endif %}" role="menuitem" href="{{ url_for('dash_altiplano') }}">Altiplano</a>
@@ -53,7 +52,6 @@
           </svg>
         </button>
         <div class="global-nav-group-menu global-nav-dd-menu" role="menu" hidden aria-hidden="true">
-          <a class="global-nav-dd-link global-tab{% if nav_tab == 'rama' %} global-nav-dd-link--current{% endif %}" role="menuitem" href="{{ url_for('dash_rama') }}">RAMA / CTO</a>
           <a class="global-nav-dd-link global-tab{% if nav_tab == 'olt' %} global-nav-dd-link--current{% endif %}" role="menuitem" href="{{ url_for('dash_olt') }}">OLT / LT</a>
           <a class="global-nav-dd-link global-tab{% if nav_tab == 'camino' %} global-nav-dd-link--current{% endif %}" role="menuitem" href="{{ url_for('dash_camino_optico') }}">Camino Optico</a>
           <a class="global-nav-dd-link global-tab{% if nav_tab == 'altiplano' %} global-nav-dd-link--current{% endif %}" role="menuitem" href="{{ url_for('dash_altiplano') }}">Altiplano</a>

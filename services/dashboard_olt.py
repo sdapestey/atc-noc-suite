@@ -10,17 +10,20 @@ from psycopg2.errors import UndefinedColumn, UndefinedTable
 from config import get_dashboard_olt_cache_seconds
 from db import db_cursor
 
-from .dashboard_cache import get_cached_olt, get_cached_olt_lt
+from .dashboard_cache import get_cached_olt, get_cached_olt_lt, get_cached_olt_totales
+from .dashboard_rama import dashboard_rama_bundle, dashboard_rama_totales
 from .domain import (
     OLT_PRESENCIA_FORZADA,
     SITIO_PRINCIPAL_DEFAULT,
     SITIO_PRINCIPAL_POR_REGION,
+    canonical_operador_consulta,
     lt_desde_object_name,
     natural_sort_key_str,
     nombre_operador,
     principal_sort_key,
     principal_y_sitio_desde_olt,
     region_desde_rama,
+    sort_operadores_consulta,
 )
 from .inventory import _aid_clave_fila
 
@@ -402,8 +405,18 @@ def _compute_dashboard_olts():
         })
 
     nested = defaultdict(lambda: defaultdict(list))
+    principal_agg = defaultdict(lambda: {"ramas": set(), "ctos": set(), "ont": 0})
     for row in rows_flat:
         nested[row["PRINCIPAL"]][row["OLT_LOGICO"]].append(row)
+        agg = principal_agg[row["PRINCIPAL"]]
+        lt_info = tree[row["LT"]]
+        agg["ramas"].update(lt_info["ramas"])
+        agg["ctos"].update(lt_info["ctos"])
+        agg["ont"] += int(row["ONT_COUNT"] or 0)
+
+    rama_totales_por_principal = {
+        b["PRINCIPAL"]: b["TOTALES"] for b in dashboard_rama_bundle()["bloques"]
+    }
 
     hierarchy = []
     for principal in sorted(nested.keys(), key=principal_sort_key):
@@ -424,12 +437,57 @@ def _compute_dashboard_olts():
                 "LTS": lts,
             })
         principal_search = " ".join([principal] + [o["SEARCH_TEXT"] for o in olts_list])
+        agg = principal_agg[principal]
+        totales = rama_totales_por_principal.get(principal) or {
+            "RAMAS": len(agg["ramas"]),
+            "CTO": len(agg["ctos"]),
+            "ONT": agg["ont"],
+        }
         hierarchy.append({
             "PRINCIPAL": principal,
             "SEARCH_TEXT": principal_search,
             "OLTS": olts_list,
+            "TOTALES": totales,
         })
     return hierarchy
+
+
+def _compute_dashboard_olt_totales():
+    """Totales globales IN SERVICE (mismos RAMA/CTO/ONT que dashboard RAMA) + ONT por operador."""
+    base = dashboard_rama_totales()
+    with db_cursor() as cur:
+        cur.execute(
+            """
+            SELECT o.invocator_system, COUNT(*)::int
+            FROM cm.inventory_fat_occupation f
+            JOIN cm.inventory_olt_occupation o ON o.access_id = f.access_id
+            WHERE f.status = 'IN SERVICE'
+            GROUP BY o.invocator_system
+            """
+        )
+        rows = cur.fetchall()
+
+    ont_por_operador: dict[str, int] = {}
+    for invocator, count in rows:
+        label = canonical_operador_consulta(nombre_operador(invocator))
+        if not label:
+            continue
+        ont_por_operador[label] = ont_por_operador.get(label, 0) + int(count or 0)
+
+    ops_orden = sort_operadores_consulta(ont_por_operador.keys())
+    return {
+        "RAMAS": int(base.get("RAMAS") or 0),
+        "CTO": int(base.get("CTO") or 0),
+        "ONT": int(base.get("ONT") or 0),
+        "ont_por_operador": [
+            (op, ont_por_operador[op]) for op in ops_orden if ont_por_operador.get(op, 0) > 0
+        ],
+    }
+
+
+def dashboard_olt_totales():
+    """Totales globales para la barra superior del dashboard OLT/LT."""
+    return get_cached_olt_totales(get_dashboard_olt_cache_seconds(), _compute_dashboard_olt_totales)
 
 
 def dashboard_olts():

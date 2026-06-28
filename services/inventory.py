@@ -14,6 +14,8 @@ from altiplano import (
     obtener_alarmas_ont_activas,
     obtener_potencias_por_cto,
     obtener_telemetry_ont,
+    obtener_ultima_alarma_ont,
+    ultima_alarma_ont_payload,
 )
 
 from .domain import (
@@ -1209,6 +1211,7 @@ def consultar_access_id_potencias(access_id):
             "RX": None,
             "SN": None,
             "ALARMAS": [],
+            "ULTIMA_ALARMA": None,
             "alarmas_label": None,
             "NV_STATUS": None,
             **ont_fields,
@@ -1224,6 +1227,7 @@ def consultar_access_id_potencias(access_id):
             "RX": None,
             "SN": None,
             "ALARMAS": [],
+            "ULTIMA_ALARMA": None,
             "alarmas_label": None,
             "NV_STATUS": None,
             **ont_fields,
@@ -1242,12 +1246,38 @@ def consultar_access_id_potencias(access_id):
         **ont_fields,
         **_altiplano_vno_payload(inp_hit, operator=op_label, access_id=aid_canon),
     }
-    from altiplano import filter_alarmas_por_serial_ont
+    from altiplano import filter_alarmas_para_ont
 
     live_sn = out.get("SN")
-    out["ALARMAS"] = filter_alarmas_por_serial_ont(
+    ld_reason = telem.get("onu_last_down_reason")
+    ld_ts = telem.get("onu_last_down_ts")
+    ema_onu_ausente = False
+    if not ld_reason and obj:
+        from altiplano import _fetch_ema_oper_admin_inp, _ne_from_object_name_raw
+
+        ne_val = _ne_from_object_name_raw(obj)
+        if ne_val:
+            inp_ld = _fetch_ema_oper_admin_inp(
+                aid_canon,
+                obj,
+                ne_val,
+                operator_name=op_label,
+            )
+            ld_reason = inp_ld.get("onu_last_down_reason")
+            ld_ts = inp_ld.get("onu_last_down_ts")
+            ema_onu_ausente = bool(inp_ld.get("ema_onu_ausente_en_pon"))
+    out["ALARMAS"] = filter_alarmas_para_ont(
         obtener_alarmas_ont_activas(aid_canon, obj, op_id),
         str(live_sn).strip() if live_sn else None,
+        obj,
+    )
+    out["ULTIMA_ALARMA"] = ultima_alarma_ont_payload(
+        obtener_ultima_alarma_ont(aid_canon, obj, op_id),
+        live_sn=str(live_sn).strip() if live_sn else None,
+        onu_last_down_reason=ld_reason,
+        onu_last_down_ts=ld_ts or telem.get("health_ts"),
+        ema_onu_ausente_en_pon=ema_onu_ausente,
+        object_name_raw=obj,
     )
     if out["ALARMAS"]:
         out["alarmas_label"] = None

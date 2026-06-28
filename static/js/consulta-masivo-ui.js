@@ -267,6 +267,9 @@
 
     upEl.textContent = String(up);
     downEl.textContent = String(down);
+    if (typeof window._syncCopiarTodoBtn === "function") {
+      window._syncCopiarTodoBtn();
+    }
   }
 
   function evalRamaAllDown(section) {
@@ -522,6 +525,12 @@
     });
   }
 
+  function masivoPreloadEnCurso() {
+    if (!preloadPromise) return false;
+    var counts = ramaPreloadCounts();
+    return counts.total > 0 && counts.done < counts.total;
+  }
+
   function initPager(opts) {
     opts = opts || {};
     var sel = sizeSelect();
@@ -577,5 +586,6 @@
     goToSectionIndex: goToSectionIndex,
     expandRamaSection: expandRamaSection,
     flashSection: flashSection,
+    masivoPreloadEnCurso: masivoPreloadEnCurso,
   };
 })();

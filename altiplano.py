@@ -5969,6 +5969,55 @@ def filter_alarmas_por_serial_ont(
     return kept
 
 
+def _alarma_recurso_corresponde_ont(item: dict, object_name_raw: str) -> bool:
+    """True si el recurso FM apunta a esta ONT (evita colisiones wildcard tipo ``-1-1-1`` vs ``-1-1-100``)."""
+    onu = normalizar_object_name(str(object_name_raw or "").strip())
+    if not onu:
+        return True
+    haystack = " ".join(
+        str(item.get(k) or "") for k in ("resource", "resource_raw")
+    )
+    if not haystack.strip():
+        return False
+    for suf in _ont_gpon_interface_suffixes(object_name_raw):
+        pos = 0
+        while True:
+            idx = haystack.find(suf, pos)
+            if idx < 0:
+                break
+            after = haystack[idx + len(suf) : idx + len(suf) + 1]
+            if after in ("", "/", "\\", " ", ",", "'", '"'):
+                return True
+            pos = idx + 1
+    return False
+
+
+def filter_alarmas_por_recurso_ont(
+    alarmas: list[dict], object_name_raw: str
+) -> list[dict]:
+    """Descarta alarmas cuyo ``alarmResource`` no corresponde a la interfaz GPON de esta ONT."""
+    obj = str(object_name_raw or "").strip()
+    if not obj or not alarmas:
+        return list(alarmas or [])
+    return [
+        a
+        for a in alarmas
+        if isinstance(a, dict) and _alarma_recurso_corresponde_ont(a, obj)
+    ]
+
+
+def filter_alarmas_para_ont(
+    alarmas: list[dict],
+    live_sn: str | None,
+    object_name_raw: str | None = None,
+) -> list[dict]:
+    """Filtra por serial en servicio y por recurso GPON exacto (como la pestaña Alarms de Network Views)."""
+    out = filter_alarmas_por_serial_ont(alarmas, live_sn)
+    if object_name_raw:
+        out = filter_alarmas_por_recurso_ont(out, object_name_raw)
+    return out
+
+
 def _oper_from_inp_ont_connection_access_id(access_id: str) -> str | None:
     """``UP`` si ``search-intents`` reporta intent activo y alineado (como la GUI INP)."""
     row = resolver_ont_connection_inp_por_access_id(str(access_id or "").strip())
@@ -6041,7 +6090,14 @@ def _fetch_ema_oper_admin_inp(
     Returns:
         ``oper``, ``admin`` y ``ema_serial`` (serial visto en EMA INP, para detectar ONU obsoleta).
     """
-    out: dict[str, str | None] = {"oper": None, "admin": None, "ema_serial": None}
+    out: dict[str, str | None] = {
+        "oper": None,
+        "admin": None,
+        "ema_serial": None,
+        "onu_last_down_reason": None,
+        "onu_last_down_ts": None,
+        "ema_onu_ausente_en_pon": None,
+    }
     host, port, base_url = get_altiplano_nbi_target("INP")
     if not host or not port or not base_url:
         return out
@@ -6068,6 +6124,11 @@ def _fetch_ema_oper_admin_inp(
     if ema_body:
         out["oper"] = _ema_state_from_body(ema_body, "operationState")
         out["ema_serial"] = _ema_serial_from_body(ema_body)
+        out["ema_onu_ausente_en_pon"] = _ema_indica_onu_ausente_en_pon(ema_body)
+        last_down = _onu_last_down_from_ema(ema_body)
+        if last_down:
+            out["onu_last_down_reason"] = last_down["reason"]
+            out["onu_last_down_ts"] = last_down.get("ts") or None
 
     ema_admin_body = _http_get_ema_entity_try_versions(
         base_host,
@@ -6141,6 +6202,155 @@ def _onu_detected_datetime_from_ema(body: object) -> str | None:
         return None
     s = str(val).strip()
     return s if s else None
+
+
+_ONU_LAST_DOWN_REASON_LABELS: dict[str, str] = {
+    "dgi": "onu-dying-gasp",
+    "los": "loss-of-signal",
+    "lof": "loss-of-frame",
+    "losi": "loss-of-signal",
+    "lobi": "loss-of-burst",
+    "lofi": "loss-of-frame",
+    "sufi": "start-up-failure",
+    "deactivate-onu": "deactivate-onu",
+    "omci-reset": "omci-reset",
+    "onu-not-present": "onu-not-present",
+    "onu-not-present-with-v-ani": "onu-not-present",
+    "onu-not-present-without-v-ani": "onu-not-present",
+}
+
+# Alarmas FM que reflejan caída ONU/PON (ONU Last Down Cause). Excluye UNI/LAN locales.
+_ONT_LAST_DOWN_FM_ALARM_TYPES = frozenset({
+    "onu-dying-gasp",
+    "absence-of-phy",
+    "loss-of-signal",
+    "loss-of-frame",
+    "loss-of-burst",
+    "start-up-failure",
+    "onu-deactivate",
+    "deactivate-onu",
+    "omci-reset",
+    "ont-missing",
+    "ont-dying-gasp",
+    "onu-not-present",
+    "onu-not-present-with-v-ani",
+    "onu-not-present-without-v-ani",
+    "onu-loss-of-phy-layer",
+})
+
+_EMA_EMPTY_ONT_FIELD = frozenset({"", "-", "none", "unknown", "not-applicable"})
+
+_FM_ULTIMA_ALARMA_TYPE_NORMALIZE: dict[str, str] = {
+    "onu-loss-of-phy-layer": "loss-of-signal",
+}
+
+
+def _es_alarma_fm_ultima_caida_ont(item: dict) -> bool:
+    """True si la alarma FM es caída ONU/PON (no LAN-LOS ni eventos de UNI)."""
+    typ = str(item.get("type") or "").strip().lower()
+    if not typ:
+        return False
+    if typ in _ONT_LAST_DOWN_FM_ALARM_TYPES:
+        return True
+    text = str(item.get("text") or "").lower()
+    repair = str(item.get("repair") or "").lower()
+    if typ.endswith("-los") and "lan" in text:
+        return False
+    if "dying gasp" in repair or "dying gasp" in text:
+        return True
+    if "physical connectivity between onu and olt" in repair:
+        return True
+    if "loss of power" in repair and "onu" in repair:
+        return True
+    return False
+
+
+def _filter_fm_alarmas_ultima_caida_ont(
+    alarmas: list[dict],
+    live_sn: str | None,
+    object_name_raw: str | None = None,
+) -> list[dict]:
+    """Serial de la ONU en servicio + recurso GPON + solo tipos de caída PON/ONU (sin ``lan-los``)."""
+    por_sn = filter_alarmas_para_ont(alarmas, live_sn, object_name_raw)
+    return [a for a in por_sn if _es_alarma_fm_ultima_caida_ont(a)]
+
+
+def _normalize_fm_ultima_alarma_type(typ: str | None) -> str:
+    raw = str(typ or "").strip().lower()
+    if not raw:
+        return ""
+    return _FM_ULTIMA_ALARMA_TYPE_NORMALIZE.get(raw, raw)
+
+
+def _label_onu_last_down_reason(code: str | None) -> str:
+    raw = str(code or "").strip().lower()
+    if not raw or raw in _EMA_EMPTY_ONT_FIELD:
+        return ""
+    return _ONU_LAST_DOWN_REASON_LABELS.get(raw, raw)
+
+
+def _ema_extra_attr_empty(val: object) -> bool:
+    return str(val or "").strip().lower() in _EMA_EMPTY_ONT_FIELD
+
+
+def _ema_indica_onu_ausente_en_pon(body: object) -> bool:
+    """
+    True cuando EMA INP no ve ONU viva en el PON (como ``ONU not present`` en Network Views).
+
+    Patrón típico: ``serialNumber``, ``operation-state`` y potencias en ``-`` sin
+    ``onu-last-down-reason`` explícito.
+    """
+    if not isinstance(body, dict):
+        return False
+    ea = body.get("extraAttributes")
+    if not isinstance(ea, dict):
+        return False
+    if not _ema_extra_attr_empty(ea.get("onu-last-down-reason")):
+        return False
+    if not _ema_extra_attr_empty(ea.get("serialNumber")):
+        return False
+    op = ea.get("operation-state")
+    if op is None:
+        op = body.get("operationState")
+    if not _ema_extra_attr_empty(op):
+        return False
+    tx = ea.get("tx-signal-level")
+    rx = ea.get("rx-signal-level-ont")
+    return _ema_extra_attr_empty(tx) and _ema_extra_attr_empty(rx)
+
+
+def _onu_last_down_from_ema(body: object) -> dict[str, str] | None:
+    """Última causa de caída ONU en EMA (pestaña DETAILS de Network Views)."""
+    if not isinstance(body, dict):
+        return None
+    ea = body.get("extraAttributes")
+    if not isinstance(ea, dict):
+        return None
+    reason = _label_onu_last_down_reason(ea.get("onu-last-down-reason"))
+    if not reason:
+        return None
+    ts_raw = ea.get("onu-state-last-change") or ea.get("onu-detected-datetime")
+    ts = ""
+    if ts_raw is not None and str(ts_raw).strip() not in ("", "-"):
+        ts = _normalize_altiplano_iso8601_for_js(str(ts_raw).strip()) or ""
+    return {"reason": reason, "ts": ts}
+
+
+def _resolve_onu_last_down_from_ema(
+    body: object,
+    *,
+    fallback_ts: str | None = None,
+) -> dict[str, str] | None:
+    """EMA last-down explícito o inferencia ``onu-not-present`` (GUI Network Views)."""
+    last_down = _onu_last_down_from_ema(body)
+    if last_down:
+        return last_down
+    if not _ema_indica_onu_ausente_en_pon(body):
+        return None
+    ts = ""
+    if fallback_ts:
+        ts = _normalize_altiplano_iso8601_for_js(str(fallback_ts).strip()) or ""
+    return {"reason": "onu-not-present", "ts": ts}
 
 
 def _intent_health_from_search_intents_row(row: dict) -> dict[str, str | None]:
@@ -6847,6 +7057,10 @@ def _fetch_ont_telemetry_live(
             if out["oper"] is None:
                 out["oper"] = _ema_state_from_body(ema_body, "operationState")
             _merge_onu_detected(ema_body)
+            last_down = _onu_last_down_from_ema(ema_body)
+            if last_down:
+                out["onu_last_down_reason"] = last_down["reason"]
+                out["onu_last_down_ts"] = last_down.get("ts") or None
 
         if out["admin"] is None:
             ema_admin_body = _http_get_ema_entity_try_versions(
@@ -6911,6 +7125,9 @@ def _fetch_ont_telemetry_live(
         out["oper"] = inp_snap["oper"]
     if out["admin"] is None and inp_snap.get("admin"):
         out["admin"] = inp_snap["admin"]
+    if inp_snap.get("onu_last_down_reason"):
+        out["onu_last_down_reason"] = inp_snap["onu_last_down_reason"]
+        out["onu_last_down_ts"] = inp_snap.get("onu_last_down_ts")
 
     inp_user: str | None = None
     inp_pwd: str | None = None
@@ -6938,6 +7155,9 @@ def _fetch_ont_telemetry_live(
     )
 
     _reconcile_ont_nv_oper_status(out, access_id, inp_snap)
+
+    if out.get("onu_last_down_reason") and not out.get("onu_last_down_ts") and out.get("health_ts"):
+        out["onu_last_down_ts"] = out["health_ts"]
 
     return out
 
@@ -6983,7 +7203,7 @@ def _alarm_resource_raw_paths(ne: str, object_name_raw: str) -> list[str]:
     return paths
 
 
-def _build_alarmas_activas_search_query(ne: str, object_name_raw: str) -> dict | None:
+def _alarmas_ont_resource_should(ne: str, object_name_raw: str) -> list[dict] | None:
     paths = _alarm_resource_raw_paths(ne, object_name_raw)
     if not paths:
         return None
@@ -6998,6 +7218,13 @@ def _build_alarmas_activas_search_query(ne: str, object_name_raw: str) -> dict |
         should.append({"wildcard": {"alarmResource.raw": f"*{onu_key}*"}})
         should.append({"wildcard": {"alarmResourceUiName": f"*{onu_key}_GPON*"}})
         should.append({"wildcard": {"alarmResourceUiName": f"*{onu_key}*"}})
+    return should
+
+
+def _build_alarmas_activas_search_query(ne: str, object_name_raw: str) -> dict | None:
+    should = _alarmas_ont_resource_should(ne, object_name_raw)
+    if not should:
+        return None
     return {
         "query": {
             "bool": {
@@ -7007,6 +7234,31 @@ def _build_alarmas_activas_search_query(ne: str, object_name_raw: str) -> dict |
                 ]
             }
         }
+    }
+
+
+def _build_alarmas_ultima_ont_search_query(ne: str, object_name_raw: str) -> dict | None:
+    """Búsqueda histórica FM (activas + cleared) ordenada por ``raisedTime`` descendente."""
+    should = _alarmas_ont_resource_should(ne, object_name_raw)
+    if not should:
+        return None
+    status_should = _build_alarm_status_should("todas")
+    return {
+        "size": 20,
+        "sort": [{"raisedTime": {"order": "desc"}}],
+        "query": {
+            "bool": {
+                "must": [
+                    {
+                        "bool": {
+                            "should": status_should,
+                            "minimum_should_match": 1,
+                        }
+                    },
+                    {"bool": {"should": should, "minimum_should_match": 1}},
+                ]
+            }
+        },
     }
 
 
@@ -7096,6 +7348,100 @@ def _inp_alarm_search_url(
     if estado_norm == "activas":
         search_url += "?index=alarms-active"
     return search_url, auth_url, user, pwd
+
+
+def ultima_alarma_ont_payload(
+    fm_alarmas: list[dict],
+    *,
+    live_sn: str | None = None,
+    onu_last_down_reason: str | None = None,
+    onu_last_down_ts: str | None = None,
+    ema_onu_ausente_en_pon: bool = False,
+    object_name_raw: str | None = None,
+) -> dict | None:
+    """
+    Última causa de caída / alarma reciente de la ONT.
+
+    Prioriza EMA ``onu-last-down-reason`` explícito (pestaña DETAILS de Network Views).
+    Si no hay last-down en EMA, usa la alarma FM de caída ONU/PON más reciente (sin ``lan-los``).
+    Como último recurso, si EMA no ve ONU en el PON, infiere ``onu-not-present``.
+    """
+    reason = _label_onu_last_down_reason(onu_last_down_reason)
+    if reason:
+        ts = _normalize_altiplano_iso8601_for_js(onu_last_down_ts) if onu_last_down_ts else ""
+        return {
+            "type": reason,
+            "raised": ts or "",
+            "cleared": "",
+            "status": "",
+            "source": "ema",
+        }
+    filtered = _filter_fm_alarmas_ultima_caida_ont(
+        fm_alarmas, live_sn, object_name_raw
+    )
+    if filtered:
+        item = filtered[0]
+        raised = str(item.get("raised") or "").strip()
+        cleared = str(item.get("cleared") or "").strip()
+        display_ts = cleared or raised
+        return {
+            "type": _normalize_fm_ultima_alarma_type(item.get("type")),
+            "raised": display_ts,
+            "cleared": cleared,
+            "status": str(item.get("status") or "").strip(),
+            "source": "fm",
+        }
+    if ema_onu_ausente_en_pon:
+        ts = _normalize_altiplano_iso8601_for_js(onu_last_down_ts) if onu_last_down_ts else ""
+        return {
+            "type": "onu-not-present",
+            "raised": ts or "",
+            "cleared": "",
+            "status": "",
+            "source": "ema",
+        }
+    return None
+
+
+def obtener_ultima_alarma_ont(
+    access_id: str,
+    object_name_raw: str,
+    operator_id,
+    *,
+    ne: str | None = None,
+) -> list[dict]:
+    """
+    Historial FM reciente de la ONT (activas + cleared), más reciente primero.
+
+    Usar ``ultima_alarma_ont_payload`` para combinar con EMA last-down.
+    """
+    _ = operator_id
+    obj = str(object_name_raw or "").strip()
+    if not obj:
+        return []
+    ne_val = (ne or "").strip() or _ne_from_object_name_raw(obj)
+    if not ne_val:
+        return []
+    query = _build_alarmas_ultima_ont_search_query(ne_val, obj)
+    if not query:
+        return []
+    ctx = _inp_alarm_search_url(estado="todas")
+    if not ctx:
+        return []
+    search_url, auth_url, user, pwd = ctx
+    body = _http_post_altiplano_json(
+        search_url,
+        auth_url,
+        query,
+        access_id=str(access_id or "").strip(),
+        ne=ne_val,
+        log_label="última alarma ONT INP",
+        username=user,
+        password=pwd,
+    )
+    return _parse_alarmas_corte_pon_search_body(
+        body, allowed_statuses=frozenset({"active", "cleared"})
+    )
 
 
 def obtener_alarmas_ont_activas(

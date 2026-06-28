@@ -86,6 +86,89 @@ def test_resumen_ci_op_desde_gis():
     assert res["atributos"] == {"sitio": "Tigre Norte"}
 
 
+def test_dedupe_fosc_markers_por_id_cm():
+    from services.camino_gis import _dedupe_fosc_markers
+
+    markers = [
+        {"orden": 1, "id_cm": "FOSC-A", "id_botella": 1},
+        {"orden": 2, "id_cm": "FOSC-B", "id_botella": 2},
+        {"orden": 3, "id_cm": "FOSC-A", "id_botella": 1},
+    ]
+    out, removed = _dedupe_fosc_markers(markers)
+    assert removed == 1
+    assert len(out) == 2
+    assert [m["id_cm"] for m in out] == ["FOSC-A", "FOSC-B"]
+    assert [m["orden"] for m in out] == [1, 2]
+
+
+def test_es_id_fosc_cm():
+    from services.camino_gis import es_id_fosc_cm
+
+    assert es_id_fosc_cm("SF010101-FOSC-07-002759-0001") is True
+    assert es_id_fosc_cm("SF01-R1301-010") is False
+
+
+def test_consultar_fosc_camino_logico_rama_incluye_fusiones(monkeypatch):
+    """Camino lógico CM: FATC-3 + códigos de fusión en location_description."""
+    from services import camino_gis as cg
+
+    class Cur:
+        def execute(self, sql, params=()):
+            assert "location_description ~ '^SF[0-9]+-FATC-3-'" in sql
+            assert "location_type = 'FOSC'" not in sql
+            assert params == ("SF01-RATC-0-000775",)
+
+        def fetchall(self):
+            return []
+
+    class Ctx:
+        def __enter__(self):
+            return Cur()
+
+        def __exit__(self, *a):
+            return False
+
+    monkeypatch.setattr(cg, "_env_schema", lambda: "cm")
+    monkeypatch.setattr(cg, "_env_fusiones_table", lambda: "report_fusiones")
+    monkeypatch.setattr(cg, "_validate_ident", lambda s, t: True)
+    monkeypatch.setattr(cg, "_table_exists", lambda *a: True)
+    monkeypatch.setattr(cg, "db_cursor", Ctx)
+
+    out = cg.consultar_fosc_camino_logico_rama("SF01-RATC-0-000775")
+    assert out["ok"] is True
+    assert out["markers"] == []
+
+
+def test_alias_visible_cm():
+    from services.camino_gis import _alias_visible_cm
+
+    assert _alias_visible_cm("SF01-FATC-3-002759", "SF01-FATC-3-002759") == "SF01-FATC-3-002759"
+    assert _alias_visible_cm("SF01-R0764-010", "SF01-FATC-3-002745") == "SF01-FATC-3-002745"
+    assert _alias_visible_cm("SF01-R0772-010", "") == "Sin alias"
+
+
+def test_componente_cm_desde_filas_prefiere_fel_a():
+    from services.camino_gis import _componente_cm_desde_filas
+
+    assert (
+        _componente_cm_desde_filas(
+            "SF010101-FEL1-07-00007-0005",
+            "SF010101-FEL1-07-00007-0001",
+        )
+        == "SF010101-FEL1-07-00007-0005"
+    )
+
+
+def test_consultar_reporte_splice_export_requiere_tray():
+    from services.camino_fusion_export import consultar_reporte_splice_export
+
+    out = consultar_reporte_splice_export(
+        "SF010101-FOSC-07-002759-0001", tray="", rama="SF01-RATC-0-000775"
+    )
+    assert out["ok"] is False
+    assert "tray" in out["error"].lower()
+
+
 def test_planta_interna_para_consulta_mock(monkeypatch):
     gis = {
         "ok": True,
@@ -101,7 +184,8 @@ def test_planta_interna_para_consulta_mock(monkeypatch):
         },
     }
 
-    def fake_fosc(ramas, **kwargs):
+    def fake_fosc_logico(rama):
+        assert rama == "TG02-RATC-0-000403"
         return {
             "ok": True,
             "markers": [
@@ -110,9 +194,10 @@ def test_planta_interna_para_consulta_mock(monkeypatch):
                     "id_cm": "FOSC-1",
                     "lat": -34.39,
                     "lon": -58.79,
-                    "dist_cabecera_m": 100,
+                    "alias": "TG02-FATC-3-001",
                 }
             ],
+            "fuente": "report_fusiones",
         }
 
     def fake_feeder(ramas, **kwargs):
@@ -128,7 +213,7 @@ def test_planta_interna_para_consulta_mock(monkeypatch):
             "geojson": {"type": "FeatureCollection", "features": []},
         }
 
-    monkeypatch.setattr(co, "consultar_fosc_ordenadas_en_rama", fake_fosc)
+    monkeypatch.setattr(co, "consultar_fosc_camino_logico_rama", fake_fosc_logico)
     monkeypatch.setattr(co, "consultar_feeder_distribucion_planta_interna", fake_feeder)
     monkeypatch.setattr(co, "consultar_cto_coordenadas_desde_sfat", lambda c: None)
 
@@ -181,7 +266,15 @@ def test_camino_template_planta_interna_ui():
     assert "var cortFd = pi &&" not in html
     assert "fullscreen: false" in html
     assert "camino-planta-fusion" in html
-    assert "export-fusion" in html
+    assert "renderRutaFisicaCm" in html
+    assert "camino-ruta-fisica-table" in html
+    assert 'camino-rama-ctos" open' in html
+    assert "el.open = true" in html
+    assert "Reporte de rama" not in html
+    assert "export-fusion" not in html
+    assert "export-splice" not in html
+    assert "camino-planta-pdf-link" not in html
+    assert "camino-fosc-detalle-btn" not in html
     assert "verificacion-fusion" in html
     assert "caminoScrollToMapPanel" in html
 
@@ -191,15 +284,106 @@ def test_es_codigo_fusion_planta():
     assert es_codigo_fusion_planta("SF01-RATC-0-001318") is False
 
 
+def test_fosc_on_trazado_default_tolerance():
+    import os
+
+    from services.camino_gis import _env_fosc_max_dist_traz_m
+
+    old = os.environ.pop("CAMINO_GIS_FOSC_MAX_DIST_TRAZ_M", None)
+    try:
+        assert _env_fosc_max_dist_traz_m() == 6.0
+    finally:
+        if old is not None:
+            os.environ["CAMINO_GIS_FOSC_MAX_DIST_TRAZ_M"] = old
+
+
 def test_infer_camino_fusion_planta():
     assert co.infer_camino_consulta_tipo("SF01-R1301-010") == "fusion_planta"
+
+
+def test_fosc_id_desde_fila_fusion_prefiere_location_name():
+    from services.camino_gis import _fosc_id_desde_fila_fusion
+
+    assert (
+        _fosc_id_desde_fila_fusion(
+            "SF010101-FOSC-07-002745-0001",
+            "SF010101-FEL2-07-00014-0001",
+        )
+        == "SF010101-FOSC-07-002745-0001"
+    )
+    assert (
+        _fosc_id_desde_fila_fusion(
+            "",
+            "SF010101-FOSC-07-001589-0001>SP3<SF010101-SPL1-07-000775-0001",
+        )
+        == "SF010101-FOSC-07-001589-0001"
+    )
+
+
+def test_consultar_fusiones_verificacion_enriquece_alias(monkeypatch):
+    from services import camino_gis as cg
+
+    class Cur:
+        def execute(self, sql, params=()):
+            pass
+
+        def fetchall(self):
+            return [
+                (
+                    "SF01-R0764-010",
+                    "SF01-RATC-0-000775",
+                    "SF010101-FOSC-07-002745-0001",
+                    "SF010101-FEL2-07-00014-0001",
+                    "EMPALME",
+                    -34.42,
+                    -58.58,
+                )
+            ]
+
+    class Ctx:
+        def __enter__(self):
+            return Cur()
+
+        def __exit__(self, *a):
+            return False
+
+    monkeypatch.setattr(cg, "_env_schema", lambda: "cm")
+    monkeypatch.setattr(cg, "_env_fusiones_table", lambda: "report_fusiones")
+    monkeypatch.setattr(cg, "_env_fusiones_limit", lambda: 30)
+    monkeypatch.setattr(cg, "_validate_ident", lambda s, t: True)
+    monkeypatch.setattr(cg, "_table_exists", lambda *a: True)
+    monkeypatch.setattr(cg, "db_cursor", Ctx)
+
+    def _fake_alias(markers, schema):
+        for m in markers:
+            m["fosc_alias"] = "SF01-FATC-3-002745"
+
+    monkeypatch.setattr(cg, "_enriquecer_fosc_alias_en_markers", _fake_alias)
+
+    out = cg.consultar_fusiones_verificacion_rama(["SF01-RATC-0-000775"])
+    assert out["ok"] is True
+    mk = out["markers"][0]
+    assert mk["fosc_id_cm"] == "SF010101-FOSC-07-002745-0001"
+    assert mk["fosc_alias"] == "SF01-FATC-3-002745"
 
 
 def test_planta_interna_fusiones_mock(monkeypatch):
     gis = {"ok": True, "geojson": {"type": "FeatureCollection", "features": []}}
 
-    def fake_fosc(ramas, **kwargs):
-        return {"ok": True, "markers": []}
+    def fake_fosc_logico(rama):
+        return {
+            "ok": True,
+            "markers": [
+                {
+                    "fusion_id": "SF01-R1301-010",
+                    "etiqueta": "SF01-R1301-010",
+                    "es_fusion": True,
+                    "lat": -34.42406,
+                    "lon": -58.589228,
+                    "fosc_id_cm": "SF010101-FOSC-12-003503-0001",
+                }
+            ],
+        }
 
     def fake_feeder(ramas, **kwargs):
         return {"ok": False}
@@ -219,7 +403,7 @@ def test_planta_interna_fusiones_mock(monkeypatch):
             "count": 1,
         }
 
-    monkeypatch.setattr(co, "consultar_fosc_ordenadas_en_rama", fake_fosc)
+    monkeypatch.setattr(co, "consultar_fosc_camino_logico_rama", fake_fosc_logico)
     monkeypatch.setattr(co, "consultar_feeder_distribucion_planta_interna", fake_feeder)
     monkeypatch.setattr(co, "consultar_fusiones_verificacion_rama", fake_fusion)
     monkeypatch.setattr(co, "consultar_cto_coordenadas_desde_sfat", lambda c: None)

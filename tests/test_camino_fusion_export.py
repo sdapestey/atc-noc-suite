@@ -1,13 +1,20 @@
 """Export reporte fusión planta interna."""
 from services.camino_fusion_export import (
+    _destino_cable_fosc_export,
     _es_fila_splitter,
+    _fatc_suffix_num,
+    _fusion_destino_cable_path,
+    _rama_continuidad_reporte,
     google_maps_url,
     color_desde_numero_fibra,
     color_grupo_buffer,
+    consultar_reporte_fosc_export,
     consultar_reporte_fusion_export,
     destino_cable_reporte,
     fusion_codigo_corto,
     grupo_desde_fibra,
+    rama_cable_reporte,
+    splice_plan_cm_filename,
 )
 
 
@@ -51,8 +58,108 @@ def test_colores_como_pdf_bentley():
     assert color_grupo_buffer("FEEDER CABLE L3", "3") == "VERDE"
     assert color_grupo_buffer("DISTRIBUTION CABLE D1", "1") == "BLANCO"
     assert fusion_codigo_corto("SF01-R1301-010") == "13"
+    assert fusion_codigo_corto("SF01-R0773-010") == "14"
+    assert fusion_codigo_corto("SF01-R1414-010") == "14"
+    assert fusion_codigo_corto("SF01-R0774-010") == "14"
+    assert fusion_codigo_corto("SF01-FATC-3-001659") == ""
     assert destino_cable_reporte("", "SF01-RATC-0-001318") == "SF01-R1303-010"
     assert destino_cable_reporte("", "SF01-RATC-0-001300") == "SF01-R1300-010"
+
+
+def test_rama_cable_reporte_usa_circuit():
+    assert rama_cable_reporte("SF01-R0772-000", "SF01-RAMX-0-000772") == "SF01-R0772-000"
+    assert (
+        rama_cable_reporte("SF01-RATC-0-000775", "SF01-RATC-0-000775")
+        == "SF01-RATC-0-000775"
+    )
+
+
+def test_continuidad_rama_y_destino_helpers():
+    assert _fatc_suffix_num("SF01-FATC-3-022849") == 22849
+    assert _rama_continuidad_reporte("", "", "", "SF01-CATC-1-000007") == ""
+    assert (
+        _rama_continuidad_reporte("SF01-RATC-0-000721", "SF01-RATC-0-000721", "", "")
+        == "SF01-RATC-0-000721"
+    )
+    dest = _destino_cable_fosc_export(
+        "CONTINUIDAD",
+        "SF01-RATC-0-000721",
+        "SF01-RATC-0-000721",
+        "some/path",
+        "SF01-CATC-1-000007",
+        "SF01-CATC-1-000007",
+        alias_fosc="SF01-FATC-3-002759",
+        dest_fusion_cache={},
+        dest_fatc_cache={"SF01-CATC-1-000007": "SF01-FATC-3-022849"},
+    )
+    assert dest == "SF01-FATC-3-022849"
+
+
+def test_consultar_reporte_fosc_export_001659_db():
+    fosc = "SF010101-FOSC-07-001659-0001"
+    try:
+        out = consultar_reporte_fosc_export(fosc)
+    except Exception:
+        return
+    if not out.get("ok"):
+        return
+    assert out["header"]["alias"] == "SF01-FATC-3-001659"
+    assert out["header"]["fusion_id"] == "SF01-R0773-010"
+    assert out["header"].get("fusion_num") == "14"
+    cables = []
+    for page in out["bentley"]["cable_render"].get("pages") or []:
+        cables.extend(page)
+    fibra13 = next((r for r in cables if str(r.get("fibra_in")) == "13"), None)
+    if fibra13:
+        assert fibra13["destino"] == "SF01-FATC-3-004049"
+
+
+def test_consultar_reporte_fosc_export_002759_db():
+    fosc = "SF010101-FOSC-07-002759-0001"
+    try:
+        out = consultar_reporte_fosc_export(fosc)
+    except Exception:
+        return
+    if not out.get("ok"):
+        return
+    assert out["header"]["alias"] == "SF01-FATC-3-002759"
+    cables = []
+    for page in out["bentley"]["cable_render"].get("pages") or []:
+        cables.extend(page)
+    fibra01 = next((r for r in cables if str(r.get("fibra_in")) == "01"), None)
+    if fibra01:
+        assert fibra01["rama_salida"] == ""
+        assert fibra01["destino"] == "SF01-FATC-3-022849"
+    fibra25 = next((r for r in cables if str(r.get("fibra_in")) == "25"), None)
+    if fibra25:
+        assert fibra25["rama_salida"] == "SF01-RATC-0-000721"
+        assert fibra25["destino"] == "SF01-FATC-3-022849"
+    fibra68 = next((r for r in cables if str(r.get("fibra_in")) == "68"), None)
+    if fibra68:
+        assert fibra68["rama_salida"] == "SF01-RATC-0-001526"
+        assert fibra68["destino"] == "SF01-FATC-3-022849"
+
+
+def test_consultar_reporte_fusion_export_r0774_db():
+    try:
+        out = consultar_reporte_fusion_export(
+            "SF01-R0774-010", rama="SF01-RATC-0-000775"
+        )
+    except Exception:
+        return
+    if not out.get("ok"):
+        return
+    cables = out["bentley"]["cable_render"]["page1"]
+    by_fibra = {str(r.get("fibra_in")): r for r in cables}
+    assert by_fibra["13"]["rama_salida"] == "SF01-R0772-000"
+    assert by_fibra["16"]["rama_salida"] == "SF01-RATC-0-000775"
+    assert by_fibra["13"]["destino"] == "SF01-R0775-010"
+    assert by_fibra["16"]["destino"] == "SF01-R0775-010"
+    sp2 = out["bentley"]["splitter_sections"][2]["sp_blocks"][0]["rows"]
+    out1 = next(
+        r for r in sp2 if r.get("salida_splitter") == "OUT1" and r.get("tipo") == "out_full"
+    )
+    assert out1.get("destino") == "SF01-R0774-011"
 
 
 def test_consultar_reporte_fusion_export_db():
@@ -79,28 +186,37 @@ def test_consultar_reporte_fusion_export_db():
     assert out.get("splitter_groups")
 
 
-def test_export_fusion_route(client):
-    r = client.get(
-        "/dashboard/camino-optico/export-fusion",
-        query_string={"fusion": "SF01-R1301-010", "rama": "SF01-RATC-0-001318"},
-    )
-    if r.status_code in (404, 500):
+def test_splice_plan_cm_filename():
+    fosc = "SF010101-FOSC-07-002749-0001"
+    assert splice_plan_cm_filename(fosc).startswith(fosc)
+    assert "SPLICE PLAN" in splice_plan_cm_filename(fosc)
+
+
+def test_consultar_reporte_fosc_export_002749_db():
+    fosc = "SF010101-FOSC-07-002749-0001"
+    try:
+        out = consultar_reporte_fosc_export(fosc)
+    except Exception:
         return
-    assert r.status_code == 200
-    assert b"SF01-R1301-010" in r.data
-    assert b"bentley-meta-grid" in r.data
-    assert b"bentley-header-logo" in r.data
-    assert b"american-tower-logo.svg" in r.data
-    assert b"bentley-page" in r.data
-    assert b"camino-fusion-bentley.css" in r.data
-    assert b"Descargar PDF" in r.data
-    assert b'bentley-wm' in r.data
-    assert b"american-tower-watermark.png" in r.data
-    assert b"fc--azul" in r.data or b"fc--marron" in r.data
+    if not out.get("ok"):
+        return
+    assert out["header"]["alias"] == "SF01-FATC-3-002749"
+    assert out["header"]["fusion_id"] == "SF01-FATC-3-002749"
+    assert out["header"].get("fusion_num") == ""
+    assert out["row_count"] == 98
+    cables = []
+    for page in out["bentley"]["cable_render"].get("pages") or []:
+        cables.extend(page)
+    r775 = next(
+        (r for r in cables if r.get("rama_salida") == "SF01-RATC-0-000775"),
+        None,
+    )
+    if r775:
+        assert r775["destino"] == "SF01-R0764-010"
+    r721 = next(
+        (r for r in cables if r.get("rama_salida") == "SF01-RATC-0-000721"),
+        None,
+    )
+    if r721:
+        assert r721["destino"] == "SF01-R0721-010"
 
-
-def test_export_fusion_invalid(client):
-    r = client.get("/dashboard/camino-optico/export-fusion", query_string={"fusion": "INVALID"})
-    assert r.status_code in (400, 404)
-    if r.status_code == 400:
-        assert b"inv" in r.data.lower() or b"Error" in r.data

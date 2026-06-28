@@ -1,13 +1,17 @@
-def _mock_altiplano_login_ok(monkeypatch):
+def _mock_altiplano_env_creds(monkeypatch, user="noc_user", password="secret"):
     import web.routes as routes
 
-    monkeypatch.setattr(routes, "obtener_token_entorno_nbi", lambda *_a, **_k: "tok-test")
+    monkeypatch.setattr(
+        routes,
+        "_altiplano_creds_from_env",
+        lambda _entorno: (user, password, None),
+    )
 
 
 def test_pon_admin_status_endpoint_success(client, monkeypatch):
     import services.inventory as inventory
 
-    _mock_altiplano_login_ok(monkeypatch)
+    _mock_altiplano_env_creds(monkeypatch)
     monkeypatch.setattr(
         inventory,
         "cambiar_pon_admin_access_id",
@@ -27,8 +31,6 @@ def test_pon_admin_status_endpoint_success(client, monkeypatch):
             "object_name": "BA_OLTA_ES01_01-1-1-4",
             "toggle": True,
             "current_pon_admin": "UNLOCKED",
-            "altiplano_user": "noc_user",
-            "altiplano_password": "secret",
         },
     )
     assert r.status_code == 200
@@ -37,10 +39,18 @@ def test_pon_admin_status_endpoint_success(client, monkeypatch):
     assert payload["admin_status"] == "LOCKED"
 
 
-def test_pon_admin_status_endpoint_rechaza_credenciales_invalidas(client, monkeypatch):
+def test_pon_admin_status_endpoint_sin_credenciales_env(client, monkeypatch):
     import web.routes as routes
 
-    monkeypatch.setattr(routes, "obtener_token_entorno_nbi", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        routes,
+        "_altiplano_creds_from_env",
+        lambda _entorno: (
+            "",
+            "",
+            ({"ok": False, "message": "Credenciales Altiplano no configuradas en .env"}, 503),
+        ),
+    )
 
     r = client.post(
         "/pon/admin-status",
@@ -49,9 +59,7 @@ def test_pon_admin_status_endpoint_rechaza_credenciales_invalidas(client, monkey
             "operador": "TASA",
             "toggle": True,
             "current_pon_admin": "UNLOCKED",
-            "altiplano_user": "bad",
-            "altiplano_password": "bad",
         },
     )
-    assert r.status_code == 401
-    assert "incorrectos" in (r.get_json() or {}).get("message", "")
+    assert r.status_code == 503
+    assert ".env" in (r.get_json() or {}).get("message", "")

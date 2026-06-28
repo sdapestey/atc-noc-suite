@@ -52,9 +52,7 @@ def create_app() -> Flask:
     @app.context_processor
     def inject_nav_tab():
         p = request.path or ""
-        if p.startswith("/dashboard/rama"):
-            tab = "rama"
-        elif p.startswith("/dashboard/olt"):
+        if p.startswith("/dashboard/olt"):
             tab = "olt"
         elif p.startswith("/dashboard/camino-optico"):
             tab = "camino"
@@ -72,7 +70,6 @@ def create_app() -> Flask:
             tab = "index"
         labels = {
             "index": "Consulta Potencias",
-            "rama": "RAMA / CTO",
             "olt": "OLT / LT",
             "camino": "Camino Optico",
             "historico": "Historico Potencias",
@@ -86,7 +83,6 @@ def create_app() -> Flask:
             "historico": "monitoreo",
             "radar": "monitoreo",
             "alarm_analyzer": "monitoreo",
-            "rama": "inventario",
             "olt": "inventario",
             "camino": "inventario",
             "altiplano": "inventario",

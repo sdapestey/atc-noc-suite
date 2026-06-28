@@ -473,6 +473,49 @@
     document.querySelectorAll("[data-consulta-cto-map]").forEach(bindLazyCtoMap);
   }
 
+  function _consultaCtoAddressLabel(el) {
+    var custom = el && el.getAttribute("data-consulta-address-label");
+    if (custom) return custom;
+    if (
+      el &&
+      (el.classList.contains("rama-cto-address") ||
+        el.classList.contains("consulta-cto-postal-row"))
+    ) {
+      return "Dirección (CTO)";
+    }
+    return "Dirección";
+  }
+
+  function _consultaCtoAddressHtml(el, valueHtml, muted) {
+    var label = _consultaCtoAddressLabel(el);
+    if (
+      el &&
+      (el.classList.contains("rama-cto-address") ||
+        el.classList.contains("consulta-cto-postal-row"))
+    ) {
+      return (
+        '<span class="rama-cto-address__label">' +
+        label +
+        "</span>" +
+        '<span class="rama-cto-address__value' +
+        (muted ? " muted" : "") +
+        '">' +
+        valueHtml +
+        "</span>"
+      );
+    }
+    return (
+      '<span class="consulta-cto-ficha__label">' +
+      label +
+      "</span>" +
+      '<span class="consulta-cto-ficha__value' +
+      (muted ? " consulta-cto-ficha__value--muted" : "") +
+      '">' +
+      valueHtml +
+      "</span>"
+    );
+  }
+
   function initConsultaCtoPostalRows() {
     document.querySelectorAll("[data-consulta-cto-postal-fetch]").forEach(function (el) {
       if (el.dataset.consultaPostalInit === "1") return;
@@ -480,9 +523,7 @@
       var cto = (el.getAttribute("data-cto") || "").trim();
       if (!cto) {
         el.classList.remove("consulta-cto-ficha__row--loading");
-        el.innerHTML =
-          '<span class="consulta-cto-ficha__label">Dirección</span>' +
-          '<span class="consulta-cto-ficha__value consulta-cto-ficha__value--muted">—</span>';
+        el.innerHTML = _consultaCtoAddressHtml(el, "—", true);
         return;
       }
       fetch(CTO_ADDRESS_URL + "?cto=" + encodeURIComponent(cto))
@@ -500,22 +541,14 @@
                     return String(s || "");
                   };
             var addr = esc(String(data.address).trim());
-            el.innerHTML =
-              '<span class="consulta-cto-ficha__label">Dirección</span>' +
-              '<span class="consulta-cto-ficha__value">' +
-              addr +
-              "</span>";
+            el.innerHTML = _consultaCtoAddressHtml(el, addr, false);
           } else {
-            el.innerHTML =
-              '<span class="consulta-cto-ficha__label">Dirección</span>' +
-              '<span class="consulta-cto-ficha__value consulta-cto-ficha__value--muted">Sin datos en CM</span>';
+            el.innerHTML = _consultaCtoAddressHtml(el, "Sin datos en CM", true);
           }
         })
         .catch(function () {
           el.classList.remove("consulta-cto-ficha__row--loading");
-          el.innerHTML =
-            '<span class="consulta-cto-ficha__label">Dirección</span>' +
-            '<span class="consulta-cto-ficha__value consulta-cto-ficha__value--muted">No se pudo cargar</span>';
+          el.innerHTML = _consultaCtoAddressHtml(el, "No se pudo cargar", true);
           delete el.dataset.consultaPostalInit;
         });
     });

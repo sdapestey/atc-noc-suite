@@ -39,37 +39,49 @@ def test_infer_camino_unknown():
     assert co.infer_camino_consulta_tipo("texto-sin-subcadena") is None
 
 
-def test_camino_consultar_sin_tipo_usa_inferencia(client, monkeypatch):
+def test_camino_consultar_solo_rama(client, monkeypatch):
     import web.routes as routes
 
-    def fake_cto(v):
-        assert v == "X-FATC-1-1"
-        return {"tipo": "cto", "cto": v}
+    def fake_rama(v):
+        assert v == "TG01-RATC-0-000808"
+        return {"tipo": "rama", "rama": v}
 
-    monkeypatch.setattr(routes, "dashboard_camino_optico_cto", fake_cto)
+    monkeypatch.setattr(routes, "dashboard_camino_optico_rama", fake_rama)
 
+    r = client.post(
+        "/dashboard/camino-optico/consultar",
+        json={"valor": "TG01-RATC-0-000808"},
+        content_type="application/json",
+    )
+    assert r.status_code == 200
+    assert r.get_json()["tipo"] == "rama"
+
+
+def test_camino_consultar_rechaza_cto(client):
     r = client.post(
         "/dashboard/camino-optico/consultar",
         json={"valor": "X-FATC-1-1"},
         content_type="application/json",
     )
-    assert r.status_code == 200
-    assert r.get_json()["tipo"] == "cto"
+    assert r.status_code == 400
+    assert "RATC" in r.get_json()["error"]
 
 
-def test_camino_consultar_lt_por_inferencia(client, monkeypatch):
-    import web.routes as routes
+def test_camino_consultar_rechaza_access_id(client):
+    r = client.post(
+        "/dashboard/camino-optico/consultar",
+        json={"tipo": "access_id", "valor": "1052404324"},
+        content_type="application/json",
+    )
+    assert r.status_code == 400
+    assert "RATC" in r.get_json()["error"]
 
-    def fake_lt(v):
-        assert v.strip() == "BA_OLTA_X.LT1"
-        return {"tipo": "lt", "lt": v.strip(), "resumen": {"rama_count": 0, "ramas": []}}
 
-    monkeypatch.setattr(routes, "dashboard_camino_optico_lt", fake_lt)
-
+def test_camino_consultar_rechaza_lt(client):
     r = client.post(
         "/dashboard/camino-optico/consultar",
         json={"valor": "  BA_OLTA_X.LT1  "},
         content_type="application/json",
     )
-    assert r.status_code == 200
-    assert r.get_json()["tipo"] == "lt"
+    assert r.status_code == 400
+    assert "RATC" in r.get_json()["error"]

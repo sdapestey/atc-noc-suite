@@ -76,20 +76,11 @@ def test_camino_optico_template_has_no_text_maps_links():
     assert "camino-popup-addr" in tpl
 
 
-def test_camino_optico_consultar_access_id_includes_cto_maps_url(client, monkeypatch):
+def test_camino_optico_consultar_access_id_rechazado(client, monkeypatch):
     import web.routes as routes
 
     def fake_access_id(_aid):
-        return {
-            "tipo": "access_id",
-            "detalle": {
-                "access_id": "105",
-                "location_description": "SF01-FATC-8-200189",
-                "path_atc": "SF01-RATC-0-000001",
-                "OPERADOR": "TASA",
-            },
-            "cto_maps_url": "https://www.google.com/maps/search/?api=1&query=-34.5%2C-58.6",
-        }
+        return {"tipo": "access_id", "detalle": {"access_id": "105"}}
 
     monkeypatch.setattr(routes, "dashboard_camino_optico_access_id", fake_access_id)
 
@@ -98,10 +89,8 @@ def test_camino_optico_consultar_access_id_includes_cto_maps_url(client, monkeyp
         json={"tipo": "access_id", "valor": "105"},
         content_type="application/json",
     )
-    assert r.status_code == 200
-    data = r.get_json()
-    assert data["cto_maps_url"] == "https://www.google.com/maps/search/?api=1&query=-34.5%2C-58.6"
-    assert data["tipo"] == "access_id"
+    assert r.status_code == 400
+    assert "RATC" in r.get_json()["error"]
 
 
 def test_camino_optico_template_access_id_loads_map():
