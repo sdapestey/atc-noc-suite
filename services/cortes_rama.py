@@ -59,7 +59,7 @@ _IMPACTO_LABELS = {
 _IMPACTO_RANK = {"MODERADO": 1, "URGENTE": 2, "EMERGENCIA": 3}
 _TIPO_EVENTO_RANK = {"fibra": 0, "luz": 1, "otro": 2}
 
-# Ventana ART para considerar cortes simultáneos (misma OLT, p. ej. 08:34 y 08:35).
+# Ventana ART para considerar cortes simultáneos (mismo sitio; gap <= 2 min entre alarmas).
 _CORTE_SIMULTANEO_VENTANA_MIN = 2
 
 
@@ -219,25 +219,94 @@ def _raised_local_minute_label(iso: str | None) -> str:
 def _ventana_corte_simultaneo(
     iso: str | None, *, ventana_min: int = _CORTE_SIMULTANEO_VENTANA_MIN
 ) -> str:
-    """Inicio de ventana ART (p. ej. 08:34 agrupa 08:34–08:35)."""
-    dt = _raised_as_utc_dt(iso)
-    if not dt:
-        return ""
-    local = dt.astimezone(_TZ_NOC)
-    bucket_min = (local.minute // ventana_min) * ventana_min
-    inicio = local.replace(minute=bucket_min, second=0, microsecond=0)
-    return inicio.strftime("%Y-%m-%d %H:%M")
+    """Etiqueta ART del instante (minuto) de una alarma."""
+    return _raised_local_minute_label(iso)
 
 
-def _cluster_evento_simultaneo_key(item: dict) -> str:
-    """Sitio principal + ventana ART + causa (varias OLT del mismo sitio suman)."""
-    ventana = _ventana_corte_simultaneo(item.get("raised"))
-    causa = str(item.get("causa") or "OTRO").strip().upper()
+def _corte_simultaneo_scope(item: dict) -> tuple[str, str]:
     sitio = str(item.get("principal") or "").strip()
     scope = sitio or str(item.get("olt") or "").strip()
-    if not scope or not ventana:
-        return ""
-    return f"{scope}|{ventana}|{causa}"
+    causa = str(item.get("causa") or "OTRO").strip().upper()
+    return scope, causa
+
+
+def _assign_cortes_simultaneos(
+    items: list[dict],
+    *,
+    ventana_sec: int | None = None,
+) -> tuple[dict[str, dict], dict[str, str]]:
+    """Agrupa cortes del mismo sitio y causa si caen a <=2 min entre alarmas consecutivas."""
+    if ventana_sec is None:
+        ventana_sec = _CORTE_SIMULTANEO_VENTANA_MIN * 60
+    groups: dict[tuple[str, str], list[dict]] = defaultdict(list)
+    for item in items:
+        scope, causa = _corte_simultaneo_scope(item)
+        if not scope or not item.get("raised"):
+            continue
+        groups[(scope, causa)].append(item)
+
+    buckets: dict[str, dict] = {}
+    pon_to_key: dict[str, str] = {}
+    seq = 0
+
+    def _flush_batch(scope: str, causa: str, batch: list[dict]) -> None:
+        nonlocal seq
+        if len(batch) < 2:
+            return
+        seq += 1
+        key = f"{scope}|{causa}|c{seq}"
+        ventana = _raised_local_minute_label(batch[0].get("raised"))
+        bucket = {
+            "cluster_key": key,
+            "ventana": ventana,
+            "causa": causa,
+            "principal": "",
+            "olts": set(),
+            "cortes": 0,
+            "clientes": 0,
+            "pons": [],
+        }
+        for item in batch:
+            bucket["cortes"] += 1
+            bucket["clientes"] += int(item.get("ont_total") or 0)
+            pk = str(item.get("pon_key") or "")
+            if pk:
+                bucket["pons"].append(pk)
+                pon_to_key[pk] = key
+            olt = str(item.get("olt") or "").strip()
+            if olt:
+                bucket["olts"].add(olt)
+            principal = str(item.get("principal") or "").strip()
+            if principal and not bucket["principal"]:
+                bucket["principal"] = principal
+        imp = _impacto_evento(bucket["clientes"])
+        bucket["impacto"] = imp
+        bucket["impacto_label"] = _IMPACTO_LABELS.get(imp, imp)
+        buckets[key] = bucket
+
+    for (scope, causa), group in groups.items():
+        group.sort(key=lambda x: (_raised_sort_ts(x.get("raised")), str(x.get("pon_key") or "")))
+        batch: list[dict] = []
+        prev_ts: float | None = None
+        for item in group:
+            ts = _raised_sort_ts(item.get("raised"))
+            if prev_ts is not None and ts - prev_ts > ventana_sec:
+                _flush_batch(scope, causa, batch)
+                batch = []
+            batch.append(item)
+            prev_ts = ts
+        _flush_batch(scope, causa, batch)
+
+    return buckets, pon_to_key
+
+
+def _cluster_evento_simultaneo_key(
+    item: dict, pon_to_key: dict[str, str] | None = None
+) -> str:
+    if pon_to_key is not None:
+        return pon_to_key.get(str(item.get("pon_key") or ""), "")
+    _buckets, mapping = _assign_cortes_simultaneos([item])
+    return mapping.get(str(item.get("pon_key") or ""), "")
 
 
 def _tipo_evento_desde_causa(causa: str | None) -> str:
@@ -284,55 +353,21 @@ def _enrich_item_impacto(item: dict) -> dict:
 
 
 def _build_clusters_simultaneos(items: list[dict]) -> dict[str, dict]:
-    buckets: dict[str, dict] = {}
-    for item in items:
-        key = _cluster_evento_simultaneo_key(item)
-        if not key:
-            continue
-        ventana = _ventana_corte_simultaneo(item.get("raised"))
-        causa = str(item.get("causa") or "OTRO").strip().upper()
-        bucket = buckets.setdefault(
-            key,
-            {
-                "cluster_key": key,
-                "ventana": ventana,
-                "causa": causa,
-                "principal": "",
-                "olts": set(),
-                "cortes": 0,
-                "clientes": 0,
-                "pons": [],
-            },
-        )
-        bucket["cortes"] += 1
-        bucket["clientes"] += int(item.get("ont_total") or 0)
-        pk = str(item.get("pon_key") or "")
-        if pk:
-            bucket["pons"].append(pk)
-        olt = str(item.get("olt") or "").strip()
-        if olt:
-            bucket["olts"].add(olt)
-        principal = str(item.get("principal") or "").strip()
-        if principal and not bucket["principal"]:
-            bucket["principal"] = principal
-    for bucket in buckets.values():
-        imp = _impacto_evento(bucket["clientes"])
-        bucket["impacto"] = imp
-        bucket["impacto_label"] = _IMPACTO_LABELS.get(imp, imp)
+    buckets, _ = _assign_cortes_simultaneos(items)
     return buckets
 
 
 def _aplicar_impacto_cortes_simultaneos(items: list[dict]) -> list[dict]:
     """Suma clientes de cortes en la misma ventana/sitio para nivel de impacto NOC."""
-    clusters = _build_clusters_simultaneos(items)
-    multi = {k: v for k, v in clusters.items() if int(v.get("cortes") or 0) >= 2}
+    clusters, pon_to_key = _assign_cortes_simultaneos(items)
     for item in items:
-        key = _cluster_evento_simultaneo_key(item)
-        cluster = multi.get(key)
+        key = pon_to_key.get(str(item.get("pon_key") or ""), "")
+        cluster = clusters.get(key)
         if not cluster:
             item["evento_simultaneo"] = False
             continue
         item["evento_simultaneo"] = True
+        item["evento_cluster_key"] = key
         item["evento_ventana"] = cluster["ventana"]
         item["evento_cortes"] = int(cluster["cortes"])
         item["evento_clientes"] = int(cluster["clientes"])
@@ -360,6 +395,7 @@ def _compute_totales(items: list[dict]) -> dict:
     }
     pon_seen: set[str] = set()
     ramas_impactadas: set[str] = set()
+    evento_impacto_seen: set[str] = set()
     for item in items:
         causa_code = str(item.get("causa") or "OTRO")
         totales["TOTAL"] += 1
@@ -373,7 +409,14 @@ def _compute_totales(items: list[dict]) -> dict:
         for r in item.get("ramas") or []:
             ramas_impactadas.add(str(r))
         totales["CLIENTES_AFECTADOS"] += ont_total
-        imp = str(item.get("impacto") or _clasificar_impacto(ont_total))
+        cluster_key = str(item.get("evento_cluster_key") or "").strip()
+        if cluster_key:
+            if cluster_key in evento_impacto_seen:
+                continue
+            evento_impacto_seen.add(cluster_key)
+            imp = str(item.get("impacto") or _clasificar_impacto(ont_total))
+        else:
+            imp = str(item.get("impacto_pon") or item.get("impacto") or _clasificar_impacto(ont_total))
         if imp in totales:
             totales[imp] += 1
     totales["PON_UNICOS"] = len(pon_seen)
@@ -771,7 +814,7 @@ def consultar_cortes_rama(
     )
     return get_cached_historico_potencias(
         get_dashboard_historico_cache_seconds(),
-        f"cortes_rama|v8|{cache_key}",
+        f"cortes_rama|v9|{cache_key}",
         lambda: _cortes_rama_uncached(
             causa=causa,
             principal=principal,

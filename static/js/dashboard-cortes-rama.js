@@ -3,7 +3,7 @@ let allItems = [];
 let currentPage = 0;
 let pageSize = 10;
 const PAGER_SHOW_ABOVE = 10;
-const _EVENTO_COLLAPSE_MIN = 3;
+const _EVENTO_COLLAPSE_MIN = 2;
 const _HORA_COLLAPSE_MIN = 1;
 const _SITIO_COLLAPSE_MIN = 12;
 const _eventoExpandedKeys = new Set();
@@ -693,9 +693,10 @@ function _renderEventosMasivos(eventos) {
   const banner = document.getElementById("cortes-eventos-banner");
   const list = document.getElementById("cortes-eventos-list");
   if (!banner || !list) return;
-  const rows = (eventos || []).filter(
-    (ev) => String(ev.impacto || "").toUpperCase() === "EMERGENCIA"
-  );
+  const rows = (eventos || []).filter((ev) => {
+    const imp = String(ev.impacto || "").toUpperCase();
+    return imp === "EMERGENCIA" || imp === "URGENTE";
+  });
   if (!rows.length) {
     banner.hidden = true;
     list.innerHTML = "";
@@ -1002,6 +1003,8 @@ function _renderMetricRowCells(entity, opts) {
 
 function _eventoClusterKey(row) {
   if (!row || !row.evento_simultaneo) return "";
+  const clusterKey = String(row.evento_cluster_key || "").trim();
+  if (clusterKey) return clusterKey;
   const sitio = String(row.principal || row.olt || "").trim();
   const ventana = String(row.evento_ventana || "").trim();
   const causa = String(row.evento_causa || row.causa || "OTRO")
@@ -1054,30 +1057,8 @@ function _aggregateEventoItems(items) {
 }
 
 function _buildDisplayBlocks(items) {
-  const eventoByKey = new Map();
-  const blocks = [];
-  const seenEvento = new Set();
-  (items || []).forEach((item) => {
-    const key = _eventoClusterKey(item);
-    if (key) {
-      if (!eventoByKey.has(key)) eventoByKey.set(key, []);
-      eventoByKey.get(key).push(item);
-      if (!seenEvento.has(key)) {
-        seenEvento.add(key);
-        blocks.push({ type: "evento", key });
-      }
-      return;
-    }
-    blocks.push({ type: "single", item });
-  });
-  return blocks.map((block) => {
-    if (block.type === "single") return block;
-    return {
-      type: "evento",
-      key: block.key,
-      items: eventoByKey.get(block.key) || [],
-    };
-  });
+  // Tabla: una fila por PON (como la GUI de Altiplano). La agrupación masiva va en el banner.
+  return (items || []).map((item) => ({ type: "single", item }));
 }
 
 function _groupLatestCleared(items) {
@@ -1242,7 +1223,14 @@ function _renderHourGroupRow(hourBlock, siteBlock) {
 }
 
 function _countPonsInBlocks(blocks) {
-  return (blocks || []).length;
+  let n = 0;
+  (blocks || []).forEach((block) => {
+    if (block.type === "evento") n += (block.items || []).length;
+    else if (block.type === "single") n += 1;
+    else if (block.type === "sitio") n += block.itemCount || 0;
+    else if (block.type === "hora") n += (block.items || []).length;
+  });
+  return n;
 }
 
 function _renderEventoGroupActions(items) {
@@ -1273,25 +1261,38 @@ function _renderEventoTableGroupRow(block) {
   const ventana = _formatVentanaArt(meta.evento_ventana || g.evento_ventana || "");
   const ponCount = (block.items || []).length;
   const expanded = _isEventoBlockExpanded(block);
+  const sitio = g.principal || meta.principal || meta.olt || "Evento masivo";
+  const oltCount = g.olt_count || 0;
+  const oltHint =
+    oltCount > 1
+      ? '<span class="muted">' + _esc(oltCount) + " OLT · </span>"
+      : "";
+  const summaryTitle =
+    _esc(sitio) +
+    " · " +
+    oltHint +
+    "<strong>" +
+    _esc(ponCount) +
+    " PON</strong> · <span class=\"mono\">" +
+    _esc(ventana) +
+    "</span> · <strong>" +
+    _esc(g.ont_total) +
+    "</strong> clientes";
   const toggleTitle = expanded
     ? "Ocultar detalle de PON"
     : "Mostrar " + ponCount + " PON del evento";
-  const title =
-    (g.principal || meta.principal || meta.olt || "Evento masivo") + " · " + ventana;
   const toggleBtn =
-    ponCount >= _EVENTO_COLLAPSE_MIN
-      ? '<button type="button" class="btn btn-ghost btn-sm cortes-evento-toggle" data-evento-key="' +
-        _esc(block.key) +
-        '" aria-expanded="' +
-        (expanded ? "true" : "false") +
-        '" title="' +
-        _esc(toggleTitle) +
-        '"><span class="cortes-evento-toggle__icon" aria-hidden="true">' +
-        (expanded ? "▾" : "▸") +
-        '</span><span class="mono">' +
-        _esc(ponCount) +
-        " PON</span></button>"
-      : "";
+    '<button type="button" class="btn btn-ghost btn-sm cortes-evento-toggle" data-evento-key="' +
+    _esc(block.key) +
+    '" aria-expanded="' +
+    (expanded ? "true" : "false") +
+    '" title="' +
+    _esc(toggleTitle) +
+    '"><span class="cortes-evento-toggle__icon" aria-hidden="true">' +
+    (expanded ? "▾" : "▸") +
+    '</span><span class="mono">' +
+    _esc(ponCount) +
+    " PON</span></button>";
   return (
     '<tr class="cortes-evento-row' +
     (expanded ? "" : " cortes-evento-row--collapsed") +
@@ -1301,10 +1302,10 @@ function _renderEventoTableGroupRow(block) {
     '<div class="cortes-group-head cortes-group-head--evento">' +
     '<span class="cortes-group-head__lead">' +
     toggleBtn +
-    '<strong class="cortes-group-head__title" title="' +
-    _esc(title) +
+    '<strong class="cortes-group-head__title cortes-group-head__title--evento" title="' +
+    _esc(sitio + " · " + ventana) +
     '">' +
-    _esc(title) +
+    summaryTitle +
     "</strong></span>" +
     (badges ? '<span class="cortes-group-head__badges">' + badges + "</span>" : "") +
     "</div></td>" +
@@ -1505,21 +1506,38 @@ function _renderCausaCell(row, opts) {
   return '<span class="cortes-causa-cell">' + parts.join("") + "</span>";
 }
 
-function _renderDataRow(row) {
+function _renderDataRow(row, opts) {
+  opts = opts || {};
+  const child = opts.child
+    ? " cortes-data-row--child" + (opts.nested ? " cortes-data-row--nested" : "")
+    : "";
   const nuevo = _isNuevo(row) ? " cortes-data-row--nuevo" : "";
-  const loc =
-    '<div class="cortes-loc"><span class="mono cortes-loc__olt">' +
-    _esc(row.olt) +
-    '</span><span class="cortes-loc__sub mono">LT ' +
-    _esc(row.lt) +
-    " · " +
-    _esc(row.pon_label || row.pon) +
-    "</span></div>";
-  const causaHtml = _renderCausaCell(row, {});
+  const loc = opts.child
+    ? '<span class="mono cortes-loc__pon">' + _esc(row.pon_label || "PON " + row.pon) + "</span>"
+    :
+        '<div class="cortes-loc"><span class="mono cortes-loc__olt">' +
+        _esc(row.olt) +
+        '</span><span class="cortes-loc__sub mono">LT ' +
+        _esc(row.lt) +
+        " · " +
+        _esc(row.pon_label || row.pon) +
+        "</span></div>";
+  const causaHtml = _renderCausaCell(row, {
+    child: opts.child,
+    group: opts.group,
+    groupChild: opts.child,
+  });
+  let trAttrs = "";
+  if (opts.eventoKey) {
+    trAttrs += ' data-evento-key="' + _esc(opts.eventoKey) + '"';
+  }
   return (
     '<tr class="cortes-data-row' +
+    child +
     nuevo +
-    '">' +
+    '"' +
+    trAttrs +
+    ">" +
     '<td class="cortes-col-causa">' +
     causaHtml +
     "</td>" +
@@ -1533,8 +1551,26 @@ function _renderDataRow(row) {
   );
 }
 
+function _renderDisplayBlock(block) {
+  if (block.type === "evento") {
+    let html = _renderEventoTableGroupRow(block);
+    if (_isEventoBlockExpanded(block)) {
+      const g = _aggregateEventoItems(block.items);
+      (block.items || []).forEach((row) => {
+        html += _renderDataRow(row, { child: true, group: g, eventoKey: block.key });
+      });
+    }
+    return html;
+  }
+  if (block.type === "single") {
+    return _renderDataRow(block.item);
+  }
+  return "";
+}
+
 function _displayRowsForMode() {
-  const blocks = (allItems || []).map((item) => ({ type: "single", item }));
+  const blocks = _buildDisplayBlocks(allItems || []);
+  _pruneEventoCollapseKeys(blocks);
   return { mode: "flat", blocks };
 }
 
@@ -1587,7 +1623,7 @@ function _renderTablePage() {
   const pageBlocks = blocks.slice(start, start + pageSize);
   let html = "";
   pageBlocks.forEach((block) => {
-    html += _renderDataRow(block.item);
+    html += _renderDisplayBlock(block);
   });
 
   tbody.innerHTML = html;
@@ -1785,11 +1821,16 @@ function fetchCortes(opts) {
         _cortesToast(toastMsg, t.EMERGENCIA ? { variant: "error", durationMs: 4500 } : undefined);
       }
       const eventos = data.eventos_masivos || [];
-      if (!silent && eventos.some((ev) => ev.impacto === "EMERGENCIA")) {
+      if (!silent && eventos.some((ev) => ev.impacto === "EMERGENCIA" || ev.impacto === "URGENTE")) {
         const top = eventos[0];
         _cortesToast(
           "Evento masivo: " + top.cortes + " PON · " + top.clientes + " clientes (" + top.minute + ")",
-          { variant: "error", durationMs: 6000, create: true, id: "cortes-evento-toast" }
+          {
+            variant: top.impacto === "EMERGENCIA" ? "error" : "warning",
+            durationMs: 6000,
+            create: true,
+            id: "cortes-evento-toast",
+          }
         );
       }
       if (!_restoringState) _saveStateSoon();

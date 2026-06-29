@@ -781,6 +781,52 @@ def test_aplicar_impacto_cortes_simultaneos_suma_clientes():
     assert out[0]["evento_cortes"] == 2
 
 
+def test_aplicar_impacto_cortes_simultaneos_09_43_y_09_44_mismo_sitio():
+    """Tigre: PON a las 09:43 y 09:44 ART deben sumar clientes (frontera de minuto)."""
+    from services.cortes_rama import _aplicar_impacto_cortes_simultaneos, _enrich_item_impacto
+
+    base = {
+        "olt": "BA_OLTA_TG01_02",
+        "principal": "Tigre",
+        "causa": "LOSI_LOBI",
+    }
+    items = [
+        _enrich_item_impacto(
+            {**base, "raised": "2026-06-29T12:43:00.000Z", "ont_total": 15, "pon_key": "A"}
+        ),
+        _enrich_item_impacto(
+            {**base, "raised": "2026-06-29T12:44:00.000Z", "ont_total": 11, "pon_key": "B"}
+        ),
+        _enrich_item_impacto(
+            {**base, "raised": "2026-06-29T12:44:00.000Z", "ont_total": 3, "pon_key": "C"}
+        ),
+    ]
+    out = _aplicar_impacto_cortes_simultaneos(items)
+    assert all(r["evento_simultaneo"] for r in out)
+    assert out[0]["evento_cortes"] == 3
+    assert out[0]["evento_clientes"] == 29
+    assert out[0]["impacto"] == "URGENTE"
+    assert out[0]["evento_cluster_key"].startswith("Tigre|LOSI_LOBI|")
+
+
+def test_compute_totales_cuenta_impacto_por_evento_masivo():
+    """Tres PON del mismo evento urgente cuentan como 1 urgente en totales."""
+    from services.cortes_rama import _aplicar_impacto_cortes_simultaneos, _compute_totales, _enrich_item_impacto
+
+    base = {"olt": "BA_OLTA_TG01_02", "principal": "Tigre", "causa": "LOSI_LOBI"}
+    items = [
+        _enrich_item_impacto({**base, "raised": "2026-06-29T12:43:00.000Z", "ont_total": 15, "pon_key": "A"}),
+        _enrich_item_impacto({**base, "raised": "2026-06-29T12:44:00.000Z", "ont_total": 11, "pon_key": "B"}),
+        _enrich_item_impacto({**base, "raised": "2026-06-29T12:44:00.000Z", "ont_total": 3, "pon_key": "C"}),
+    ]
+    out = _aplicar_impacto_cortes_simultaneos(items)
+    totales = _compute_totales(out)
+    assert totales["TOTAL"] == 3
+    assert totales["CLIENTES_AFECTADOS"] == 29
+    assert totales["URGENTE"] == 1
+    assert totales["MODERADO"] == 0
+
+
 def test_sort_cortes_items():
     from services.cortes_rama import _sort_cortes_items
 
