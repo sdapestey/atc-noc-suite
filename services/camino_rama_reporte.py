@@ -15,12 +15,12 @@ from .camino_gis import (
     _quote_ident,
 )
 
-_FOSC_RE = re.compile(r"SF\d+010101-FOSC-", re.I)
+_FOSC_RE = re.compile(r"[A-Z]{2}\d{6}-FOSC-", re.I)
 _GPON_PORT_RE = re.compile(r"GPON-(\d+)", re.I)
 
 
 _FOSC_ID_RE = re.compile(
-    r"([A-Z]{2}010101-FOSC-[0-9]{2}-[0-9]{6}-[0-9]{4})",
+    r"([A-Z]{2}\d{6}-FOSC-[0-9]{2}-[0-9]{6}-[0-9]{4})",
     re.I,
 )
 _FEL_RE = re.compile(r"FEL\d+", re.I)

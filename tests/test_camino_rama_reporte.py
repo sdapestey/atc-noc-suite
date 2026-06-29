@@ -1,5 +1,18 @@
 """Reporte de rama CM (trazado + inventario)."""
-from services.camino_rama_reporte import consultar_reporte_rama_cm
+from services.camino_rama_reporte import _FOSC_ID_RE, consultar_reporte_rama_cm
+
+
+def test_fosc_id_re_sm02_site_code():
+    """SM02 usa prefijo 020101, no 010101 como SF01."""
+    assert _FOSC_ID_RE.search("SM020101-FOSC-19-003103-0001").group(1) == (
+        "SM020101-FOSC-19-003103-0001"
+    )
+    assert _FOSC_ID_RE.search(
+        "ARG;BAS;SM;SM02;01;19;SM020101-FOSC-19-022796-0001"
+    ).group(1) == "SM020101-FOSC-19-022796-0001"
+    assert _FOSC_ID_RE.search("SF010101-FOSC-07-002759-0001").group(1) == (
+        "SF010101-FOSC-07-002759-0001"
+    )
 
 
 def test_consultar_reporte_rama_cm_vacio():
@@ -32,3 +45,24 @@ def test_consultar_reporte_rama_cm_775_db():
     if fosc_rows:
         assert "direccion" in fosc_rows[0]
         assert "lat" in fosc_rows[0]
+
+
+def test_consultar_reporte_rama_cm_sm02_1167_db():
+    rama = "SM02-RATC-0-001167"
+    try:
+        out = consultar_reporte_rama_cm(rama)
+    except Exception:
+        return
+    if not out.get("ok"):
+        return
+    traz = out.get("trazado") or []
+    fosc = [r for r in traz if r.get("etapa") == "fosc"]
+    assert len(fosc) >= 4
+    filas = out.get("filas_ruta_fisica") or []
+    botellas = [
+        f
+        for f in filas
+        if f.get("etapa") == "fosc"
+        and "FEL" in (f.get("componente") or "").upper()
+    ]
+    assert len(botellas) >= 4
