@@ -3721,7 +3721,12 @@
       var html = "";
       var pi = data.planta_interna;
       if (pi && pi.ok) {
-        var foscN = (pi.fosc && pi.fosc.ok && pi.fosc.markers) ? pi.fosc.markers.length : 0;
+        var foscN = rutaFisicaFilasBotellas(
+          ((data.reporte_rama || {}).filas_ruta_fisica) || []
+        ).length;
+        if (!foscN && pi.fosc && pi.fosc.ok && pi.fosc.markers) {
+          foscN = pi.fosc.markers.filter(function (m) { return !m.es_fusion; }).length;
+        }
         html +=
           '<p class="camino-gis-map-notes"><span class="camino-masivo-legend-fosc-swatch" aria-hidden="true"></span> ' +
           esc(String(foscN)) +

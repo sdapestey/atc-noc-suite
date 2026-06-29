@@ -219,8 +219,11 @@ def _componente_cm_desde_filas(fullname_a: object, fullname_b: object) -> str:
     return ""
 
 
+_FATC3_ALIAS_RE = re.compile(r"^[A-Z]{2}[0-9]+-FATC-3-", re.I)
+
+
 def _es_etiqueta_alias_cm(etiqueta: str) -> bool:
-    return bool(re.match(r"^SF\d+-FATC-3-", (etiqueta or "").strip(), re.I))
+    return bool(_FATC3_ALIAS_RE.match((etiqueta or "").strip()))
 
 
 def _alias_visible_cm(etiqueta: str, nombre_atc: str) -> str:
@@ -295,7 +298,7 @@ def consultar_fosc_camino_logico_rama(rama: str) -> dict[str, Any]:
               AND f.location_description IS NOT NULL
               AND TRIM(f.location_description) <> ''
               AND (
-                f.location_description ~ '^SF[0-9]+-FATC-3-'
+                f.location_description ~ '^[A-Z]{{2}}[0-9]+-FATC-3-'
                 OR f.location_description ~ '^[A-Za-z0-9]{{2,12}}-R[0-9]+-[0-9]{{3}}$'
               )
             GROUP BY f.location_description

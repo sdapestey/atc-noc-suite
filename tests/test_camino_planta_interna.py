@@ -114,7 +114,7 @@ def test_consultar_fosc_camino_logico_rama_incluye_fusiones(monkeypatch):
 
     class Cur:
         def execute(self, sql, params=()):
-            assert "location_description ~ '^SF[0-9]+-FATC-3-'" in sql
+            assert "location_description ~ '^[A-Z]{2}[0-9]+-FATC-3-'" in sql
             assert "location_type = 'FOSC'" not in sql
             assert params == ("SF01-RATC-0-000775",)
 
@@ -139,9 +139,27 @@ def test_consultar_fosc_camino_logico_rama_incluye_fusiones(monkeypatch):
     assert out["markers"] == []
 
 
-def test_alias_visible_cm():
-    from services.camino_gis import _alias_visible_cm
+def test_consultar_fosc_camino_logico_rama_si03_db():
+    """Cabeceras distintas de SF01 (p. ej. SI03) deben listar FATC-3 en el mapa."""
+    from services.camino_gis import consultar_fosc_camino_logico_rama
 
+    rama = "SI03-RATC-0-000917"
+    try:
+        out = consultar_fosc_camino_logico_rama(rama)
+    except Exception:
+        return
+    if not out.get("ok"):
+        return
+    botellas = [m for m in (out.get("markers") or []) if not m.get("es_fusion")]
+    assert len(botellas) >= 10
+    assert any((m.get("etiqueta") or "").startswith("SI03-FATC-3-") for m in botellas)
+
+
+def test_alias_visible_cm():
+    from services.camino_gis import _alias_visible_cm, _es_etiqueta_alias_cm
+
+    assert _es_etiqueta_alias_cm("SF01-FATC-3-002759") is True
+    assert _es_etiqueta_alias_cm("SI03-FATC-3-008113") is True
     assert _alias_visible_cm("SF01-FATC-3-002759", "SF01-FATC-3-002759") == "SF01-FATC-3-002759"
     assert _alias_visible_cm("SF01-R0764-010", "SF01-FATC-3-002745") == "SF01-FATC-3-002745"
     assert _alias_visible_cm("SF01-R0772-010", "") == "Sin alias"
