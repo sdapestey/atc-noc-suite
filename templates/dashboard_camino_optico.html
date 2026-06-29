@@ -590,6 +590,7 @@
       return /FEL/.test(comp);
     });
   }
+  window.rutaFisicaFilasBotellas = rutaFisicaFilasBotellas;
 
   function rutaFisicaCoordsText(row) {
     var la = row.lat;
@@ -3721,9 +3722,12 @@
       var html = "";
       var pi = data.planta_interna;
       if (pi && pi.ok) {
-        var foscN = rutaFisicaFilasBotellas(
-          ((data.reporte_rama || {}).filas_ruta_fisica) || []
-        ).length;
+        var rfBotellas =
+          window.rutaFisicaFilasBotellas ||
+          function (filas) {
+            return filas || [];
+          };
+        var foscN = rfBotellas(((data.reporte_rama || {}).filas_ruta_fisica) || []).length;
         if (!foscN && pi.fosc && pi.fosc.ok && pi.fosc.markers) {
           foscN = pi.fosc.markers.filter(function (m) { return !m.es_fusion; }).length;
         }
@@ -3929,11 +3933,14 @@
             if (mapPanel) void mapPanel.offsetHeight;
             caminoPrepareMapLayout(ensureMap());
             drawOnMap(gisMap);
-          } catch (_mapErr) {
+          } catch (mapErr) {
             hideCaminoMapLoading();
             if (gisSide) {
               gisSide.innerHTML =
                 '<div class="err">No se pudo inicializar el mapa (error inesperado).</div>';
+            }
+            if (typeof console !== "undefined" && console.error) {
+              console.error("camino map init", mapErr);
             }
           }
         });
@@ -3942,11 +3949,14 @@
       try {
         caminoPrepareMapLayout(gisMap);
         drawOnMap(gisMap);
-      } catch (_mapErr2) {
+      } catch (mapErr2) {
         hideCaminoMapLoading();
         if (gisSide) {
           gisSide.innerHTML =
             '<div class="err">No se pudo dibujar el mapa (error inesperado).</div>';
+        }
+        if (typeof console !== "undefined" && console.error) {
+          console.error("camino map draw", mapErr2);
         }
       }
     }
