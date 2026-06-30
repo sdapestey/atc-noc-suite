@@ -67,6 +67,7 @@ def test_consultar_access_id_detalle_desde_bajada_inventario_con_fila(monkeypatc
         "BA_OLTA_SF01_01-1-2-3:1-1",
         "SF01-RATC-0-000308",
         "IN SERVICE",
+        "04A5E2A22C5E80",
         "ALCLF00ABCD12",
         "BA_OLTA_SF01_01-1-2-3:1-1",
         1001,
@@ -78,6 +79,7 @@ def test_consultar_access_id_detalle_desde_bajada_inventario_con_fila(monkeypatc
     assert out["OPERADOR"] == "TASA"
     assert out["CTO"] == "SF01-FATC-8-200189"
     assert out["RAMA"] == "SF01-RATC-0-000308"
+    assert out["TAG_NFC"] == "04A5E2A22C5E80"
     assert out["Status"] == "IN SERVICE"
     assert "BA_OLTA_SF01_01-1-2-3" in out["ONT"]
     assert out["SN"] == "ALCLF00ABCD12"
@@ -99,6 +101,7 @@ def test_consultar_access_id_detalle_desde_bajada_case_insensitive(monkeypatch):
         "BA_OLTA_SF01_01-1-2-3:1-1",
         "SF01-RATC-0-000308",
         "IN SERVICE",
+        "04A5E2A22C5E80",
         "ALCLF00ABCD12",
         "BA_OLTA_SF01_01-1-2-3:1-1",
         1001,
@@ -123,6 +126,7 @@ def test_enrich_detalle_no_sobrescribe_operador_con_cero_de_fat(monkeypatch):
         None,
         "ES01-RATC-0-000001",
         "IN SERVICE",
+        None,
         "MSTC8CBDAFC4",
         "BA_OLTA_ES01_01-1-4-2-3:1-1",
         1001,
@@ -151,6 +155,7 @@ def test_consultar_access_id_detalle_operatorid_cero_usa_serial_e_invocator(monk
         None,
         "ES01-RATC-0-000001",
         "IN SERVICE",
+        None,
         "MSTC8CBDAFC4",
         "BA_OLTA_ES01_01-1-4-2-3:1-1",
         1001,
@@ -179,6 +184,7 @@ def test_consultar_access_id_detalle_desde_bajada_prefiere_cm_description(monkey
         None,
         "HEXCTO",
         "TG01-FATC-8-100987",
+        None,
         None,
         None,
         None,
@@ -661,6 +667,7 @@ def test_consultar_access_id_desde_alias_fallback_bajada_ok(monkeypatch):
         "BA_OLTA_SM01_03-1-3-3",
         "ALCLF00ABCD12",
         4000,
+        None,
     )
 
     @contextmanager

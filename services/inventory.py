@@ -140,6 +140,14 @@ def _operador_desde_operatorid_cell(op_raw) -> str:
         return nombre_operador(s)
 
 
+def _nfc_tag_display(val) -> str | None:
+    """TAG NFC de inventario FAT (cm.inventory_fat_occupation.nfc_tag_id)."""
+    if val is None:
+        return None
+    s = str(val).strip()
+    return s or None
+
+
 def _operator_id_efectivo_desde_bajada(b_operatorid, invocator_system) -> Any:
     """Prioriza invocator_system (inventario activo) si operatorid en aux es 0 o vacío."""
     for candidate in (invocator_system, b_operatorid):
@@ -323,6 +331,7 @@ def _fetch_row_bajada_inventario_detalle(cur, aid: str):
                     b.object_name,
                     f.path_atc,
                     f.status,
+                    f.nfc_tag_id,
                     s.serial_number,
                     s.object_name,
                     COALESCE(
@@ -372,6 +381,7 @@ def _dict_detalle_desde_bajada_inventario_row(row, aid: str) -> dict:
         obj_raw,
         path_atc,
         fat_status,
+        nfc_tag_id,
         serial_number,
         serial_object_name,
         invocator_system,
@@ -397,6 +407,7 @@ def _dict_detalle_desde_bajada_inventario_row(row, aid: str) -> dict:
         "Status": status_disp,
         "CTO": cto_display,
         "RAMA": rama_val,
+        "TAG_NFC": _nfc_tag_display(nfc_tag_id),
         "ONT": ont_ui or "—",
         "SN": sn,
         "TX": None,
@@ -641,6 +652,8 @@ def _enrich_detalle_con_inventario_activo(det: dict, aid: str) -> dict:
     st = str(det.get("Status") or "").strip()
     if st == "Registro aux.bajada_inventario" and fat.get("Status"):
         det["Status"] = fat["Status"]
+    if not det.get("TAG_NFC") and fat.get("TAG_NFC"):
+        det["TAG_NFC"] = fat["TAG_NFC"]
     return det
 
 
@@ -747,7 +760,7 @@ def _consultar_access_id_estructura_con_cursor(cur, access_id) -> dict | None:
     if not row:
         return None
 
-    aid, status, cto, rama, obj_raw, obj_ui, serial_number, op_id = row
+    aid, status, cto, rama, obj_raw, obj_ui, serial_number, op_id, nfc_tag_id = row
     sn = (str(serial_number).strip() if serial_number else "") or obj_ui
 
     return {
@@ -756,6 +769,7 @@ def _consultar_access_id_estructura_con_cursor(cur, access_id) -> dict | None:
         "Status": status,
         "CTO": cto,
         "RAMA": rama,
+        "TAG_NFC": _nfc_tag_display(nfc_tag_id),
         "ONT": obj_ui,
         "SN": sn,
         "TX": None,
@@ -963,7 +977,7 @@ def consultar_access_id_desde_alias(alias: str) -> dict | None:
     if not row:
         return None
 
-    aid, status, cto, rama, obj_raw, obj_ui, serial_number, op_id = row
+    aid, status, cto, rama, obj_raw, obj_ui, serial_number, op_id, nfc_tag_id = row
     sn = (str(serial_number).strip() if serial_number else "") or obj_ui
     return {
         "AID": str(aid),
@@ -971,6 +985,7 @@ def consultar_access_id_desde_alias(alias: str) -> dict | None:
         "Status": status,
         "CTO": cto,
         "RAMA": rama,
+        "TAG_NFC": _nfc_tag_display(nfc_tag_id),
         "ONT": obj_ui or "—",
         "SN": sn or "—",
         "TX": None,

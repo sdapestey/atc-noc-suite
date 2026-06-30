@@ -33,6 +33,7 @@
     toast("Reinyectando tasa-composite: eliminando, recreando y verificando…", {
       variant: "info",
       durationMs: 0,
+      dismissible: false,
       id: REINYECTION_TOAST_ID,
     });
   }
@@ -43,6 +44,8 @@
     toast("OK · " + detail, {
       variant: "success",
       durationMs: 12000,
+      dismissible: true,
+      keepVisible: true,
       id: REINYECTION_TOAST_ID,
     });
   }
@@ -51,6 +54,7 @@
     toast(msg || "No se pudo reinyectar.", {
       variant: "error",
       durationMs: 14000,
+      dismissible: true,
       id: REINYECTION_TOAST_ID,
     });
   }
@@ -133,6 +137,34 @@
     if (!btn) return;
     btn.classList.toggle("altiplano-busy-spin", !!on);
     btn.disabled = !!on;
+    btn.setAttribute("aria-busy", on ? "true" : "false");
+  }
+
+  function reinyeccionBtn(actionsEl) {
+    if (!actionsEl || !actionsEl.querySelector) return null;
+    return actionsEl.querySelector('[data-consulta-index-tasa-act="reinyeccion"]');
+  }
+
+  function setReinyeccionInFlight(actionsEl, on, btn) {
+    if (actionsEl) actionsEl._reinyeccionInFlight = !!on;
+    setBtnBusy(btn || reinyeccionBtn(actionsEl), !!on);
+  }
+
+  function finishReinyeccionSuccess(actionsEl, json) {
+    showReinyeccionOk(json);
+    if (actionsEl) actionsEl._reinyeccionInFlight = false;
+    setBtnBusy(reinyeccionBtn(actionsEl), false);
+  }
+
+  function finishReinyeccionFailure(actionsEl, msg) {
+    if (actionsEl) actionsEl._reinyeccionInFlight = false;
+    showReinyeccionError(msg);
+    setBtnBusy(reinyeccionBtn(actionsEl), false);
+  }
+
+  function finishReinyeccionCancelled(actionsEl) {
+    if (actionsEl) actionsEl._reinyeccionInFlight = false;
+    setBtnBusy(reinyeccionBtn(actionsEl), false);
   }
 
   function wireConfirm() {
@@ -580,6 +612,7 @@
         opts.tasaHsi && typeof opts.tasaHsi === "object" ? Object.assign({}, opts.tasaHsi) : null,
       intent_type: "tasa-composite",
     };
+    if (container._reinyeccionInFlight) return;
     var extra =
       ' data-consulta-index-tasa-scope="vno" data-operator="' +
       escAttr(container._tasaRowCtx.operator) +
@@ -653,19 +686,22 @@
         });
       },
       onCommitStart: function () {
-        setBtnBusy(btn, true);
+        setReinyeccionInFlight(actionsEl, true, btn);
         showReinyeccionProgress();
       },
       onSuccess: function (json) {
-        showReinyeccionOk(json);
-      },
-      onFinally: function () {
-        setBtnBusy(btn, false);
+        finishReinyeccionSuccess(actionsEl, json);
       },
     }).catch(function (err) {
-      if (err && err.message === "cancelled") return;
-      if (err && err.authError) return;
-      showReinyeccionError(err.message);
+      if (err && err.message === "cancelled") {
+        finishReinyeccionCancelled(actionsEl);
+        return;
+      }
+      if (err && err.authError) {
+        finishReinyeccionCancelled(actionsEl);
+        return;
+      }
+      finishReinyeccionFailure(actionsEl, err.message);
     });
   }
 

@@ -302,6 +302,11 @@
 
 
 
+.noc-toast--locked .noc-toast__close,
+.noc-toast--locked .altiplano-consulta-toast__close {
+  display: none !important;
+}
+
 .noc-toast--info {
 
   border-color: var(--border-default);

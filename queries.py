@@ -18,7 +18,8 @@ QUERIES = {
             -- Serial real de ONT (fuente principal para SN en UI)
             s.serial_number AS serial_number,
 
-            COALESCE(o.invocator_system, b_aid.operatorid) AS invocator_system
+            COALESCE(o.invocator_system, b_aid.operatorid) AS invocator_system,
+            f.nfc_tag_id
         FROM cm.inventory_fat_occupation f
         LEFT JOIN altiplano.serial s
                ON s.access_id = f.access_id
@@ -73,7 +74,8 @@ QUERIES = {
             s.object_name AS object_name_raw,
             REPLACE(s.object_name, ':1-1', '') AS object_name_ui,
             s.serial_number AS serial_number,
-            o.invocator_system
+            o.invocator_system,
+            f.nfc_tag_id
         FROM cm.inventory_fat_occupation f
         LEFT JOIN altiplano.serial s
                ON s.access_id = f.access_id
@@ -106,7 +108,8 @@ QUERIES = {
             s.object_name AS object_name_raw,
             REPLACE(s.object_name, ':1-1', '') AS object_name_ui,
             s.serial_number AS serial_number,
-            o.invocator_system
+            o.invocator_system,
+            f.nfc_tag_id
         FROM cm.inventory_fat_occupation f
         LEFT JOIN altiplano.serial s
                ON s.access_id = f.access_id

@@ -36,7 +36,7 @@ def test_access_id_uses_serial_number_for_sn(monkeypatch):
             (
                 "105", "IN SERVICE", "TG01-FATC-8-100987", "TG01-RATC-0-000308",
                 "BA_OLTA_TG01_02:1-1-2-15-8", "BA_OLTA_TG01_02-2-15-8",
-                "ALCLF00DBEEF", 1001,
+                "ALCLF00DBEEF", 1001, None,
             )
         ]
     ]
@@ -56,7 +56,7 @@ def test_access_id_sn_fallback_to_object_name_ui(monkeypatch):
             (
                 "105", "IN SERVICE", "TG01-FATC-8-100987", "TG01-RATC-0-000308",
                 "BA_OLTA_TG01_02:1-1-2-15-8", "BA_OLTA_TG01_02-2-15-8",
-                None, 1001,
+                None, 1001, None,
             )
         ]
     ]

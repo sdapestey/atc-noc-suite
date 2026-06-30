@@ -118,7 +118,7 @@
 {% include 'partials/noc_head.html' %}
 {% set leaflet_rama_map_css = true %}
 {% include 'partials/head_leaflet.html' %}
-<script src="{{ url_for('static', filename='js/noc-tools.js') }}?v=noc13"></script>
+<script src="{{ url_for('static', filename='js/noc-tools.js') }}?v=noc15"></script>
 <script src="{{ url_for('static', filename='js/consulta-index-map.js') }}?v=pon41"></script>
 <script src="{{ url_for('static', filename='js/consulta-altiplano-auth.js') }}?v=pon12"></script>
 <script>
@@ -136,7 +136,7 @@ window.__CONSULTA_INDEX_CFG__ = {
 {% if consulta_row_counts %}
 <script defer src="{{ url_for('static', filename='js/consulta-masivo-ui.js') }}?v=8"></script>
 {% endif %}
-<script defer src="{{ url_for('static', filename='js/consulta-tasa-composite-actions.js') }}?v=7"></script>
+<script defer src="{{ url_for('static', filename='js/consulta-tasa-composite-actions.js') }}?v=11"></script>
 <script defer src="{{ url_for('static', filename='js/consulta-index.js') }}?v=pon41"></script>
 </head>
 
@@ -612,7 +612,7 @@ window.__CONSULTA_INDEX_CFG__ = {
           <tr><th>Operador</th><td id="{{ sec }}-operador-value">{{ c.resultado.OPERADOR }}</td></tr>
           <tr><th>Status</th><td id="{{ sec }}-status-value">{{ c.resultado.Status }}</td></tr>
           <tr><th>CTO</th><td class="mono">{{ c.resultado.CTO }}</td></tr>
-          <tr><th>RAMA</th><td class="mono">{{ c.resultado.RAMA or "—" }}</td></tr>
+          <tr><th>RAMA</th><td class="mono">{{ c.resultado.RAMA or "—" }}{% if c.resultado.RAMA %} | TAG NFC: {{ c.resultado.TAG_NFC or "—" }}{% endif %}</td></tr>
           <tr id="{{ sec }}-ont-single-row" hidden><th>ONT (INP)</th><td id="{{ sec }}-ont-value" class="mono">{{ c.resultado.ONT or "—" }}</td></tr>
           <tr id="{{ sec }}-ont-postgres-row"><th>ONT (Postgres)</th><td id="{{ sec }}-ont-postgres-value" class="mono">{{ c.resultado.ONT or "—" }}</td></tr>
           <tr id="{{ sec }}-ont-altiplano-row"><th>ONT (INP)</th><td id="{{ sec }}-ont-altiplano-value" class="mono{% if c.resultado.Status != 'FREE' %} consulta-potencia-loading{% endif %}"{% if c.resultado.Status != 'FREE' %} aria-busy="true" aria-label="Cargando ONT INP"{% endif %}>{% if c.resultado.Status == 'FREE' %}—{% else %}{{ consulta_potencia_spinner }}{% endif %}</td></tr>

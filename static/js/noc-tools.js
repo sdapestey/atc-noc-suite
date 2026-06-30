@@ -179,6 +179,19 @@
     return el.querySelector(".noc-toast__close") || el.querySelector(".altiplano-consulta-toast__close");
   }
 
+  function setToastDismissible(el, dismissible) {
+    if (!el) return;
+    const locked = dismissible === false;
+    el.classList.toggle("noc-toast--locked", locked);
+    el.setAttribute("aria-live", locked ? "assertive" : "polite");
+    const closeBtn = _toastCloseEl(el);
+    if (closeBtn) {
+      closeBtn.hidden = locked;
+      closeBtn.disabled = locked;
+      closeBtn.setAttribute("aria-hidden", locked ? "true" : "false");
+    }
+  }
+
   function ensureToastStructure(el) {
     if (!el) return null;
     if (_toastTextEl(el)) return el;
@@ -201,6 +214,7 @@
     const closeBtn = _toastCloseEl(el);
     if (closeBtn) {
       closeBtn.addEventListener("click", function () {
+        if (el.classList.contains("noc-toast--locked")) return;
         hideToast(el);
       });
     }
@@ -208,9 +222,11 @@
     return el;
   }
 
-  function hideToast(elOrId) {
+  function hideToast(elOrId, opts) {
+    opts = opts || {};
     const el = _toastEl(elOrId);
     if (!el) return;
+    if (el.classList.contains("noc-toast--locked") && opts.force !== true) return;
     const key = el.id || el;
     el.classList.remove("is-visible", "show", "historico-toast--show");
     if (_toastTimers.has(key)) {
@@ -255,14 +271,21 @@
       el.classList.add("altiplano-consulta-toast--" + variant);
     }
 
+    setToastDismissible(el, opts.dismissible !== false);
+
     resetToastAnchor(el);
     positionToastNearPointer(el, opts);
 
     el.hidden = false;
-    el.classList.remove("show", "historico-toast--show");
-    requestAnimationFrame(function () {
+    const keepVisible = opts.keepVisible === true && el.classList.contains("is-visible");
+    if (!keepVisible) {
+      el.classList.remove("show", "historico-toast--show");
+      requestAnimationFrame(function () {
+        el.classList.add("is-visible");
+      });
+    } else {
       el.classList.add("is-visible");
-    });
+    }
 
     const key = el.id || el;
     if (_toastTimers.has(key)) {
