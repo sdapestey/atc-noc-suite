@@ -615,8 +615,8 @@ window.__CONSULTA_INDEX_CFG__ = {
           <tr><th>AID</th><td id="{{ sec }}-aid-value" class="mono">{{ c.resultado.AID }}</td></tr>
           <tr><th>Operador</th><td id="{{ sec }}-operador-value">{{ c.resultado.OPERADOR }}</td></tr>
           <tr><th>Status</th><td id="{{ sec }}-status-value">{{ c.resultado.Status }}</td></tr>
-          <tr><th>CTO</th><td class="mono">{{ c.resultado.CTO }}</td></tr>
-          <tr><th>RAMA</th><td class="mono">{{ c.resultado.RAMA or "—" }}{% if c.resultado.RAMA %} | TAG NFC: {{ c.resultado.TAG_NFC or "—" }}{% endif %}</td></tr>
+          <tr><th>CTO</th><td class="mono">{{ c.resultado.CTO or "—" }}{% if c.resultado.CTO and c.resultado.CTO != "—" %} | TAG NFC: {{ c.resultado.TAG_NFC or "—" }}{% endif %}</td></tr>
+          <tr><th>RAMA</th><td class="mono">{{ c.resultado.RAMA or "—" }}</td></tr>
           <tr id="{{ sec }}-ont-single-row" hidden><th>ONT (INP)</th><td id="{{ sec }}-ont-value" class="mono">{{ c.resultado.ONT or "—" }}</td></tr>
           <tr id="{{ sec }}-ont-postgres-row"><th>ONT (Postgres)</th><td id="{{ sec }}-ont-postgres-value" class="mono">{{ c.resultado.ONT or "—" }}</td></tr>
           <tr id="{{ sec }}-ont-altiplano-row"><th>ONT (INP)</th><td id="{{ sec }}-ont-altiplano-value" class="mono{% if c.resultado.Status != 'FREE' %} consulta-potencia-loading{% endif %}"{% if c.resultado.Status != 'FREE' %} aria-busy="true" aria-label="Cargando ONT INP"{% endif %}>{% if c.resultado.Status == 'FREE' %}—{% else %}{{ consulta_potencia_spinner }}{% endif %}</td></tr>
