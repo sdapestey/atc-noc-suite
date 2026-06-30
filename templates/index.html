@@ -492,6 +492,10 @@ window.__CONSULTA_INDEX_CFG__ = {
           <span class="consulta-cto-ficha__value consulta-cto-ficha__value--muted">Buscando dirección…</span>
         </div>
         {% endif %}
+        <div class="consulta-cto-ficha__row">
+          <span class="consulta-cto-ficha__label">TAG NFC</span>
+          <span class="consulta-cto-ficha__value mono{% if not c.cto_tag_nfc %} consulta-cto-ficha__value--muted{% endif %}">{{ c.cto_tag_nfc or "—" }}</span>
+        </div>
       </div>
       {% if c.tabla_cto and c.tabla_cto|length > 0 %}
       {% if c.ruta.cto %}

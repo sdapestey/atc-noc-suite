@@ -60,6 +60,7 @@ from services import (
     consultar_cto_coordenadas,
     consultar_cto_coordenadas_batch,
     consultar_cto_direccion_postal,
+    consultar_cto_tag_nfc,
     consultar_cto_estructura,
     consultar_cto_potencias,
     consultar_cto_potencias_cached,
@@ -621,6 +622,7 @@ def _resolve_index_consulta(token: str, *, defer_altiplano_summary: bool = False
 
     if consulta["ruta"].get("cto"):
         consulta["cto_postal_address"] = consultar_cto_direccion_postal(consulta["ruta"]["cto"])
+        consulta["cto_tag_nfc"] = consultar_cto_tag_nfc(consulta["ruta"]["cto"])
 
     if defer_altiplano_summary:
         consulta["semaforo_resumen"] = {"ROJAS": 0, "AMARILLAS": 0, "VERDES": 0}

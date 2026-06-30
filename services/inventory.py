@@ -1583,6 +1583,27 @@ def consultar_cto_direccion_postal(cto: str) -> str | None:
     return dir_norm
 
 
+def consultar_cto_tag_nfc(cto: str) -> str | None:
+    """TAG NFC de la CTO desde ``cm.inventory_fat_occupation.nfc_tag_id``."""
+    cto_norm = (cto or "").strip()
+    if not cto_norm:
+        return None
+    with db_cursor() as cur:
+        cur.execute(
+            """
+            SELECT btrim(f.nfc_tag_id::text)
+            FROM cm.inventory_fat_occupation f
+            WHERE f.location_description = %s
+              AND f.nfc_tag_id IS NOT NULL
+              AND btrim(f.nfc_tag_id::text) <> ''
+            LIMIT 1
+            """,
+            (cto_norm,),
+        )
+        row = cur.fetchone()
+    return _nfc_tag_display(row[0] if row else None)
+
+
 def consultar_rama_estructura(rama):
     """ONTs por CTO para una rama (IN SERVICE, RESERVED y FREE).
 

@@ -40,3 +40,25 @@ def test_consultar_cto_direccion_postal_maps_escobar_code(monkeypatch):
 
     out = inv.consultar_cto_direccion_postal("XX01-FATC-8-1")
     assert out == "Mitre 1200 (BA Escobar)"
+
+
+def test_consultar_cto_tag_nfc_desde_inventario(monkeypatch):
+    import services.inventory as inv
+
+    monkeypatch.setattr(
+        inv,
+        "db_cursor",
+        _fake_db_cursor_with_row(("04A5E2A22C5E80",)),
+    )
+
+    out = inv.consultar_cto_tag_nfc("SF01-FATC-8-102397")
+    assert out == "04A5E2A22C5E80"
+
+
+def test_consultar_cto_tag_nfc_vacio_si_sin_registro(monkeypatch):
+    import services.inventory as inv
+
+    monkeypatch.setattr(inv, "db_cursor", _fake_db_cursor_with_row(None))
+
+    assert inv.consultar_cto_tag_nfc("SF01-FATC-8-102397") is None
+    assert inv.consultar_cto_tag_nfc("") is None

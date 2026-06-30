@@ -34,6 +34,7 @@ def test_index_cto_renders_cto_head_and_embedded_map_when_coords_exist(client, m
     monkeypatch.setattr(routes, "consultar_cto_coordenadas", lambda _cto: {"lat": -34.429816, "lon": -58.661158})
     monkeypatch.setattr(routes, "consultar_cto_coordenadas_desde_sfat", lambda _cto: None)
     monkeypatch.setattr(routes, "consultar_cto_direccion_postal", lambda _cto: "Alvear 2464 (BA San Fernando)")
+    monkeypatch.setattr(routes, "consultar_cto_tag_nfc", lambda _cto: "04A5E2A22C5E80")
 
     r = client.post("/", data={"value": "TG01-FATC-8-601814"})
     assert r.status_code == 200
@@ -53,6 +54,9 @@ def test_index_cto_renders_cto_head_and_embedded_map_when_coords_exist(client, m
     assert "Ubicación (CTO)" in html
     assert "consulta-cto-ficha__value" in html
     assert "Alvear 2464 (BA San Fernando)" in html
+    assert "TAG NFC" in html
+    assert "04A5E2A22C5E80" in html
+    assert html.index("Dirección") < html.index("TAG NFC")
     assert "data-consulta-cto-map" in html
     assert "noc-map-tiles.js" in html
     assert "noc-tools.js" in html
@@ -67,6 +71,7 @@ def test_index_cto_shows_no_coords_when_missing(client, monkeypatch):
     monkeypatch.setattr(routes, "consultar_cto_coordenadas", lambda _cto: None)
     monkeypatch.setattr(routes, "consultar_cto_coordenadas_desde_sfat", lambda _cto: None)
     monkeypatch.setattr(routes, "consultar_cto_direccion_postal", lambda _cto: None)
+    monkeypatch.setattr(routes, "consultar_cto_tag_nfc", lambda _cto: None)
 
     r = client.post("/", data={"value": "TG01-FATC-8-601814"})
     assert r.status_code == 200
@@ -90,6 +95,7 @@ def test_index_cto_search_no_ver_mapa_beside_rama_in_breadcrumb(client, monkeypa
     monkeypatch.setattr(routes, "consultar_cto_coordenadas", lambda _cto: None)
     monkeypatch.setattr(routes, "consultar_cto_coordenadas_desde_sfat", lambda _cto: None)
     monkeypatch.setattr(routes, "consultar_cto_direccion_postal", lambda _cto: None)
+    monkeypatch.setattr(routes, "consultar_cto_tag_nfc", lambda _cto: None)
 
     r = client.post("/", data={"value": "TG01-FATC-8-601814"})
     assert r.status_code == 200

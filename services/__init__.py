@@ -61,6 +61,7 @@ from .inventory import (
     consultar_cto_coordenadas,
     consultar_cto_coordenadas_batch,
     consultar_cto_direccion_postal,
+    consultar_cto_tag_nfc,
     cambiar_admin_status_access_id,
     consultar_access_id_potencias,
     consultar_cto_estructura,
