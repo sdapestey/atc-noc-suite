@@ -5690,6 +5690,28 @@ def _restconf_potencias_url(base_host: str, vno: str, ne: str, object_name_raw: 
     )
 
 
+def _restconf_oper_status_url(base_host: str, vno: str, ne: str, object_name_raw: str) -> str:
+    """``oper-status`` de la interfaz GPON (misma ruta que herramientas livianas de potencia)."""
+    onu = normalizar_object_name(object_name_raw)
+    iface_enc = quote(f"{onu}_GPON", safe="")
+    return (
+        f"https://{base_host}/{vno}-altiplano-ac/rest/restconf/data/"
+        f"anv:device-manager/anv-device-holders:device={ne}/"
+        f"device-specific-data/ietf-interfaces:interfaces-state/interface={iface_enc}/oper-status"
+        f"?altiplano-target=INP"
+    )
+
+
+def _oper_status_from_restconf_body(body: object) -> str | None:
+    if not isinstance(body, dict):
+        return None
+    status = body.get("ietf-interfaces:oper-status")
+    if status is None:
+        return None
+    s = str(status).strip().lower()
+    return s or None
+
+
 # Prefijos EMA de la ONT en Network Views (HAR INP: ``v7~…_GPON``; legado: ``v1~``).
 _EMA_ONU_GPON_VERSION_TRY_ORDER = ("v7", "v1")
 
@@ -7817,6 +7839,90 @@ def obtener_sn_ont(
     return str(sn).strip().upper() if sn else None
 
 
+def _fetch_ont_power_live(
+    access_id: str,
+    object_name_raw: str,
+    operator_id,
+    ne: str,
+) -> tuple[float, float] | None:
+    """
+    TX/RX en vivo para consultas masivas CTO/RAMA.
+
+    Solo RESTCONF diagnostics (+ fallback EMA de potencias). Si ``oper-status`` es
+    ``down``, no devuelve lectura (UI muestra DOWN). Sin SN, admin, health ni PON.
+    """
+    contexts = _power_auth_contexts(operator_id)
+    if not contexts:
+        logger.warning(
+            "Altiplano potencias CTO/RAMA: sin credenciales (access_id=%s operator_id=%s)",
+            access_id,
+            operator_id,
+        )
+        return None
+
+    tx: float | None = None
+    rx: float | None = None
+
+    for vno, auth_url, user, pwd in contexts:
+        base_host = auth_url.split("/")[2]
+
+        if tx is None or rx is None:
+            restconf_body = _http_get_altiplano_json(
+                _restconf_potencias_url(base_host, vno, ne, object_name_raw),
+                auth_url,
+                access_id=access_id,
+                ne=ne,
+                log_label=f"RESTCONF diagnostics ({vno})",
+                accept="application/yang-data+json",
+                username=user,
+                password=pwd,
+            )
+            pair = _potencias_from_diagnostics_body(restconf_body)
+            if pair is not None:
+                tx, rx = pair
+
+        if tx is not None and rx is not None:
+            return float(tx), float(rx)
+
+        if tx is None or rx is None:
+            ema_body = _http_get_ema_entity_try_versions(
+                base_host,
+                vno,
+                ne,
+                object_name_raw,
+                auth_url,
+                access_id=access_id,
+                log_label=f"EMA entity ({vno})",
+                fetch_device_attributes=True,
+                is_one=True,
+                username=user,
+                password=pwd,
+            )
+            pair = _potencias_from_ema_entity_body(ema_body)
+            if pair is not None:
+                tx, rx = pair
+
+        if tx is not None and rx is not None:
+            return float(tx), float(rx)
+
+        oper_body = _http_get_altiplano_json(
+            _restconf_oper_status_url(base_host, vno, ne, object_name_raw),
+            auth_url,
+            access_id=access_id,
+            ne=ne,
+            log_label=f"RESTCONF oper-status ({vno})",
+            accept="application/yang-data+json",
+            username=user,
+            password=pwd,
+        )
+        if _oper_status_from_restconf_body(oper_body) == "down":
+            return None
+
+    if tx is None or rx is None:
+        return None
+    return float(tx), float(rx)
+
+
 def obtener_potencias_por_cto(NE, onts_cto, *, carga_masiva: bool = False):
     """
     Obtiene TX/RX de Altiplano para ONTs de una CTO.
@@ -7831,6 +7937,7 @@ def obtener_potencias_por_cto(NE, onts_cto, *, carga_masiva: bool = False):
     Notas:
         - Soporta TASA, DIRECTV, METROTEL, IPLAN y ATC (según ``operator_id`` de inventario).
         - Cuando una ONT falla, se omite y el proceso continúa con el resto.
+        - Usa ``_fetch_ont_power_live`` (liviano); consultas por Access ID siguen con telemetría completa.
     """
 
     resultados = {}
@@ -7840,28 +7947,30 @@ def obtener_potencias_por_cto(NE, onts_cto, *, carga_masiva: bool = False):
 
     tasks = []
     for access_id, object_name_raw, operator_id in onts_cto:
-        target = _ALTIPLANO_POWER_TARGETS_BY_OPERATOR_ID.get(operator_id)
-        if target is None:
+        try:
+            op_key = int(operator_id)
+        except (TypeError, ValueError):
             continue
-        vno, auth_url = target
-        tasks.append((str(access_id), object_name_raw, operator_id, vno, auth_url))
+        if op_key not in _ALTIPLANO_POWER_TARGETS_BY_OPERATOR_ID:
+            continue
+        if not _power_auth_contexts(operator_id):
+            continue
+        tasks.append((str(access_id), object_name_raw, operator_id))
 
     if not tasks:
         return resultados
 
-    def _fetch_one(access_id, object_name_raw, operator_id, vno, auth_url):
-        _ = vno, auth_url
-        telem = _fetch_ont_telemetry_live(access_id, object_name_raw, operator_id, NE)
-        tx, rx = telem.get("tx"), telem.get("rx")
-        if tx is None or rx is None:
+    def _fetch_one(access_id, object_name_raw, operator_id):
+        pair = _fetch_ont_power_live(access_id, object_name_raw, operator_id, NE)
+        if pair is None:
             return access_id, None
-        return access_id, (float(tx), float(rx))
+        return access_id, pair
 
     max_workers = min(len(tasks), _config_altiplano_power_workers(carga_masiva=carga_masiva))
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = [
-            executor.submit(_fetch_one, access_id, object_name_raw, operator_id, vno, auth_url)
-            for access_id, object_name_raw, operator_id, vno, auth_url in tasks
+            executor.submit(_fetch_one, access_id, object_name_raw, operator_id)
+            for access_id, object_name_raw, operator_id in tasks
         ]
         for fut in as_completed(futures):
             try:

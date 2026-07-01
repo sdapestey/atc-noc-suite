@@ -15,12 +15,17 @@ def test_obtener_potencias_por_cto_soporta_operadores_nuevos(monkeypatch):
 
     def fake_http(url, auth_url, **kwargs):
         called_urls.append(url)
-        return {
-            "bbf-hardware-transceivers-mounted:diagnostics": {
-                "nokia-hardware-transceivers-dbm-mounted:tx-power-dbm": -180,
-                "nokia-hardware-transceivers-dbm-mounted:rx-power-dbm": -250,
+        label = kwargs.get("log_label", "")
+        if "oper-status" in label:
+            return {"ietf-interfaces:oper-status": "up"}
+        if "diagnostics" in label:
+            return {
+                "bbf-hardware-transceivers-mounted:diagnostics": {
+                    "nokia-hardware-transceivers-dbm-mounted:tx-power-dbm": -180,
+                    "nokia-hardware-transceivers-dbm-mounted:rx-power-dbm": -250,
+                }
             }
-        }
+        return None
 
     monkeypatch.setattr(altiplano, "_http_get_altiplano_json", fake_http)
 
@@ -48,14 +53,19 @@ def test_obtener_potencias_por_cto_fallback_ema_si_restconf_vacio(monkeypatch):
 
     def fake_http(url, auth_url, **kwargs):
         http_calls.append(kwargs.get("log_label", ""))
-        if "RESTCONF" in kwargs.get("log_label", ""):
+        label = kwargs.get("log_label", "")
+        if "oper-status" in label:
+            return {"ietf-interfaces:oper-status": "up"}
+        if "diagnostics" in label:
             return None
-        return {
-            "extraAttributes": {
-                "tx-signal-level": "21",
-                "rx-signal-level-ont": "-203",
+        if "EMA" in label:
+            return {
+                "extraAttributes": {
+                    "tx-signal-level": "21",
+                    "rx-signal-level-ont": "-203",
+                }
             }
-        }
+        return None
 
     monkeypatch.setattr(altiplano, "_http_get_altiplano_json", fake_http)
 
@@ -81,3 +91,51 @@ def test_obtener_potencias_por_cto_operador_no_soportado_se_omite(monkeypatch):
         [("999", "BA_OLTA_X:1-1-1-1-999", 5555)],
     )
     assert out == {}
+
+
+def test_fetch_ont_power_live_oper_down_no_devuelve_potencias(monkeypatch):
+    import altiplano
+
+    calls = []
+
+    def fake_http(url, auth_url, **kwargs):
+        label = kwargs.get("log_label", "")
+        calls.append(label)
+        if "diagnostics" in label:
+            return None
+        if "oper-status" in label:
+            return {"ietf-interfaces:oper-status": "down"}
+        return None
+
+    monkeypatch.setattr(altiplano, "_obtener_token", lambda *_a, **_k: "tk")
+    monkeypatch.setattr(altiplano, "_http_get_altiplano_json", fake_http)
+    monkeypatch.setattr(altiplano, "_http_get_ema_entity_try_versions", lambda *_a, **_k: None)
+
+    out = altiplano._fetch_ont_power_live(
+        "1052800121",
+        "BA_OLTA_X:1-1-1-1-100",
+        1001,
+        "BA_OLTA_X.LT1",
+    )
+    assert out is None
+    assert any("oper-status" in c for c in calls)
+
+
+def test_obtener_potencias_por_cto_no_usa_telemetry_live(monkeypatch):
+    import altiplano
+
+    def boom(*_a, **_k):
+        raise AssertionError("_fetch_ont_telemetry_live no debe usarse en CTO/RAMA")
+
+    monkeypatch.setattr(altiplano, "_fetch_ont_telemetry_live", boom)
+    monkeypatch.setattr(
+        altiplano,
+        "_fetch_ont_power_live",
+        lambda *_a, **_k: (2.1, -20.3),
+    )
+
+    out = altiplano.obtener_potencias_por_cto(
+        "BA_OLTA_X",
+        [("100", "BA_OLTA_X:1-1-1-1-100", 1001)],
+    )
+    assert out == {"100": (2.1, -20.3)}
