@@ -61,6 +61,7 @@ from services import (
     consultar_cto_coordenadas_batch,
     consultar_cto_direccion_postal,
     consultar_cto_tag_nfc,
+    consultar_cto_tag_nfc_batch,
     consultar_cto_estructura,
     consultar_cto_potencias,
     consultar_cto_potencias_cached,
@@ -110,7 +111,7 @@ from services.tasa_postman_catalog import build_tasa_vno_wizard_context
 from services.tasa_postman_execute import execute_tasa_postman_api
 from services.ftth_toolbox import enviar_cto_ftth_toolbox
 from services.camino_gis import consultar_cto_coordenadas_desde_sfat
-from services.inventory import resolver_target_ont_connection_por_access_id, _access_lookup_token_ok
+from services.inventory import resolver_target_ont_connection_por_access_id, _access_lookup_token_ok, _is_nfc_tag_token, consultar_cto_desde_tag_nfc
 
 logger = logging.getLogger(__name__)
 
@@ -555,8 +556,17 @@ def _consulta_semaforo_desde_consulta(consulta: dict) -> dict:
         return dict(empty)
 
 
+def _apply_index_consulta_cto(consulta: dict, cto: str) -> None:
+    """Completa una consulta índice resuelta a CTO (FATC directo o vía TAG NFC)."""
+    consulta["tabla_cto"] = consultar_cto_estructura(cto)
+    consulta["ruta"]["cto"] = cto
+    coords = _consultar_cto_coords_con_fallback(cto)
+    if coords:
+        consulta["cto_maps_url"] = _build_google_maps_search_url(coords["lat"], coords["lon"])
+
+
 def _resolve_index_consulta(token: str, *, defer_altiplano_summary: bool = False) -> dict:
-    """Resuelve un token de búsqueda del índice (Access ID numérico o alfanumérico, CTO FATC, RAMA RATC o alias).
+    """Resuelve un token de búsqueda del índice (Access ID, CTO FATC, RAMA RATC, TAG NFC o alias).
 
     Si ``defer_altiplano_summary`` es True, no llama a Altiplano para el resumen RX del panel;
     el cliente lo completa tras ``/potencias`` (consulta individual y masiva).
@@ -572,6 +582,8 @@ def _resolve_index_consulta(token: str, *, defer_altiplano_summary: bool = False
         "cto_maps_url": None,
         "cto_postal_address": None,
         "busqueda_aid": None,
+        "busqueda_nfc": None,
+        "cto_tag_nfc_map": None,
     }
     if not token:
         if defer_altiplano_summary:
@@ -591,18 +603,21 @@ def _resolve_index_consulta(token: str, *, defer_altiplano_summary: bool = False
             consulta["busqueda_aid"] = consultar_access_id_baja_o_ausente(token)
 
     elif "FATC" in vu:
-        consulta["tabla_cto"] = consultar_cto_estructura(token)
-        consulta["ruta"]["cto"] = token
-        coords = _consultar_cto_coords_con_fallback(token)
-        if coords:
-            consulta["cto_maps_url"] = _build_google_maps_search_url(
-                coords["lat"], coords["lon"]
-            )
+        _apply_index_consulta_cto(consulta, token)
+
+    elif _is_nfc_tag_token(token):
+        cto_resuelto = consultar_cto_desde_tag_nfc(token)
+        if cto_resuelto:
+            consulta["busqueda_nfc"] = {"tipo": "ok", "nfc": token, "cto": cto_resuelto}
+            _apply_index_consulta_cto(consulta, cto_resuelto)
+        else:
+            consulta["busqueda_nfc"] = {"tipo": "no_existe", "nfc": token}
 
     elif "RATC" in vu:
         consulta["tabla_cto"] = consultar_rama_estructura(token)
         consulta["es_rama"] = True
         consulta["ruta"]["rama"] = token
+        consulta["cto_tag_nfc_map"] = consultar_cto_tag_nfc_batch(list(consulta["tabla_cto"].keys()))
 
     elif _is_alias_identifier(vu):
         resultado = consultar_access_id_desde_alias(token)
@@ -634,7 +649,7 @@ def _resolve_index_consulta(token: str, *, defer_altiplano_summary: bool = False
 
 
 _CONSULTA_INDIVIDUAL_MULTI_TOKEN_MSG = (
-    "En consulta individual solo se admite un Access ID, una CTO o una RAMA. "
+    "En consulta individual solo se admite un Access ID, una CTO, una RAMA o un TAG NFC. "
     "Usá la pestaña «Masivo» para pegar varias líneas o varios valores separados por coma."
 )
 
@@ -1033,10 +1048,16 @@ def register(app):
         if valor.isdigit():
             return consultar_access_id_potencias(valor)
 
+        cto_val = None
         if "FATC" in valor_upper:
+            cto_val = valor
+        elif _is_nfc_tag_token(valor):
+            cto_val = consultar_cto_desde_tag_nfc(valor)
+
+        if cto_val:
             if carga_masiva or refresh:
-                return consultar_cto_potencias(valor, carga_masiva=carga_masiva)
-            return consultar_cto_potencias_cached(valor)
+                return consultar_cto_potencias(cto_val, carga_masiva=carga_masiva)
+            return consultar_cto_potencias_cached(cto_val)
 
         if "RATC" in valor_upper:
             return consultar_rama_potencias(valor, carga_masiva=carga_masiva)
@@ -1063,6 +1084,7 @@ def register(app):
         Acepta un valor libre y decide automáticamente si consultar por:
         - Access ID (numérico o alfanumérico VNO, p. ej. ``fes_a5_23``)
         - CTO (FATC)
+        - TAG NFC de CTO (hexadecimal)
         - RAMA (RATC)
         - Alias (Srvc_loc_*, etc.)
         """

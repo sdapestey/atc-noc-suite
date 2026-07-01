@@ -119,7 +119,7 @@
 {% set leaflet_rama_map_css = true %}
 {% include 'partials/head_leaflet.html' %}
 <script src="{{ url_for('static', filename='js/noc-tools.js') }}?v=noc15"></script>
-<script src="{{ url_for('static', filename='js/consulta-index-map.js') }}?v=pon41"></script>
+<script src="{{ url_for('static', filename='js/consulta-index-map.js') }}?v=pon42"></script>
 <script src="{{ url_for('static', filename='js/consulta-altiplano-auth.js') }}?v=pon12"></script>
 <script>
 window.__CONSULTA_INDEX_CFG__ = {
@@ -134,10 +134,10 @@ window.__CONSULTA_INDEX_CFG__ = {
 };
 </script>
 {% if consulta_row_counts %}
-<script defer src="{{ url_for('static', filename='js/consulta-masivo-ui.js') }}?v=8"></script>
+<script defer src="{{ url_for('static', filename='js/consulta-masivo-ui.js') }}?v=9"></script>
 {% endif %}
 <script defer src="{{ url_for('static', filename='js/consulta-tasa-composite-actions.js') }}?v=11"></script>
-<script defer src="{{ url_for('static', filename='js/consulta-index.js') }}?v=pon41"></script>
+<script defer src="{{ url_for('static', filename='js/consulta-index.js') }}?v=pon42"></script>
 </head>
 
 <body class="theme-devops page-consulta-index">
@@ -158,6 +158,8 @@ window.__CONSULTA_INDEX_CFG__ = {
           <span class="kbd">una CTO</span>
           <span class="brand-subtitle__junc">o</span>
           <span class="kbd">una RAMA</span>
+          <span class="brand-subtitle__junc">o</span>
+          <span class="kbd">TAG NFC</span>
           <span class="brand-subtitle__hint">· Masivo: varias líneas</span>
         </span>
       </small>
@@ -171,7 +173,7 @@ window.__CONSULTA_INDEX_CFG__ = {
     <form method="POST" class="search consulta-search-form" autocomplete="off">
         <div class="suite-search-surface consulta-search-card">
           <div class="orquestador-panel-head suite-panel-head consulta-panel-head">
-            <p class="suite-search-lead consulta-search-lead orquestador-panel-head__main">Buscá por <strong>Access ID</strong>, <strong>CTO</strong> o <strong>RAMA</strong> — en <em>Masivo</em> podés pegar listas (una por línea).</p>
+            <p class="suite-search-lead consulta-search-lead orquestador-panel-head__main">Buscá por <strong>Access ID</strong>, <strong>CTO</strong>, <strong>RAMA</strong> o <strong>TAG NFC</strong> — en <em>Masivo</em> podés pegar listas (una por línea).</p>
           {% include 'partials/orquestador_credit.html' %}
         </div>
         <div class="dash-segment dash-segment--sentence" role="tablist" aria-label="Tipo de consulta">
@@ -185,13 +187,13 @@ window.__CONSULTA_INDEX_CFG__ = {
             <div id="consulta-panel-individual" class="consulta-mode-panel" {% if consulta_modo == 'masivo' %}hidden{% endif %}>
               <div class="field suite-field consulta-field" role="search">
                 <span class="search-icon" aria-hidden="true">⌕</span>
-                <input id="q" name="value" value="{{ value_individual }}" placeholder="Ej. 1058516041 · SM01-FATC-8-101444 · SM01-RATC-0-001592" autocomplete="off">
+                <input id="q" name="value" value="{{ value_individual }}" placeholder="Ej. 1058516041 · SM01-FATC-8-101444 · SM01-RATC-0-001592 · 04A5E2A22C5E80" autocomplete="off">
               </div>
             </div>
             <div id="consulta-panel-masivo" class="consulta-mode-panel" {% if consulta_modo != 'masivo' %}hidden{% endif %}>
               <div class="field suite-field consulta-masivo-field consulta-field" role="search">
                 <span class="search-icon" aria-hidden="true">⌕</span>
-                <textarea id="qm" name="value_masivo" rows="10" class="consulta-masivo-input" placeholder="Un valor por línea (RAMA, CTO o AID). También podés separar por comas en una misma línea.">{{ value_masivo }}</textarea>
+                <textarea id="qm" name="value_masivo" rows="10" class="consulta-masivo-input" placeholder="Un valor por línea (RAMA, CTO, AID o TAG NFC). También podés separar por comas en una misma línea.">{{ value_masivo }}</textarea>
               </div>
             </div>
           </div>
@@ -340,7 +342,7 @@ window.__CONSULTA_INDEX_CFG__ = {
     {% if consultas %}
     {% for c in consultas %}
     {% set sec = 's' ~ loop.index0 %}
-    <section id="consulta-{{ sec }}" class="consulta-section{% if consulta_row_counts %} consulta-section--multi{% endif %}" data-section-prefix="{{ sec }}" data-query-token="{{ c.token }}"{% if consulta_row_counts %} data-masivo-index="{{ loop.index0 }}"{% endif %}{% if c.es_rama %} data-es-rama="1"{% endif %}{% if c.resultado %} data-detalle-fat-status="{{ c.resultado.Status }}" data-nv-access-id="{{ c.resultado.AID }}" data-nv-operador="{{ c.resultado.OPERADOR }}" data-nv-ont="{{ c.resultado.ONT }}"{% endif %}>
+    <section id="consulta-{{ sec }}" class="consulta-section{% if consulta_row_counts %} consulta-section--multi{% endif %}" data-section-prefix="{{ sec }}" data-query-token="{{ c.token }}"{% if c.ruta.cto and not c.resultado and not c.es_rama %} data-potencias-token="{{ c.ruta.cto }}"{% endif %}{% if consulta_row_counts %} data-masivo-index="{{ loop.index0 }}"{% endif %}{% if c.es_rama %} data-es-rama="1"{% endif %}{% if c.resultado %} data-detalle-fat-status="{{ c.resultado.Status }}" data-nv-access-id="{{ c.resultado.AID }}" data-nv-operador="{{ c.resultado.OPERADOR }}" data-nv-ont="{{ c.resultado.ONT }}"{% endif %}>
       {% if consulta_row_counts %}
       {% set tu = (c.token or '')|upper %}
       {% set ns_cnt = namespace(cto=0, ont=0) %}
@@ -366,6 +368,8 @@ window.__CONSULTA_INDEX_CFG__ = {
           <span class="rama-row-kind rama-row-kind--aid">AID</span>
           {% elif 'FATC' in tu %}
           <span class="rama-row-kind rama-row-kind--cto">CTO</span>
+          {% elif c.busqueda_nfc %}
+          <span class="rama-row-kind rama-row-kind--cto">NFC</span>
           {% elif 'RATC' in tu %}
           <span class="rama-row-kind rama-row-kind--rama">RAMA</span>
           {% else %}
@@ -434,6 +438,11 @@ window.__CONSULTA_INDEX_CFG__ = {
       <div class="id-lookup-banner id-lookup-banner--no-existe" role="status">
         <strong>Access ID no encontrado.</strong>
         El Access ID <span class="mono">{{ c.busqueda_aid.AID }}</span> no se encuentra en los sistemas de ATC.
+      </div>
+      {% elif c.busqueda_nfc and c.busqueda_nfc.tipo == "no_existe" %}
+      <div class="id-lookup-banner id-lookup-banner--no-existe" role="status">
+        <strong>TAG NFC no encontrado.</strong>
+        El TAG NFC <span class="mono">{{ c.busqueda_nfc.nfc }}</span> no está asociado a ninguna CTO en inventario.
       </div>
       {% endif %}
 
@@ -740,9 +749,16 @@ window.__CONSULTA_INDEX_CFG__ = {
             </span>
           </div>
         {% endif %}
-          <p class="hint rama-cto-address consulta-cto-postal-row" data-consulta-cto-postal-fetch data-cto="{{ cto }}" aria-live="polite">
-            <span class="rama-cto-address__loading">Buscando dirección…</span>
-          </p>
+          {% set cto_nfc = (c.cto_tag_nfc_map or {}).get(cto) %}
+          <div class="hint rama-cto-address rama-cto-address--panel consulta-cto-postal-row" data-consulta-cto-postal-fetch data-cto="{{ cto }}" aria-live="polite">
+            <div class="rama-cto-address__line" data-consulta-cto-address-line>
+              <span class="rama-cto-address__loading">Buscando dirección…</span>
+            </div>
+            <div class="rama-cto-address__line">
+              <span class="rama-cto-address__label">TAG NFC</span>
+              <span class="rama-cto-address__value mono{% if not cto_nfc %} muted{% endif %}">{{ cto_nfc or "—" }}</span>
+            </div>
+          </div>
           <details class="consulta-mapa-cto-details consulta-mapa-cto-details--until-ver-mapa" id="consulta-{{ sec }}-rama-cto-map-{{ loop.index0 }}">
             <summary class="consulta-mapa-details__summary">
               <span class="consulta-mapa-cto-title">Ubicación (CTO)</span>
@@ -782,7 +798,7 @@ window.__CONSULTA_INDEX_CFG__ = {
         {% endfor %}
         {% endif %}
 
-        {% if not c.resultado and not c.tabla_cto and not c.es_rama and not c.busqueda_aid %}
+        {% if not c.resultado and not c.tabla_cto and not c.es_rama and not c.busqueda_aid and not c.busqueda_nfc %}
         <div class="muted empty-state-note">
           Sin resultados para <span class="mono">{{ c.token }}</span>.
         </div>
@@ -804,8 +820,8 @@ window.__CONSULTA_INDEX_CFG__ = {
     </div>
     {% else %}
     <div class="muted empty-state-note">
-      <strong>Individual:</strong> un Access ID, una CTO o una RAMA; tocá <strong>Buscar</strong> y se cargan las potencias TX/RX cuando correspondan.
-      <strong>Masivo:</strong> pegá varias líneas en la pestaña «Masivo» (RAMA, CTO o AID).
+      <strong>Individual:</strong> un Access ID, una CTO, una RAMA o un TAG NFC; tocá <strong>Buscar</strong> y se cargan las potencias TX/RX cuando correspondan.
+      <strong>Masivo:</strong> pegá varias líneas en la pestaña «Masivo» (RAMA, CTO, AID o TAG NFC).
     </div>
     {% endif %}
   </div>

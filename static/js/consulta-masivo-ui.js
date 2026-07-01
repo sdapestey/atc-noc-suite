@@ -314,7 +314,7 @@
     var entries = [];
     sections().forEach(function (sec) {
       if (sec.hidden || sec.classList.contains("consulta-section--page-hidden")) return;
-      var token = (sec.getAttribute("data-query-token") || "").trim();
+      var token = (sec.getAttribute("data-potencias-token") || sec.getAttribute("data-query-token") || "").trim();
       if (!token) return;
       if (sectionPotenciasAlreadyLoaded(sec)) return;
       entries.push({ token: token, root: sec });
@@ -326,7 +326,7 @@
     if (typeof window.cargarPotenciasSeccion !== "function") return [];
     var entries = [];
     sections().forEach(function (sec) {
-      var token = (sec.getAttribute("data-query-token") || "").trim();
+      var token = (sec.getAttribute("data-potencias-token") || sec.getAttribute("data-query-token") || "").trim();
       if (!token) return;
       if (sectionPotenciasAlreadyLoaded(sec)) return;
       markPotenciasScheduled(sec);

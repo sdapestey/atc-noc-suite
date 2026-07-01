@@ -286,7 +286,13 @@
     requestAnimationFrame(function () {
       scrollCaminoJerarquiaToFoco(out);
     });
-    if (data && window.loadCaminoRamaMap) window.loadCaminoRamaMap(data);
+    try {
+      if (data && window.loadCaminoRamaMap) window.loadCaminoRamaMap(data);
+    } catch (mapErr) {
+      if (typeof console !== "undefined" && console.error) {
+        console.error("camino mount map", mapErr);
+      }
+    }
   }
 
   function renderJerarquiaNavBar(data) {
@@ -1010,12 +1016,12 @@
 
   function zonaCorteTipoLabel(tipo, selected) {
     if (tipo === "troncal_origen") {
-      return (selected ? "★ " : "") + "Inicio troncal común";
+      return "Inicio troncal común";
     }
     if (tipo === "reparto") {
-      return (selected ? "★ " : "") + "Punto de reparto";
+      return "Punto de reparto";
     }
-    return (selected ? "★ " : "") + "Zona de corte";
+    return "Zona de corte";
   }
 
   function renderZonasCorteProbableHtml(zonas) {
@@ -1028,7 +1034,7 @@
     var html = '<div class="camino-masivo-zonas-corte">';
     html +=
       '<p class="camino-masivo-zonas-corte__title"><strong>Posibles focos de corte</strong> ' +
-      '<span class="muted">(inicio del troncal compartido y punto de reparto en ci_op; ★ = sugerido para despacho)</span></p>';
+      '<span class="muted">(referencia GIS del troncal; el foco para medir es la CTO sugerida abajo)</span></p>';
     html +=
       '<div class="table-wrap"><table><thead><tr><th>Foco</th><th>Prioridad</th><th>Ramas</th><th>Troncal</th><th>Ubicación</th><th>FOSC / snap</th><th>Motivo</th></tr></thead><tbody>';
     zonas.forEach(function (z) {
@@ -1090,11 +1096,11 @@
       return '<p class="muted camino-masivo-warn">Sin sugerencias de medición (sin CTO en inventario).</p>';
     }
     var html = '<div class="camino-masivo-sugerencias">';
-    html += "<p class=\"camino-masivo-sugerencias__title\"><strong>CTO sugeridas para medir</strong> <span class=\"muted\">(ante posible corte; se refinan con RX)</span></p>";
+    html += "<p class=\"camino-masivo-sugerencias__title\"><strong>CTO sugeridas para medir</strong> <span class=\"muted\">(★ foco en mapa = CTO más cercana al reparto GIS)</span></p>";
     html += '<div class="table-wrap"><table><thead><tr><th>Prioridad</th><th>CTO</th><th>Motivo</th><th>Ramas</th></tr></thead>';
     html += '<tbody id="camino-masivo-sugerencias-body">';
-    sugerencias.forEach(function (s) {
-      html += '<tr data-sugerencia-cto="' + esc(s.cto) + '">';
+    sugerencias.forEach(function (s, idx) {
+      html += '<tr class="camino-masivo-sugerencia-row' + (idx === 0 ? " camino-masivo-sugerencia-row--top" : "") + '" data-sugerencia-cto="' + esc(s.cto) + '" title="Click para centrar en el mapa">';
       html += '<td class="camino-prio-cell">' + renderCaminoPrioridadBadge(s.prioridad) + "</td>";
       html += "<td><code class=\"inline-code\">" + esc(s.cto) + "</code></td>";
       html += '<td class="small">' + esc(s.motivo) + "</td>";
@@ -1157,11 +1163,13 @@
       return (b.score || 0) - (a.score || 0);
     });
     tbody.innerHTML = refined
-      .map(function (s) {
+      .map(function (s, idx) {
         return (
-          '<tr data-sugerencia-cto="' +
+          '<tr class="camino-masivo-sugerencia-row' +
+          (idx === 0 ? " camino-masivo-sugerencia-row--top" : "") +
+          '" data-sugerencia-cto="' +
           esc(s.cto) +
-          '"><td class="camino-prio-cell">' +
+          '" title="Click para centrar en el mapa"><td class="camino-prio-cell">' +
           renderCaminoPrioridadBadge(s.prioridad) +
           "</td><td><code class=\"inline-code\">" +
           esc(s.cto) +
@@ -1204,6 +1212,19 @@
     return "up";
   }
 
+  function wireCaminoMasivoSugerenciasClick() {
+    var tbody = document.getElementById("camino-masivo-sugerencias-body");
+    if (!tbody || tbody._nocSugerenciaWired) return;
+    tbody._nocSugerenciaWired = true;
+    tbody.addEventListener("click", function (ev) {
+      var row = ev.target && ev.target.closest ? ev.target.closest("tr[data-sugerencia-cto]") : null;
+      if (!row) return;
+      if (window.flyToCaminoMasivoCto) {
+        window.flyToCaminoMasivoCto(row.getAttribute("data-sugerencia-cto"));
+      }
+    });
+  }
+
   function fetchCaminoMasivoPotencias(ramas) {
     if (!ramas || !ramas.length) return;
     window._caminoMasivoRxByRama = window._caminoMasivoRxByRama || {};
@@ -1231,7 +1252,10 @@
           });
           window._caminoMasivoRxByRama[key] = status;
         });
-        if (window._caminoMasivoLastData) refinarSugerenciasMedicion(window._caminoMasivoLastData);
+        if (window._caminoMasivoLastData) {
+          refinarSugerenciasMedicion(window._caminoMasivoLastData);
+          wireCaminoMasivoSugerenciasClick();
+        }
       })
       .catch(function () {});
   }
@@ -1283,6 +1307,7 @@
     html += "</tbody></table></div></div>";
 
     mountCaminoResult(html, data);
+    wireCaminoMasivoSugerenciasClick();
 
     var copyBtn = document.getElementById("camino-copy-ctos-masivo");
     if (copyBtn) {
@@ -1657,14 +1682,36 @@
           } catch (_e) {
             j = { error: "Respuesta inválida del servidor (HTTP " + res.status + ")." };
           }
-          return { ok: res.ok, j: j };
+          return { ok: res.ok, status: res.status, j: j };
         });
       })
       .then(function (x) {
-        render(x.j || { error: "Sin respuesta" });
+        if (!x.ok) {
+          var detail =
+            x.j && x.j.error
+              ? x.j.error
+              : "Error HTTP " + (x.status || "") + ".";
+          out.innerHTML = '<div class="err">' + esc(detail) + "</div>";
+          if (window.clearCaminoRamaMap) window.clearCaminoRamaMap();
+          return;
+        }
+        try {
+          render(x.j || { error: "Sin respuesta" });
+        } catch (renderErr) {
+          if (typeof console !== "undefined" && console.error) {
+            console.error("camino masivo render", renderErr);
+          }
+          out.innerHTML =
+            '<div class="err">Error al mostrar el resultado masivo. Revisá la consola del navegador (F12) o los logs del servidor.</div>';
+          if (window.clearCaminoRamaMap) window.clearCaminoRamaMap();
+        }
       })
-      .catch(function () {
-        out.innerHTML = '<div class="err">No se pudo contactar al servidor.</div>';
+      .catch(function (err) {
+        if (typeof console !== "undefined" && console.error) {
+          console.error("camino masivo fetch", err);
+        }
+        out.innerHTML =
+          '<div class="err">No se pudo contactar al servidor (red, timeout o certificado). Verificá que la app esté en ejecución.</div>';
         if (window.clearCaminoRamaMap) window.clearCaminoRamaMap();
       })
       .finally(function () {
@@ -1828,8 +1875,21 @@
   var masivoCtoLayer = null;
   var masivoCorteZoneLayer = null;
   var masivoTroncalLayer = null;
+  var masivoCtoFocoLayer = null;
   var masivoFoscLayer = null;
+  var masivoFocoCentradoOnce = false;
   var masivoRootLayer = null;
+  var masivoRamaPathLayers = {};
+  var masivoRamaCtoLayers = {};
+
+  function esc(s) {
+    if (s === null || s === undefined) return "";
+    return String(s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
 
   function getMasivoColorPack(data, rama) {
     var rc = data && data.rama_colors && data.rama_colors[rama];
@@ -1837,6 +1897,15 @@
       return { line: rc.line, point: rc.point || rc.line, hover: rc.line };
     }
     return _ltOverlayColorPack(rama);
+  }
+
+  function clearMasivoCtoFocoLayer(map) {
+    if (masivoCtoFocoLayer && map) {
+      try {
+        map.removeLayer(masivoCtoFocoLayer);
+      } catch (_cf) {}
+      masivoCtoFocoLayer = null;
+    }
   }
 
   function clearMasivoFoscLayer(map) {
@@ -1850,6 +1919,61 @@
 
   function masivoFoscDivIcon(isSnap, orden) {
     return caminoFoscDivIcon(isSnap, orden);
+  }
+
+  function caminoMapBeaconKindClass(kind) {
+    if (kind === "cto") return "cto";
+    if (kind === "troncal") return "troncal";
+    return "reparto";
+  }
+
+  function masivoBeaconZIndex(kind) {
+    if (kind === "cto") return 700;
+    if (kind === "troncal") return 640;
+    return 620;
+  }
+
+  function caminoMapBeaconDivIcon(kind) {
+    var size = 34;
+    var half = size / 2;
+    var cls = "camino-map-beacon camino-map-beacon--" + caminoMapBeaconKindClass(kind);
+    var html =
+      '<div class="' +
+      cls +
+      '" style="width:' +
+      size +
+      "px;height:" +
+      size +
+      'px" aria-hidden="true">' +
+      '<span class="camino-map-beacon__ring"></span>' +
+      '<span class="camino-map-beacon__dot"></span>' +
+      "</div>";
+    return L.divIcon({
+      className: "camino-map-beacon-divicon",
+      html: html,
+      iconSize: [size, size],
+      iconAnchor: [half, half],
+      tooltipAnchor: [0, -half + 4],
+    });
+  }
+
+  function addCaminoMapBeacon(lat, lon, bodyHtml, layerGroup, kind, copyLabel) {
+    var ll = normalizeCtoLatLon(lat, lon);
+    var coordPack = caminoPopupCoordBlock(
+      lat,
+      lon,
+      copyLabel || "Click en el punto para copiar coordenadas"
+    );
+    var tipHtml =
+      '<div class="camino-popup-cto camino-beacon-tip">' + bodyHtml + coordPack.html + "</div>";
+    var mk = L.marker([ll.lat, ll.lon], {
+      icon: caminoMapBeaconDivIcon(kind),
+      interactive: true,
+      zIndexOffset: masivoBeaconZIndex(kind),
+    });
+    wireCaminoPointMarker(mk, tipHtml, coordPack.coordText);
+    mk.addTo(layerGroup);
+    return mk;
   }
 
   function caminoFoscDivIcon(isSnap, orden, isFeeder144) {
@@ -2130,13 +2254,12 @@
     markers.forEach(function (m) {
       if (m.lat == null || m.lon == null) return;
       var ll = normalizeCtoLatLon(m.lat, m.lon);
-      var isSnap = !!m.snap_target;
       var mk = L.marker([ll.lat, ll.lon], {
-        icon: masivoFoscDivIcon(isSnap, null),
-        zIndexOffset: isSnap ? 900 : 500,
+        icon: masivoFoscDivIcon(false, null),
+        zIndexOffset: 500,
         interactive: true,
       });
-      var popPack = caminoFoscPopupHtml(m, { isSnap: isSnap });
+      var popPack = caminoFoscPopupHtml(m, { isSnap: false });
       wireCaminoPointMarker(mk, popPack.html, popPack.coordText);
       mk.addTo(masivoFoscLayer);
     });
@@ -2214,6 +2337,7 @@
       caminoPathHoverClearTid = null;
     }
     clearMasivoCorteZones(gisMap);
+    clearMasivoCtoFocoLayer(gisMap);
     clearMasivoTroncalLayer(gisMap);
     clearMasivoFoscLayer(gisMap);
     clearMasivoPathsLayer(gisMap);
@@ -2235,70 +2359,39 @@
     gisCtoLayer = null;
   }
 
-  function drawMasivoCorteZones(map, zonas, target) {
+  function drawMasivoCorteZones(map, zonas, target, data) {
     clearMasivoCorteZones(map);
     if (!map || !zonas || !zonas.length) return;
     masivoCorteZoneLayer = L.layerGroup();
-    zonas.forEach(function (z, idx) {
+    zonas.forEach(function (z) {
       if (z.lat == null || z.lon == null) return;
-      var ll = normalizeCtoLatLon(z.lat, z.lon);
-      var prioridad = z.prioridad || "critica";
-      var primary = z.selected === true || (z.selected !== false && idx === 0);
-      var stroke = prioridad === "critica" ? "#dc2626" : prioridad === "alta" ? "#ea580c" : "#ca8a04";
-      var fill = prioridad === "critica" ? "#ef4444" : prioridad === "alta" ? "#f97316" : "#eab308";
-      var radius = z.radius_m || (primary ? 120 : 90);
-      var circle = L.circle([ll.lat, ll.lon], {
-        radius: radius,
-        color: stroke,
-        weight: primary ? 4 : 2,
-        fillColor: fill,
-        fillOpacity: primary ? 0.38 : 0.22,
-        interactive: true,
-      });
-      var tipTitle =
-        z.tipo === "troncal_origen"
-          ? primary
-            ? "Foco sugerido — inicio troncal"
-            : "Inicio troncal común"
-          : z.tipo === "reparto"
-            ? primary
-              ? "Foco sugerido — reparto"
-              : "Punto de reparto"
-            : primary
-              ? "Posible corte"
-              : "Zona de convergencia";
-      var tip = caminoZonaCorteTooltipHtml(z, tipTitle);
-      circle.bindTooltip(tip, {
-        direction: "auto",
-        opacity: 0.97,
-        className: "camino-corte-zona-tooltip",
-        sticky: true,
-        offset: [0, -8],
-      });
-      circle.addTo(masivoCorteZoneLayer);
-      if (primary) {
-        var center = L.circleMarker([ll.lat, ll.lon], {
-          radius: 7,
-          fillColor: stroke,
-          color: "#fff",
-          weight: 2,
-          opacity: 1,
-          fillOpacity: 0.95,
-        });
-        center.bindTooltip(tip, {
-          direction: "auto",
-          opacity: 0.97,
-          className: "camino-corte-zona-tooltip",
-          sticky: true,
-          offset: [0, -8],
-        });
-        center.addTo(masivoCorteZoneLayer);
+      if (z.tipo === "reparto") {
+        var tipRep = caminoZonaCorteTooltipHtml(z, "Punto de reparto (GIS)");
+        addCaminoMapBeacon(
+          z.lat,
+          z.lon,
+          tipRep,
+          masivoCorteZoneLayer,
+          "reparto",
+          "Click en el reparto para copiar coordenadas"
+        );
+      } else if (z.tipo === "troncal_origen") {
+        var tipTron = caminoZonaCorteTooltipHtml(z, "Inicio troncal común (GIS)");
+        addCaminoMapBeacon(
+          z.lat,
+          z.lon,
+          tipTron,
+          masivoCorteZoneLayer,
+          "troncal",
+          "Click en el inicio de troncal para copiar coordenadas"
+        );
       }
     });
+    if (!masivoCorteZoneLayer.getLayers().length) {
+      masivoCorteZoneLayer = null;
+      return;
+    }
     masivoCorteZoneLayer.addTo(target || map);
-    try {
-      if (masivoCorteZoneLayer.bringToFront) masivoCorteZoneLayer.bringToFront();
-    } catch (_cz) {}
   }
 
   function clearMasivoRamaLayers(map) {
@@ -2324,7 +2417,77 @@
       } catch (_e) {}
     });
     masivoRamaLayers = {};
+    masivoRamaPathLayers = {};
+    masivoRamaCtoLayers = {};
   }
+
+  function masivoSugerenciaCtoRank(data) {
+    var out = {};
+    var top = (data.sugerencias_medicion || [])[0];
+    if (top && top.cto) {
+      out[top.cto] = "principal";
+    }
+    return out;
+  }
+
+  function caminoCtoSugeridaBeaconTooltipHtml(top) {
+    var html = '<div class="camino-corte-zona-tip camino-corte-zona-tip--cto-sugerida">';
+    html +=
+      '<div class="camino-corte-zona-tip__title"><strong>★ CTO sugerida para medir</strong></div>';
+    html +=
+      '<p class="camino-corte-zona-tip__cto mono small">' + esc(top.cto) + "</p>";
+    if (top.motivo) {
+      html +=
+        '<p class="camino-corte-zona-tip__lead small muted">' + esc(top.motivo) + "</p>";
+    }
+    html += "</div>";
+    return html;
+  }
+
+  function drawMasivoCtoFocoSugerido(map, data, target) {
+    clearMasivoCtoFocoLayer(map);
+    if (!map || !data) return;
+    var top = (data.sugerencias_medicion || [])[0];
+    if (!top || !top.cto) return;
+    var lat = top.lat;
+    var lon = top.lon;
+    var list = (window._caminoMasivoMarkersByCto || {})[top.cto];
+    if (list && list.length && list[0].getLatLng) {
+      var llMk = list[0].getLatLng();
+      if (llMk) {
+        lat = llMk.lat;
+        lon = llMk.lng;
+      }
+    }
+    if (lat == null || lon == null) return;
+    masivoCtoFocoLayer = L.layerGroup();
+    var tip = caminoCtoSugeridaBeaconTooltipHtml(top);
+    addCaminoMapBeacon(
+      lat,
+      lon,
+      tip,
+      masivoCtoFocoLayer,
+      "cto",
+      "Click en la CTO sugerida para copiar coordenadas"
+    );
+    masivoCtoFocoLayer.addTo(target || map);
+  }
+
+  function flyToCaminoMasivoCto(cto) {
+    if (!gisMap || !cto) return;
+    var list = (window._caminoMasivoMarkersByCto || {})[cto];
+    if (!list || !list.length) return;
+    var mk = list[0];
+    var ll = mk.getLatLng ? mk.getLatLng() : null;
+    if (!ll) return;
+    try {
+      gisMap.flyTo(ll, Math.max(gisMap.getZoom(), 16), { duration: 0.45 });
+    } catch (_fly) {
+      gisMap.setView(ll, Math.max(gisMap.getZoom(), 16));
+    }
+    if (mk.openPopup) mk.openPopup();
+  }
+  window.flyToCaminoMasivoCto = flyToCaminoMasivoCto;
 
   function masivoCtoMarkerOpts(color, radius) {
     return {
@@ -2336,6 +2499,15 @@
       fillOpacity: 0.92,
     };
   }
+
+  var masivoCtoMarkerFocalOpts = {
+    radius: 13,
+    fillColor: "#22d3ee",
+    color: "#f8fafc",
+    weight: 3,
+    opacity: 1,
+    fillOpacity: 0.98,
+  };
 
   function offsetMasivoLatLng(lat, lon, idx, total) {
     if (total <= 1) return { lat: lat, lon: lon };
@@ -2376,22 +2548,130 @@
     };
   }
 
+  function masivoRegisterPathLayer(feature, layer) {
+    var rama = caminoRamaKeyFromFeature(feature, layer);
+    if (!rama || rama.indexOf("_seg_") === 0) return;
+    if (!masivoRamaPathLayers[rama]) masivoRamaPathLayers[rama] = [];
+    masivoRamaPathLayers[rama].push(layer);
+    layer._caminoMasivoRama = rama;
+  }
+
+  function masivoRegisterCtoLayer(rama, layer) {
+    if (!rama) return;
+    if (!masivoRamaCtoLayers[rama]) masivoRamaCtoLayers[rama] = [];
+    masivoRamaCtoLayers[rama].push(layer);
+    layer._caminoMasivoRama = rama;
+  }
+
+  function setMasivoRamaPathVisible(rama, show) {
+    (masivoRamaPathLayers[rama] || []).forEach(function (ly) {
+      if (!gisPathLayer) return;
+      try {
+        if (show) gisPathLayer.addLayer(ly);
+        else gisPathLayer.removeLayer(ly);
+      } catch (_p) {}
+    });
+  }
+
+  function setMasivoAllPathsVisible(show) {
+    Object.keys(masivoRamaPathLayers).forEach(function (rama) {
+      setMasivoRamaPathVisible(rama, show);
+    });
+  }
+
+  function setMasivoRamaCtoVisible(rama, show) {
+    (masivoRamaCtoLayers[rama] || []).forEach(function (ly) {
+      if (!masivoCtoLayer) return;
+      try {
+        if (show) masivoCtoLayer.addLayer(ly);
+        else masivoCtoLayer.removeLayer(ly);
+      } catch (_c) {}
+    });
+  }
+
+  function setMasivoAllCtosVisible(show) {
+    Object.keys(masivoRamaCtoLayers).forEach(function (rama) {
+      setMasivoRamaCtoVisible(rama, show);
+    });
+  }
+
+  function setMasivoFoscVisible(show) {
+    if (!masivoFoscLayer || !masivoRootLayer) return;
+    try {
+      if (show) masivoRootLayer.addLayer(masivoFoscLayer);
+      else masivoRootLayer.removeLayer(masivoFoscLayer);
+    } catch (_f) {}
+  }
+
+  function syncMasivoFilterMasterCheckbox(root, filterName, itemFilter) {
+    if (!root) return;
+    var master = root.querySelector('[data-masivo-filter="' + filterName + '"]');
+    if (!master) return;
+    var items = root.querySelectorAll('[data-masivo-filter="' + itemFilter + '"]');
+    var total = 0;
+    var checked = 0;
+    items.forEach(function (el) {
+      total += 1;
+      if (el.checked) checked += 1;
+    });
+    master.checked = total > 0 && checked === total;
+    master.indeterminate = checked > 0 && checked < total;
+  }
+
+  function wireMasivoLayerFilterControls(root) {
+    if (!root) return;
+    var panel = root.querySelector(".camino-masivo-layer-filter");
+    if (!panel || panel._masivoFilterWired) return;
+    panel._masivoFilterWired = true;
+    panel.addEventListener("change", function (ev) {
+      var t = ev.target;
+      if (!t || t.tagName !== "INPUT" || t.type !== "checkbox") return;
+      var filter = t.getAttribute("data-masivo-filter");
+      if (!filter) return;
+      if (filter === "paths-all") {
+        setMasivoAllPathsVisible(t.checked);
+        panel.querySelectorAll('[data-masivo-filter="path"]').forEach(function (el) {
+          el.checked = t.checked;
+        });
+        t.indeterminate = false;
+      } else if (filter === "ctos-all") {
+        setMasivoAllCtosVisible(t.checked);
+        panel.querySelectorAll('[data-masivo-filter="cto"]').forEach(function (el) {
+          el.checked = t.checked;
+        });
+        t.indeterminate = false;
+      } else if (filter === "fosc-all") {
+        setMasivoFoscVisible(t.checked);
+      } else if (filter === "path") {
+        var ramaP = t.getAttribute("data-rama");
+        if (ramaP) setMasivoRamaPathVisible(ramaP, t.checked);
+        syncMasivoFilterMasterCheckbox(panel, "paths-all", "path");
+      } else if (filter === "cto") {
+        var ramaC = t.getAttribute("data-rama");
+        if (ramaC) setMasivoRamaCtoVisible(ramaC, t.checked);
+        syncMasivoFilterMasterCheckbox(panel, "ctos-all", "cto");
+      }
+    });
+  }
+
   function buildMasivoLegendHtml(data) {
     var ramas = (data.ramas || []).map(function (rd) {
       return rd.rama;
     });
     if (!ramas.length) return "";
-    var html = '<div class="camino-masivo-map-legend"><p class="camino-masivo-map-legend__title">Leyenda</p><ul class="camino-masivo-map-legend__list">';
-    ramas.forEach(function (rama) {
-      var pack = getMasivoColorPack(data, rama);
-      html +=
-        '<li><span class="camino-rama-color camino-rama-color--legend" style="background:' +
-        esc(pack.line) +
-        ';"></span> <span class="mono small">' +
-        esc(rama) +
-        "</span></li>";
-    });
-    html += "</ul>";
+    var html =
+      '<div class="camino-masivo-map-legend">' +
+      '<p class="camino-masivo-map-legend__title">Capas del mapa</p>' +
+      '<div class="camino-masivo-layer-filter">';
+    html += '<div class="camino-masivo-layer-filter__global">';
+    html +=
+      '<label class="camino-masivo-layer-filter__chk">' +
+      '<input type="checkbox" data-masivo-filter="paths-all" checked> ' +
+      "<span>Trazado (todas)</span></label>";
+    html +=
+      '<label class="camino-masivo-layer-filter__chk">' +
+      '<input type="checkbox" data-masivo-filter="ctos-all" checked> ' +
+      "<span>CTO (todas)</span></label>";
     var foscN = 0;
     var infra = data.infra_fosc || {};
     if (infra.fosc && infra.fosc.ok && infra.fosc.markers) {
@@ -2399,23 +2679,81 @@
     }
     if (foscN) {
       html +=
-        '<p class="camino-masivo-map-legend__fosc muted small">' +
-        '<span class="camino-masivo-legend-fosc-swatch" aria-hidden="true"></span> Botellas FOSC (' +
-        esc(String(foscN)) +
-        ")</p>";
+        '<label class="camino-masivo-layer-filter__chk">' +
+        '<input type="checkbox" data-masivo-filter="fosc-all" checked> ' +
+        "<span>Botellas FOSC</span></label>";
     }
-    if ((data.zonas_corte_probable || []).length) {
+    html += "</div>";
+    html += '<div class="camino-masivo-layer-filter__rama-head muted small">';
+    html += '<span class="camino-masivo-layer-filter__col camino-masivo-layer-filter__col--chk" title="Trazado">Trz</span>';
+    html += '<span class="camino-masivo-layer-filter__col camino-masivo-layer-filter__col--chk" title="CTO">CTO</span>';
+    html += '<span class="camino-masivo-layer-filter__col camino-masivo-layer-filter__col--rama">Rama</span>';
+    html += "</div>";
+    html += '<ul class="camino-masivo-layer-filter__ramas">';
+    ramas.forEach(function (rama) {
+      var pack = getMasivoColorPack(data, rama);
+      html += '<li class="camino-masivo-layer-filter__rama-row">';
+      html +=
+        '<label class="camino-masivo-layer-filter__col camino-masivo-layer-filter__col--chk" title="Trazado ' +
+        esc(rama) +
+        '">' +
+        '<input type="checkbox" data-masivo-filter="path" data-rama="' +
+        esc(rama) +
+        '" checked>' +
+        "</label>";
+      html +=
+        '<label class="camino-masivo-layer-filter__col camino-masivo-layer-filter__col--chk" title="CTO ' +
+        esc(rama) +
+        '">' +
+        '<input type="checkbox" data-masivo-filter="cto" data-rama="' +
+        esc(rama) +
+        '" checked>' +
+        "</label>";
+      html +=
+        '<span class="camino-masivo-layer-filter__col camino-masivo-layer-filter__col--rama">' +
+        '<span class="camino-rama-color camino-rama-color--legend" style="background:' +
+        esc(pack.line) +
+        ';"></span> ' +
+        '<span class="mono small">' +
+        esc(rama) +
+        "</span></span>";
+      html += "</li>";
+    });
+    html += "</ul></div>";
+    html += '<p class="camino-masivo-map-legend__ref-title muted small">Referencia</p>';
+    if (foscN) {
+      html +=
+        '<p class="camino-masivo-map-legend__fosc muted small">' +
+        '<span class="camino-masivo-legend-fosc-swatch" aria-hidden="true"></span> ' +
+        esc(String(foscN)) +
+        " botellas FOSC</p>";
+    }
+    if ((data.zonas_corte_probable || []).some(function (z) { return z.tipo === "troncal_origen"; })) {
+      html +=
+        '<p class="camino-masivo-map-legend__troncal muted small">' +
+        '<span class="camino-masivo-legend-troncal-swatch" aria-hidden="true"></span> Baliza inicio troncal común</p>';
+    }
+    if ((data.zonas_corte_probable || []).some(function (z) { return z.tipo === "reparto"; })) {
       html +=
         '<p class="camino-masivo-map-legend__corte muted small">' +
-        '<span class="camino-masivo-legend-corte-swatch" aria-hidden="true"></span> Posible corte (círculo)</p>';
+        '<span class="camino-masivo-legend-corte-swatch" aria-hidden="true"></span> Baliza reparto GIS</p>';
+    }
+    if ((data.sugerencias_medicion || []).length) {
+      html +=
+        '<p class="camino-masivo-map-legend__cto-foco muted small">' +
+        '<span class="camino-masivo-legend-cto-foco-swatch" aria-hidden="true"></span> ★ Baliza CTO sugerida</p>';
     }
     html += "</div>";
     return html;
   }
 
   function drawMasivoColoredOnMap(map, data) {
+    masivoFocoCentradoOnce = false;
+    masivoRamaPathLayers = {};
+    masivoRamaCtoLayers = {};
     clearMasivoRamaLayers(map);
     clearMasivoCorteZones(map);
+    clearMasivoCtoFocoLayer(map);
     clearMasivoTroncalLayer(map);
     clearMasivoFoscLayer(map);
     if (gisPathLayer) {
@@ -2453,6 +2791,9 @@
           pointToLayer: function (feature, latlng) {
             return L.circleMarker(latlng, masivoStyleForFeature(feature));
           },
+          onEachFeature: function (feature, layer) {
+            masivoRegisterPathLayer(feature, layer);
+          },
         });
         gisPathLayer.addTo(masivoRootLayer);
         masivoPathsLayer = gisPathLayer;
@@ -2469,6 +2810,9 @@
             style: masivoStyleForFeature,
             pointToLayer: function (feature, latlng) {
               return L.circleMarker(latlng, masivoStyleForFeature(feature));
+            },
+            onEachFeature: function (feature, layer) {
+              masivoRegisterPathLayer(feature, layer);
             },
           });
           gisPathLayer.addTo(masivoRootLayer);
@@ -2496,6 +2840,8 @@
     }
 
     masivoCtoLayer = L.layerGroup();
+    window._caminoMasivoMarkersByCto = {};
+    var sugerenciaRank = masivoSugerenciaCtoRank(data);
     var groups = {};
     markers.forEach(function (m) {
       if (m.lat == null || m.lon == null) return;
@@ -2510,15 +2856,29 @@
         var ll0 = normalizeCtoLatLon(m.lat, m.lon);
         var ll = offsetMasivoLatLng(ll0.lat, ll0.lon, idx, list.length);
         var pack = getMasivoColorPack(data, m.rama);
-        var opts = masivoCtoMarkerOpts(pack.point, list.length > 1 ? 8 : 10);
-        var cm = L.circleMarker([ll.lat, ll.lon], opts);
+        var rank = sugerenciaRank[m.cto] || "";
+        var opts;
+        if (rank === "principal") {
+          opts = masivoCtoMarkerOpts(pack.point, 11);
+          opts.weight = 3;
+          opts.color = "#f8fafc";
+        } else {
+          opts = masivoCtoMarkerOpts(pack.point, list.length > 1 ? 8 : 10);
+        }
         var coordPack = caminoPopupCoordBlock(
           m.lat,
           m.lon,
           "Click en la CTO para copiar coordenadas"
         );
+        var sugerenciaNote = "";
+        if (rank === "principal") {
+          sugerenciaNote =
+            '<div class="camino-popup-cto__sugerida"><strong>★ Foco sugerido para medir</strong></div>';
+        }
+        var cm = L.circleMarker([ll.lat, ll.lon], opts);
         var pop =
           '<div class="camino-popup-cto">' +
+          sugerenciaNote +
           '<div class="camino-popup-cto__id"><strong>' +
           esc(m.cto) +
           "</strong></div>" +
@@ -2530,7 +2890,12 @@
           esc(String(m.onts)) +
           " ONT</div></div>";
         wireCaminoCtoMarker(cm, pop, opts, coordPack.coordText);
+        masivoRegisterCtoLayer(m.rama, cm);
         cm.addTo(masivoCtoLayer);
+        if (m.cto) {
+          window._caminoMasivoMarkersByCto[m.cto] = window._caminoMasivoMarkersByCto[m.cto] || [];
+          window._caminoMasivoMarkersByCto[m.cto].push(cm);
+        }
       });
     });
 
@@ -2557,35 +2922,17 @@
       if (!hasCto) warn.push("Sin coordenadas de CTO.");
       var zonaNote = "";
       var zonas = data.zonas_corte_probable || [];
-      if (zonas.length) {
-        var z0 = zonas[0];
-        var focoLabel =
-          z0.tipo === "troncal_origen"
-            ? "Inicio troncal (foco sugerido)"
-            : z0.tipo === "reparto"
-              ? "Reparto (foco sugerido)"
-              : "Posible corte";
-        var lenHint =
-          z0.troncal_length_m != null
-            ? " · troncal ≈ " + esc(String(z0.troncal_length_m)) + " m"
-            : "";
-        var altHint =
-          zonas.length > 1
-            ? ' · <span class="muted">también ver ' +
-              esc(zonas[1].tipo === "troncal_origen" ? "inicio troncal" : "reparto") +
-              "</span>"
-            : "";
+      var zRep = null;
+      zonas.forEach(function (z) {
+        if (z.tipo === "reparto") zRep = z;
+      });
+      if (zRep) {
         zonaNote =
-          '<p class="camino-masivo-zona-map-hint muted"><strong>' +
-          esc(focoLabel) +
-          "</strong>: " +
-          esc(String(z0.rama_count)) +
+          '<p class="camino-masivo-zona-map-hint muted"><strong>Punto de reparto (GIS)</strong>: baliza naranja · ' +
+          esc(String(zRep.rama_count)) +
           "/" +
-          esc(String(z0.rama_total || "")) +
-          " ramas convergen en el tramo común" +
-          lenHint +
-          altHint +
-          ".</p>";
+          esc(String(zRep.rama_total || "")) +
+          " ramas en el tramo común.</p>";
       }
       var capasNote =
         hasPath || hasCto
@@ -2602,24 +2949,7 @@
         foscNote =
           '<p class="camino-masivo-fosc-map-hint muted"><strong>Botellas FOSC</strong>: ' +
           esc(String(foscSide.markers.length)) +
-          " sobre el trazado (tolerancia ≤ " +
-          esc(String(foscSide.max_dist_traz_m != null ? foscSide.max_dist_traz_m : "6")) +
-          " m).</p>";
-        var snapSide = infraSide.snap_corte;
-        if (snapSide && snapSide.ok) {
-          var snapMaps =
-            snapSide.maps_url ||
-            "https://www.google.com/maps?q=" +
-              encodeURIComponent(String(snapSide.lat) + "," + String(snapSide.lon));
-          foscNote +=
-            '<p class="camino-masivo-fosc-snap-hint muted"><strong>Snap corte</strong>: ' +
-            esc(String(snapSide.id_cm || snapSide.tipo || "FOSC")) +
-            (snapSide.direccion ? " · " + esc(String(snapSide.direccion)) : "") +
-            (snapSide.dist_snap_m != null ? " · ≈ " + esc(String(snapSide.dist_snap_m)) + " m" : "") +
-            ' · <a href="' +
-            esc(snapMaps) +
-            '" target="_blank" rel="noopener noreferrer">Maps</a></p>';
-        }
+          " sobre el trazado (referencia; foco de medición en CTO sugerida).</p>";
       } else if (foscSide.error) {
         foscNote =
           '<p class="muted camino-gis-map-notes">FOSC: ' + esc(String(foscSide.error)) + "</p>";
@@ -2632,10 +2962,18 @@
         (warn.length
           ? '<p class="muted camino-gis-map-notes">' + warn.map(function (w) { return esc(w); }).join(" ") + "</p>"
           : "");
+      wireMasivoLayerFilterControls(gisSide);
     }
 
-    var foscCount = drawMasivoFoscOnMap(map, data, masivoRootLayer);
-    drawMasivoCorteZones(map, data.zonas_corte_probable || [], masivoRootLayer);
+    try {
+      drawMasivoFoscOnMap(map, data, masivoRootLayer);
+      drawMasivoCorteZones(map, data.zonas_corte_probable || [], masivoRootLayer, data);
+      drawMasivoCtoFocoSugerido(map, data, masivoRootLayer);
+    } catch (overlayErr) {
+      if (typeof console !== "undefined" && console.error) {
+        console.error("camino masivo overlays", overlayErr);
+      }
+    }
     try {
       if (masivoRootLayer.bringToFront) masivoRootLayer.bringToFront();
     } catch (_z) {}
@@ -2662,9 +3000,21 @@
         b.extend(L.latLng(ll.lat, ll.lon));
       });
       var zonasFit = data.zonas_corte_probable || [];
-      if (zonasFit[0] && zonasFit[0].lat != null && zonasFit[0].lon != null) {
-        var zll = normalizeCtoLatLon(zonasFit[0].lat, zonasFit[0].lon);
+      zonasFit.forEach(function (zf) {
+        if (
+          (zf.tipo !== "reparto" && zf.tipo !== "troncal_origen") ||
+          zf.lat == null ||
+          zf.lon == null
+        ) {
+          return;
+        }
+        var zll = normalizeCtoLatLon(zf.lat, zf.lon);
         b.extend(L.latLng(zll.lat, zll.lon));
+      });
+      var topSug = (data.sugerencias_medicion || [])[0];
+      if (topSug && topSug.lat != null && topSug.lon != null) {
+        var sll = normalizeCtoLatLon(topSug.lat, topSug.lon);
+        b.extend(L.latLng(sll.lat, sll.lon));
       }
       var foscFit = ((data.infra_fosc || {}).fosc || {}).markers || [];
       foscFit.forEach(function (fm) {
@@ -2682,9 +3032,17 @@
     }
 
     function masivoMapFallbackView() {
-      var z = (data.zonas_corte_probable || [])[0];
-      if (z && z.lat != null && z.lon != null) {
-        var ll = normalizeCtoLatLon(z.lat, z.lon);
+      var top = (data.sugerencias_medicion || [])[0];
+      if (top && top.cto && window.flyToCaminoMasivoCto) {
+        window.flyToCaminoMasivoCto(top.cto);
+        return;
+      }
+      var zRep = null;
+      (data.zonas_corte_probable || []).forEach(function (zf) {
+        if (zf.tipo === "reparto") zRep = zf;
+      });
+      if (zRep && zRep.lat != null && zRep.lon != null) {
+        var ll = normalizeCtoLatLon(zRep.lat, zRep.lon);
         map.setView([ll.lat, ll.lon], 15);
         return;
       }
@@ -2708,6 +3066,11 @@
         if (!fitMasivoMapBounds()) masivoMapFallbackView();
       }
       redrawCaminoVectorLayers(map);
+      var topCto = (data.sugerencias_medicion || [])[0];
+      if (!masivoFocoCentradoOnce && topCto && topCto.cto && window.flyToCaminoMasivoCto) {
+        masivoFocoCentradoOnce = true;
+        window.flyToCaminoMasivoCto(topCto.cto);
+      }
     }
     setTimeout(afterMasivoLayout, 50);
     setTimeout(afterMasivoLayout, 250);
@@ -2988,11 +3351,6 @@
     lead:
       "Cada rama con su color en trazado <code class=\"inline-code\">ci_op</code> y CTO. CTO compartidas pueden superponerse con leve separación.",
   };
-
-  function esc(s){
-    if (s === null || s === undefined) return "";
-    return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
-  }
 
   function caminoSanitizeDireccion(s) {
     if (window.caminoSanitizeDireccion) return window.caminoSanitizeDireccion(s);
@@ -3474,6 +3832,7 @@
       individualFeederLayer,
       individualFusionLayer,
       masivoCorteZoneLayer,
+      masivoCtoFocoLayer,
       gisCtoLayer,
     ].forEach(function (layer) {
       if (!layer) return;
@@ -3625,6 +3984,7 @@
     clearLtSiblingOverlays();
     clearMasivoRamaLayers(gisMap);
     clearMasivoCorteZones(gisMap);
+    clearMasivoCtoFocoLayer(gisMap);
     clearMasivoTroncalLayer(gisMap);
     clearMasivoFoscLayer(gisMap);
     clearIndividualFoscLayer(gisMap);
@@ -3762,7 +4122,17 @@
       }
 
       if (data.tipo === "ramas_masivo") {
-        drawMasivoColoredOnMap(map, data);
+        try {
+          drawMasivoColoredOnMap(map, data);
+        } catch (masivoMapErr) {
+          if (gisSide && !String(gisSide.innerHTML || "").trim()) {
+            gisSide.innerHTML =
+              '<div class="err">No se pudo dibujar el mapa masivo (error inesperado).</div>';
+          }
+          if (typeof console !== "undefined" && console.error) {
+            console.error("camino masivo map draw", masivoMapErr);
+          }
+        }
         var consultaStackMasivo = document.querySelector(".camino-consulta-stack");
         if (consultaStackMasivo) {
           try {

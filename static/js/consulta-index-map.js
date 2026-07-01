@@ -516,14 +516,20 @@
     );
   }
 
+  function _consultaCtoPostalTarget(el) {
+    if (!el) return null;
+    return el.querySelector("[data-consulta-cto-address-line]") || el;
+  }
+
   function initConsultaCtoPostalRows() {
     document.querySelectorAll("[data-consulta-cto-postal-fetch]").forEach(function (el) {
       if (el.dataset.consultaPostalInit === "1") return;
       el.dataset.consultaPostalInit = "1";
       var cto = (el.getAttribute("data-cto") || "").trim();
+      var target = _consultaCtoPostalTarget(el);
       if (!cto) {
         el.classList.remove("consulta-cto-ficha__row--loading");
-        el.innerHTML = _consultaCtoAddressHtml(el, "—", true);
+        if (target) target.innerHTML = _consultaCtoAddressHtml(el, "—", true);
         return;
       }
       fetch(CTO_ADDRESS_URL + "?cto=" + encodeURIComponent(cto))
@@ -541,14 +547,14 @@
                     return String(s || "");
                   };
             var addr = esc(String(data.address).trim());
-            el.innerHTML = _consultaCtoAddressHtml(el, addr, false);
-          } else {
-            el.innerHTML = _consultaCtoAddressHtml(el, "Sin datos en CM", true);
+            if (target) target.innerHTML = _consultaCtoAddressHtml(el, addr, false);
+          } else if (target) {
+            target.innerHTML = _consultaCtoAddressHtml(el, "Sin datos en CM", true);
           }
         })
         .catch(function () {
           el.classList.remove("consulta-cto-ficha__row--loading");
-          el.innerHTML = _consultaCtoAddressHtml(el, "No se pudo cargar", true);
+          if (target) target.innerHTML = _consultaCtoAddressHtml(el, "No se pudo cargar", true);
           delete el.dataset.consultaPostalInit;
         });
     });

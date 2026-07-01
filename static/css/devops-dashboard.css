@@ -3861,6 +3861,90 @@ tr.rx-alert:hover td {
   font-weight: 700;
 }
 
+.camino-masivo-map-legend__ref-title {
+  margin: 0.65rem 0 0.25rem;
+  font-weight: 600;
+}
+
+.camino-masivo-layer-filter__global {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.camino-masivo-layer-filter__chk {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.82rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.camino-masivo-layer-filter__chk input {
+  margin: 0;
+  accent-color: var(--accent, #2563eb);
+}
+
+.camino-masivo-layer-filter__rama-head {
+  display: grid;
+  grid-template-columns: 2rem 2rem 1fr;
+  gap: 0.25rem 0.35rem;
+  align-items: center;
+  margin-bottom: 0.2rem;
+  padding: 0 0.1rem;
+}
+
+.camino-masivo-layer-filter__ramas {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 11rem;
+  overflow: auto;
+  border: 1px solid color-mix(in srgb, var(--border-muted) 80%, transparent);
+  border-radius: var(--radius, 6px);
+  background: color-mix(in srgb, var(--canvas-subtle) 65%, transparent);
+}
+
+.camino-masivo-layer-filter__rama-row {
+  display: grid;
+  grid-template-columns: 2rem 2rem 1fr;
+  gap: 0.25rem 0.35rem;
+  align-items: center;
+  padding: 0.28rem 0.45rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--border-muted) 55%, transparent);
+}
+
+.camino-masivo-layer-filter__rama-row:last-child {
+  border-bottom: none;
+}
+
+.camino-masivo-layer-filter__col--chk {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.camino-masivo-layer-filter__col--chk input {
+  margin: 0;
+  accent-color: var(--accent, #2563eb);
+}
+
+.camino-masivo-layer-filter__col--rama {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.camino-masivo-layer-filter__col--rama .mono {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .camino-masivo-map-legend__list {
   margin: 0;
   padding: 0;
@@ -3980,14 +4064,178 @@ tr.rx-alert:hover td {
 
 .camino-masivo-legend-corte-swatch {
   display: inline-block;
-  width: 0.75rem;
-  height: 0.75rem;
+  width: 1rem;
+  height: 1rem;
+  margin-right: 0.35rem;
+  vertical-align: middle;
+  border-radius: 50%;
+  border: 2px solid #f97316;
+  background: color-mix(in srgb, #fb923c 55%, transparent);
+  box-shadow: 0 0 0 0 color-mix(in srgb, #f97316 35%, transparent);
+  animation: camino-map-beacon-pulse-swatch 2.2s ease-out infinite;
+}
+
+.camino-masivo-map-legend__cto-foco {
+  margin: 0.35rem 0 0;
+}
+
+.camino-masivo-legend-cto-foco-swatch {
+  display: inline-block;
+  width: 1rem;
+  height: 1rem;
+  margin-right: 0.35rem;
+  vertical-align: middle;
+  border-radius: 50%;
+  border: 2px solid #22d3ee;
+  background: color-mix(in srgb, #22d3ee 45%, transparent);
+  box-shadow: 0 0 0 0 color-mix(in srgb, #22d3ee 35%, transparent);
+  animation: camino-map-beacon-pulse-swatch-cto 2.2s ease-out infinite;
+}
+
+.camino-map-beacon-divicon {
+  background: transparent;
+  border: none;
+}
+
+.camino-map-beacon {
+  position: relative;
+  display: block;
+}
+
+.camino-map-beacon__dot {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 34%;
+  height: 34%;
+  transform: translate(-50%, -50%);
+  border-radius: 999px;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.45);
+  pointer-events: none;
+}
+
+.camino-map-beacon__ring {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 100%;
+  height: 100%;
+  transform: translate(-50%, -50%);
+  border-radius: 999px;
+  border: 2px solid currentColor;
+  pointer-events: none;
+  animation: camino-map-beacon-pulse 2.2s ease-out infinite;
+}
+
+.camino-map-beacon--reparto {
+  color: #f97316;
+}
+
+.camino-map-beacon--reparto .camino-map-beacon__dot {
+  background: #ea580c;
+}
+
+.camino-map-beacon--cto {
+  color: #22d3ee;
+}
+
+.camino-map-beacon--cto .camino-map-beacon__dot {
+  background: #06b6d4;
+}
+
+.camino-map-beacon--troncal {
+  color: #dc2626;
+}
+
+.camino-map-beacon--troncal .camino-map-beacon__dot {
+  background: #b91c1c;
+}
+
+.camino-masivo-map-legend__troncal {
+  margin: 0.35rem 0 0;
+}
+
+.camino-masivo-legend-troncal-swatch {
+  display: inline-block;
+  width: 1rem;
+  height: 1rem;
   margin-right: 0.35rem;
   vertical-align: middle;
   border-radius: 50%;
   border: 2px solid #dc2626;
-  background: color-mix(in srgb, #ef4444 45%, transparent);
-  box-shadow: 0 0 0 1px color-mix(in srgb, #dc2626 35%, transparent);
+  background: color-mix(in srgb, #ef4444 50%, transparent);
+  box-shadow: 0 0 0 0 color-mix(in srgb, #dc2626 40%, transparent);
+  animation: camino-map-beacon-pulse-swatch-troncal 2.2s ease-out infinite;
+}
+
+@keyframes camino-map-beacon-pulse-swatch-troncal {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, #dc2626 40%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 5px transparent;
+  }
+  100% {
+    box-shadow: 0 0 0 5px transparent;
+  }
+}
+
+.leaflet-tooltip.camino-cto-hover-tip .camino-beacon-tip {
+  margin: 0;
+  padding: 8px 10px 10px;
+  min-width: 12rem;
+  max-width: 22rem;
+}
+
+.leaflet-tooltip.camino-cto-hover-tip .camino-beacon-tip .camino-corte-zona-tip {
+  min-width: 0;
+  max-width: none;
+  margin-bottom: 0.35rem;
+}
+
+.leaflet-tooltip.camino-cto-hover-tip .camino-beacon-tip .camino-popup-cto__coords {
+  margin-top: 0.35rem;
+  cursor: pointer;
+}
+
+@keyframes camino-map-beacon-pulse {
+  0% {
+    transform: translate(-50%, -50%) scale(0.72);
+    opacity: 0.82;
+  }
+  70% {
+    transform: translate(-50%, -50%) scale(1.12);
+    opacity: 0;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1.12);
+    opacity: 0;
+  }
+}
+
+@keyframes camino-map-beacon-pulse-swatch {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, #f97316 40%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 5px transparent;
+  }
+  100% {
+    box-shadow: 0 0 0 5px transparent;
+  }
+}
+
+@keyframes camino-map-beacon-pulse-swatch-cto {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, #22d3ee 40%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 5px transparent;
+  }
+  100% {
+    box-shadow: 0 0 0 5px transparent;
+  }
 }
 
 .camino-fosc-marker__orden {
@@ -4902,10 +5150,39 @@ html:not([data-theme="light"]) .page-camino .leaflet-popup-content .camino-popup
 
 .camino-corte-zona-tooltip {
   font-size: 0.82rem;
-  max-width: 15.5rem;
-  white-space: normal;
   line-height: 1.4;
-  padding: 0.45rem 0.55rem;
+}
+
+.leaflet-tooltip.camino-corte-zona-tooltip {
+  padding: 0.5rem 0.65rem;
+  border-radius: 8px;
+  white-space: normal;
+  width: auto;
+  min-width: 13rem;
+  max-width: min(22rem, 92vw);
+  overflow: visible;
+  box-sizing: border-box;
+  background: #fff !important;
+  color: #121826;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+}
+
+.camino-corte-zona-tip {
+  min-width: 12rem;
+  max-width: min(21rem, 90vw);
+}
+
+.camino-corte-zona-tip__cto {
+  margin: 0.2rem 0 0;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.camino-corte-zona-tip--cto-sugerida .camino-corte-zona-tip__lead {
+  margin-top: 0.35rem !important;
+  line-height: 1.45;
+  word-break: break-word;
 }
 
 .camino-corte-zona-tip p {
@@ -4914,6 +5191,8 @@ html:not([data-theme="light"]) .page-camino .leaflet-popup-content .camino-popup
 
 .camino-corte-zona-tip__lead {
   margin-top: 0.35rem !important;
+  line-height: 1.45;
+  word-break: break-word;
 }
 
 .camino-corte-zona-tip__meta {
@@ -4946,6 +5225,26 @@ html:not([data-theme="light"]) .page-camino .leaflet-popup-content .camino-popup
 
 .camino-masivo-sugerencias__title {
   margin: 0 0 0.65rem;
+}
+
+.camino-masivo-sugerencia-row {
+  cursor: pointer;
+}
+
+.camino-masivo-sugerencia-row:hover {
+  background: color-mix(in srgb, var(--accent-muted) 55%, transparent);
+}
+
+.camino-masivo-sugerencia-row--top {
+  background: color-mix(in srgb, var(--accent-muted) 35%, transparent);
+}
+
+.camino-popup-cto__sugerida {
+  margin-bottom: 0.35rem;
+  color: #0891b2;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  overflow-wrap: break-word;
 }
 
 .camino-prio-badge {
@@ -10210,7 +10509,9 @@ html[data-theme="light"] .leaflet-tile-pane img.leaflet-tile {
 
 .page-camino .leaflet-popup-content .camino-popup-cto {
   min-width: 11.5rem;
-  max-width: 19rem;
+  max-width: 22rem;
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 
 .page-camino .leaflet-popup-content .camino-popup-cto__lt {

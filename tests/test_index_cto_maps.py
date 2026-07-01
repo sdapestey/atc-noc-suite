@@ -56,12 +56,40 @@ def test_index_cto_renders_cto_head_and_embedded_map_when_coords_exist(client, m
     assert "Alvear 2464 (BA San Fernando)" in html
     assert "TAG NFC" in html
     assert "04A5E2A22C5E80" in html
-    assert html.index("Dirección") < html.index("TAG NFC")
     assert "data-consulta-cto-map" in html
     assert "noc-map-tiles.js" in html
     assert "noc-tools.js" in html
     assert html.index("noc-tools.js") < html.index("consulta-index-map.js")
     assert "consulta-index-map.js" in html
+
+
+def test_index_nfc_resuelve_consulta_cto(client, monkeypatch):
+    import web.routes as routes
+
+    monkeypatch.setattr(routes, "consultar_cto_desde_tag_nfc", lambda nfc: "SF01-FATC-8-102397")
+    monkeypatch.setattr(routes, "consultar_cto_estructura", lambda _cto: _mock_cto_rows())
+    monkeypatch.setattr(routes, "consultar_cto_coordenadas", lambda _cto: None)
+    monkeypatch.setattr(routes, "consultar_cto_coordenadas_desde_sfat", lambda _cto: None)
+    monkeypatch.setattr(routes, "consultar_cto_direccion_postal", lambda _cto: None)
+    monkeypatch.setattr(routes, "consultar_cto_tag_nfc", lambda _cto: "04A5E2A22C5E80")
+
+    r = client.post("/", data={"value": "04A5E2A22C5E80"})
+    assert r.status_code == 200
+    html = r.get_data(as_text=True)
+    assert "SF01-FATC-8-102397" in html
+    assert "04A5E2A22C5E80" in html
+    assert "TAG NFC no encontrado" not in html
+
+
+def test_index_nfc_no_encontrado(client, monkeypatch):
+    import web.routes as routes
+
+    monkeypatch.setattr(routes, "consultar_cto_desde_tag_nfc", lambda _nfc: None)
+
+    r = client.post("/", data={"value": "04A5E2A22C5E80"})
+    assert r.status_code == 200
+    html = r.get_data(as_text=True)
+    assert "TAG NFC no encontrado" in html
 
 
 def test_index_cto_shows_no_coords_when_missing(client, monkeypatch):

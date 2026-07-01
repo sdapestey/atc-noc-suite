@@ -31,6 +31,9 @@ def test_consulta_index_uses_external_js_bundle():
     assert "/potencias/batch" in js
     assert "_consultaCargarPotenciasEntries" in js
     assert "_consultaPotenciasTokenEsRamaOCto" in js
+    assert "_isNfcTagToken" in js
+    assert "_consultaPotenciasToken" in js
+    assert 'data-potencias-token' in html
     assert '_consultaPotenciasTokenEsRamaOCto(tok)) return false' in js
     assert "window.cambiarSNDesdeUIBtn = cambiarSNDesdeUIBtn" in js
     assert "consultaSetBtnConsultando" in js

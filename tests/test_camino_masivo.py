@@ -74,9 +74,106 @@ def test_sugerir_ctos_medicion_shared_and_first():
     sug = co._sugerir_ctos_medicion(ramas_data, union)
     assert sug
     assert sug[0]["cto"] == "TG01-FATC-8-100987"
-    assert sug[0]["prioridad"] == "alta"
+    assert sug[0]["prioridad"] in ("alta", "critica")
     ctos = {s["cto"] for s in sug}
     assert "TG01-FATC-8-100987" in ctos
+
+
+def test_sugerir_ctos_medicion_convergencia_todas_ramas(monkeypatch):
+    """Prioriza la primera CTO común a todas las ramas (cerca del origen del troncal)."""
+    ramas_data = [
+        {
+            "rama": "SF01-RATC-0-000482",
+            "sin_inventario": False,
+            "ctos": [
+                {"cto": "SF01-FATC-8-100100", "onts": 1},
+                {"cto": "SF01-FATC-8-100200", "onts": 2},
+                {"cto": "SF01-FATC-8-104032", "onts": 2},
+            ],
+        },
+        {
+            "rama": "SF01-RATC-0-000483",
+            "sin_inventario": False,
+            "ctos": [
+                {"cto": "SF01-FATC-8-100100", "onts": 1},
+                {"cto": "SF01-FATC-8-100200", "onts": 1},
+            ],
+        },
+        {
+            "rama": "SF01-RATC-0-000484",
+            "sin_inventario": False,
+            "ctos": [
+                {"cto": "SF01-FATC-8-100100", "onts": 1},
+                {"cto": "SF01-FATC-8-100300", "onts": 1},
+            ],
+        },
+    ]
+    union = co._build_ctos_union(ramas_data)
+    troncal = {
+        "ok": True,
+        "points": [
+            {"lat": -34.44, "lon": -58.55},
+            {"lat": -34.45, "lon": -58.56},
+        ],
+    }
+
+    def fake_coords(ctos):
+        return {
+            "SF01-FATC-8-100100": {"lat": -34.4401, "lon": -58.5501},
+            "SF01-FATC-8-100200": {"lat": -34.445, "lon": -58.555},
+            "SF01-FATC-8-100300": {"lat": -34.45, "lon": -58.56},
+            "SF01-FATC-8-104032": {"lat": -34.46, "lon": -58.57},
+        }
+
+    monkeypatch.setattr(co, "_resolve_cto_coords_map", fake_coords)
+    sug = co._sugerir_ctos_medicion(ramas_data, union, troncal)
+
+    assert sug[0]["cto"] == "SF01-FATC-8-100100"
+    assert sug[0]["prioridad"] == "critica"
+    assert "común a las 3 ramas" in sug[0]["motivo"]
+    ctos = {s["cto"] for s in sug}
+    assert "SF01-FATC-8-104032" not in ctos
+
+
+def test_sugerir_ctos_medicion_foco_gis_sin_cto_comun(monkeypatch):
+    """Con varias ramas sin CTO común en inventario, prioriza la CTO más cercana al reparto GIS."""
+    ramas_data = [
+        {
+            "rama": "SF01-RATC-0-000482",
+            "sin_inventario": False,
+            "ctos": [{"cto": "SF01-FATC-8-102240", "onts": 1}, {"cto": "SF01-FATC-8-104032", "onts": 2}],
+        },
+        {
+            "rama": "SF01-RATC-0-000483",
+            "sin_inventario": False,
+            "ctos": [{"cto": "SF01-FATC-8-101850", "onts": 1}],
+        },
+    ]
+    union = co._build_ctos_union(ramas_data)
+    zonas = [
+        {
+            "tipo": "reparto",
+            "lat": -34.445615,
+            "lon": -58.555662,
+            "selected": True,
+            "rama_count": 2,
+        }
+    ]
+
+    def fake_coords(ctos):
+        return {
+            "SF01-FATC-8-104032": {"lat": -34.445615, "lon": -58.555662},
+            "SF01-FATC-8-102240": {"lat": -34.44490, "lon": -58.55510},
+            "SF01-FATC-8-101850": {"lat": -34.44450, "lon": -58.55450},
+        }
+
+    monkeypatch.setattr(co, "_resolve_cto_coords_map", fake_coords)
+    sug = co._sugerir_ctos_medicion(ramas_data, union, None, zonas)
+
+    assert sug[0]["cto"] == "SF01-FATC-8-104032"
+    assert sug[0]["prioridad"] == "critica"
+    assert "convergen las 2 ramas" in sug[0]["motivo"]
+    assert all(s["cto"] != "SF01-FATC-8-102240" or s["score"] < sug[0]["score"] for s in sug)
 
 
 def test_dashboard_camino_optico_ramas_masivo_route(client, monkeypatch):
@@ -123,6 +220,15 @@ def test_camino_template_has_masivo_ui():
     assert "parseCaminoMasivoTokens" in html
     assert "ramas_masivo" in html
     assert "sugerencias_medicion" in html
+    assert "drawMasivoCtoFocoSugerido" in html
+    assert "camino-map-beacon" in html
+    assert "addCaminoMapBeacon" in html
+    assert "wireMasivoLayerFilterControls" in html
+    assert "data-masivo-filter" in html
+    assert "Capas del mapa" in html
+    assert "Baliza inicio troncal" in html
+    assert "CTO sugerida para medir" in html
+    assert "function wireCaminoMasivoSugerenciasClick" in html
     assert "zonas_corte_probable" in html
     assert "drawMasivoColoredOnMap" in html
     assert "drawMasivoCorteZones" in html

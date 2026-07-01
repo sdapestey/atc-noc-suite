@@ -62,3 +62,43 @@ def test_consultar_cto_tag_nfc_vacio_si_sin_registro(monkeypatch):
 
     assert inv.consultar_cto_tag_nfc("SF01-FATC-8-102397") is None
     assert inv.consultar_cto_tag_nfc("") is None
+
+
+def test_consultar_cto_desde_tag_nfc_resuelve_cto(monkeypatch):
+    import services.inventory as inv
+
+    monkeypatch.setattr(
+        inv,
+        "db_cursor",
+        _fake_db_cursor_with_row(("SF01-FATC-8-102397",)),
+    )
+
+    out = inv.consultar_cto_desde_tag_nfc("04A5E2A22C5E80")
+    assert out == "SF01-FATC-8-102397"
+
+
+def test_consultar_cto_tag_nfc_batch(monkeypatch):
+    import services.inventory as inv
+
+    class FakeCur:
+        def execute(self, _sql, params=None):
+            self._ctos = params[0] if params else []
+
+        def fetchall(self):
+            return [
+                ("SF01-FATC-8-102397", "04A5E2A22C5E80"),
+                ("SF01-FATC-8-102395", "0433DCA22C5E81"),
+            ]
+
+    @contextmanager
+    def fake_db():
+        yield FakeCur()
+
+    monkeypatch.setattr(inv, "db_cursor", fake_db)
+
+    out = inv.consultar_cto_tag_nfc_batch(
+        ["SF01-FATC-8-102397", "SF01-FATC-8-999999", "SF01-FATC-8-102395"]
+    )
+    assert out["SF01-FATC-8-102397"] == "04A5E2A22C5E80"
+    assert out["SF01-FATC-8-102395"] == "0433DCA22C5E81"
+    assert out["SF01-FATC-8-999999"] is None

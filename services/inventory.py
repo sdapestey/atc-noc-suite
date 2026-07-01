@@ -40,6 +40,18 @@ def _access_lookup_token_ok(aid: str) -> bool:
     return True
 
 
+def _is_nfc_tag_token(token: str) -> bool:
+    """TAG NFC de CTO: hexadecimal (10–16 caracteres), sin espacios ni guiones."""
+    s = (token or "").strip()
+    if len(s) < 10 or len(s) > 16 or s.isdigit():
+        return False
+    for c in s:
+        if c in "0123456789abcdefABCDEF":
+            continue
+        return False
+    return True
+
+
 # Inventario CM: sin lectura Altiplano para estos estados de puerto FAT.
 # Nota: ``RESERVED`` puede tener PON asignada; para consultas puntuales por
 # Access ID se permiten potencias/alarmas incluso en ese estado. El set global
@@ -1602,6 +1614,56 @@ def consultar_cto_tag_nfc(cto: str) -> str | None:
         )
         row = cur.fetchone()
     return _nfc_tag_display(row[0] if row else None)
+
+
+def consultar_cto_tag_nfc_batch(ctos: list[str]) -> dict[str, str | None]:
+    """TAG NFC por CTO (``location_description``) en una sola consulta."""
+    cleaned = list(dict.fromkeys(str(c or "").strip() for c in (ctos or []) if str(c or "").strip()))
+    if not cleaned:
+        return {}
+    with db_cursor() as cur:
+        cur.execute(
+            """
+            SELECT DISTINCT ON (f.location_description)
+                btrim(f.location_description),
+                btrim(f.nfc_tag_id::text)
+            FROM cm.inventory_fat_occupation f
+            WHERE f.location_description = ANY(%s)
+              AND f.nfc_tag_id IS NOT NULL
+              AND btrim(f.nfc_tag_id::text) <> ''
+            ORDER BY f.location_description
+            """,
+            (cleaned,),
+        )
+        rows = cur.fetchall()
+    out = {cto: None for cto in cleaned}
+    for loc, nfc in rows:
+        if loc:
+            out[str(loc).strip()] = _nfc_tag_display(nfc)
+    return out
+
+
+def consultar_cto_desde_tag_nfc(nfc: str) -> str | None:
+    """Resuelve la CTO (``location_description``) asociada a un TAG NFC."""
+    nfc_norm = _nfc_tag_display(nfc)
+    if not nfc_norm:
+        return None
+    with db_cursor() as cur:
+        cur.execute(
+            """
+            SELECT DISTINCT btrim(f.location_description)
+            FROM cm.inventory_fat_occupation f
+            WHERE btrim(f.nfc_tag_id::text) ILIKE %s
+              AND btrim(COALESCE(f.location_description, '')) <> ''
+            ORDER BY 1
+            LIMIT 1
+            """,
+            (nfc_norm,),
+        )
+        row = cur.fetchone()
+    if not row or not row[0]:
+        return None
+    return str(row[0]).strip() or None
 
 
 def consultar_rama_estructura(rama):

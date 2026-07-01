@@ -116,7 +116,7 @@ function _consultaAlarmasYaFetched(pre) {
 function consultaRecargarPotenciasDesdeBtn(btn) {
   const sec = btn && btn.closest ? btn.closest(".consulta-section") : null;
   if (!sec) return;
-  const tok = sec.getAttribute("data-query-token") || "";
+  const tok = _consultaPotenciasToken(sec, "");
   if (!tok) return;
   _consultaResetAlarmasFetched(sec.getAttribute("data-section-prefix") || "");
   if (window.ConsultaMasivoUi && window.ConsultaMasivoUi.clearPotenciasLoaded) {
@@ -179,7 +179,7 @@ function _consultaPrepAltiplanoRefreshUI(pre, root) {
 function consultaRecargarAltiplanoDesdeBtn(btn) {
   const sec = btn && btn.closest ? btn.closest(".consulta-section") : null;
   if (!sec) return;
-  const tok = sec.getAttribute("data-query-token") || "";
+  const tok = _consultaPotenciasToken(sec, "");
   if (!tok) return;
   const pre = sec.getAttribute("data-section-prefix") || "";
   _consultaResetAlarmasFetched(pre);
@@ -316,10 +316,23 @@ function _isConsultaDetallePotenciaPar(pre) {
   return tx.id === pfx + "tx" && rx.id === pfx + "rx";
 }
 
-/** RAMA/CTO: una carga automática; reconsulta solo con «Consultar RX». AID (detalle): sin cambio. */
+/** RAMA/CTO/NFC: una carga automática; reconsulta solo con «Consultar RX». AID (detalle): sin cambio. */
+function _isNfcTagToken(valor) {
+  const s = String(valor || "").trim();
+  if (s.length < 10 || s.length > 16 || /^\d+$/.test(s)) return false;
+  return /^[0-9A-Fa-f]+$/.test(s);
+}
+
+function _consultaPotenciasToken(root, valorOpt) {
+  const fromAttr = root && root.getAttribute("data-potencias-token");
+  if (fromAttr && String(fromAttr).trim()) return String(fromAttr).trim();
+  if (valorOpt && String(valorOpt).trim()) return String(valorOpt).trim();
+  return root ? String(root.getAttribute("data-query-token") || "").trim() : "";
+}
+
 function _consultaPotenciasTokenEsRamaOCto(valor) {
   const v = String(valor || "").trim().toUpperCase();
-  return v.includes("RATC") || v.includes("FATC");
+  return v.includes("RATC") || v.includes("FATC") || _isNfcTagToken(valor);
 }
 
 /** True si la celda muestra un valor de potencia real (no DOWN ni cuenta regresiva). */
@@ -384,7 +397,7 @@ function _consultaSectionNeedsPotenciaPoll(pre, root, scopeEl) {
   if (_isConsultaDetallePotenciaPar(pre)) {
     return !_consultaPotenciasDetalleListas(pre);
   }
-  const tok = root ? root.getAttribute("data-query-token") || "" : "";
+  const tok = _consultaPotenciasToken(root, "");
   if (_consultaPotenciasTokenEsRamaOCto(tok)) return false;
   const pfx = pre ? pre + "-" : "";
   const scope =
@@ -418,7 +431,7 @@ function _consultaDownPollDelayMs(mode, root) {
 }
 
 function _consultaRefreshPotenciaCellsLoading(cells, root) {
-  const tok = root ? root.getAttribute("data-query-token") || "" : "";
+  const tok = _consultaPotenciasToken(root, "");
   const sinReconsultaAuto = _consultaPotenciasTokenEsRamaOCto(tok);
   cells.forEach((el) => {
     if (!el || (el.id && (el.id.endsWith("-alarmas") || el.id.endsWith("-ultima-alarma")))) return;
@@ -497,7 +510,7 @@ function _consultaRunDownPollCycle(root, valor, scopeEl) {
     return;
   }
 
-  const tok = (root.getAttribute("data-query-token") || valor || "").trim();
+  const tok = _consultaPotenciasToken(root, valor);
   if (!tok) {
     _consultaStopDownPoll(root);
     return;
@@ -1573,8 +1586,10 @@ function _consultaFilaClearSemaforoEnRaiz(root) {
 }
 
 function _consultaEsPotenciasTokenPrincipal(root, valor) {
-  const tok = (root.getAttribute("data-query-token") || "").trim();
-  return Boolean(tok && (valor || "").trim() === tok);
+  const potTok = _consultaPotenciasToken(root, "");
+  const qTok = (root.getAttribute("data-query-token") || "").trim();
+  const v = (valor || "").trim();
+  return Boolean(v && (v === potTok || v === qTok));
 }
 
 function _consultaSemaforoSetCounts(root, rojas, amarillas, verdes) {
@@ -1628,6 +1643,7 @@ function cargarPotenciasSeccion(valor, root, scopeEl, opts) {
   const pre = root.getAttribute("data-section-prefix") || "";
   const pfx = pre ? pre + "-" : "";
   const scope = scopeEl && scopeEl.querySelectorAll ? scopeEl : root;
+  valor = _consultaPotenciasToken(root, valor);
   const inflightKey = pre || root.id || "";
   if (inflightKey && _consultaPotenciasInflight.has(inflightKey)) {
     if (!skipBtnLoading) _consultaAcquireSectionPotenciaBtnsLoading(root);
@@ -2255,7 +2271,7 @@ function _consultaPotenciaEntriesVisible() {
     if (root.hidden || root.classList.contains("consulta-section--page-hidden")) {
       return;
     }
-    const token = (root.getAttribute("data-query-token") || "").trim();
+    const token = _consultaPotenciasToken(root, "");
     if (!token) return;
     if (
       typeof window._consultaSectionPotenciasPendientes === "function" &&
@@ -2372,7 +2388,7 @@ window.addEventListener("load", () => {
   sections.forEach((root) => {
     const pre = root.getAttribute("data-section-prefix") || "";
     _consultaInitNvStatusBar(pre);
-    const token = root.getAttribute("data-query-token") || "";
+    const token = _consultaPotenciasToken(root, "");
     if (!token || consultaMasivo) return;
     potenciaJobs.push(cargarPotenciasSeccion(token, root));
   });

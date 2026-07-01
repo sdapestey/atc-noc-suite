@@ -15,7 +15,7 @@ def test_noc_topbar_renders_theme_toggle_button():
     assert "data-theme-toggle" in tpl
     assert "Modo: Dark" in tpl
     assert "data-noc-clock" in tpl
-    assert "page_generated_at" not in tpl
+    assert "noc-app-version" not in tpl
     assert "noc_dashboard_credits" not in tpl
     assert "noc-dashboard-credits" not in tpl
     assert "page_attribution" not in tpl
@@ -25,7 +25,12 @@ def test_noc_topbar_renders_theme_toggle_button():
     assert "motion.div" not in tpl
 
 
-def test_head_leaflet_partial_in_map_pages(client):
+def test_index_renders_clock_in_topbar(client):
+    r = client.get("/")
+    assert r.status_code == 200
+    html = r.get_data(as_text=True)
+    assert "data-noc-clock" in html
+    assert "noc-app-version" not in html
     for path in ("/", "/dashboard/olt", "/dashboard/camino-optico"):
         html = client.get(path).get_data(as_text=True)
         assert "leaflet@1.9.4" in html, path

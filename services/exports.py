@@ -15,8 +15,10 @@ from .domain import (
 )
 from .inventory import (
     _access_lookup_token_ok,
+    _is_nfc_tag_token,
     consultar_access_id_baja_o_ausente,
     consultar_access_id_detalle_desde_bajada_inventario,
+    consultar_cto_desde_tag_nfc,
     consultar_cto_estructura,
     consultar_rama_estructura,
 )
@@ -156,6 +158,7 @@ def _export_index_query_csv_one(value: str, *, operador: str | None = None) -> t
         _access_lookup_token_ok(value)
         and "FATC" not in value_upper
         and "RATC" not in value_upper
+        and not _is_nfc_tag_token(value)
     )
 
     if is_access_id_lookup:
@@ -201,6 +204,25 @@ def _export_index_query_csv_one(value: str, *, operador: str | None = None) -> t
             return buf.getvalue(), 0
         w.writerow(["error", "sin datos"])
         return buf.getvalue(), 0
+    elif _is_nfc_tag_token(value):
+        cto = consultar_cto_desde_tag_nfc(value)
+        if not cto:
+            w.writerow(["error", "TAG NFC no encontrado en inventario"])
+            return buf.getvalue(), 0
+        rows = consultar_cto_estructura(cto)
+        w.writerow(["OUT", "AID", "OPERADOR", "PRINCIPAL", "RAMA", "ONT", "STATUS"])
+        for i, r in enumerate(_export_index_inventory_rows(rows, operador), start=1):
+            ont_exported += 1
+            w.writerow([
+                i,
+                r["AID"],
+                r["OPERADOR"],
+                r["PRINCIPAL"],
+                r["RAMA"],
+                r["ONT"],
+                r["STATUS"],
+            ])
+        return buf.getvalue(), ont_exported
     elif "FATC" in value_upper:
         rows = consultar_cto_estructura(value)
         w.writerow(["OUT", "AID", "OPERADOR", "PRINCIPAL", "RAMA", "ONT", "STATUS"])
