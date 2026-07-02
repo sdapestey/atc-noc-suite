@@ -70,10 +70,10 @@
                 id="cortes-fecha-dia"
                 name="fecha"
                 value=""
-                placeholder="Hoy"
+                placeholder="Todas las fechas"
                 autocomplete="off"
                 aria-label="Filtrar por día"
-                title="Por defecto hoy (hora Argentina). Abrí el calendario para otro día o «Todas las fechas»."
+                title="Por defecto todas las fechas. Abrí el calendario para un día concreto."
                 readonly>
             </div>
           </div>
@@ -91,10 +91,10 @@
             <label class="cortes-refresh-field" title="Consulta Altiplano INP en cada ciclo (sin caché)">
               <span class="cortes-refresh-field__label">Auto-refresh</span>
               <select id="cortes-refresh" class="cortes-select cortes-select--refresh" aria-label="Actualización automática">
-                <option value="0" selected>Off</option>
+                <option value="0">Off</option>
                 <option value="15000">15 segundos</option>
                 <option value="30000">30 segundos</option>
-                <option value="60000">1 minuto</option>
+                <option value="60000" selected>1 minuto</option>
                 <option value="180000">3 minutos</option>
                 <option value="300000">5 minutos</option>
                 <option value="900000">15 minutos</option>
@@ -235,6 +235,6 @@
 <script defer src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/es.js"></script>
 <script defer src="{{ url_for('static', filename='js/noc-tools.js') }}?v=noc13"></script>
 <script defer src="{{ url_for('static', filename='js/noc-estadisticas-flatpickr.js') }}"></script>
-<script defer src="{{ url_for('static', filename='js/dashboard-cortes-rama.js') }}?v=alarm33"></script>
+<script defer src="{{ url_for('static', filename='js/dashboard-cortes-rama.js') }}?v=alarm34"></script>
 </body>
 </html>

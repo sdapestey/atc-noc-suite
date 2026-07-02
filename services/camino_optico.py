@@ -1440,6 +1440,85 @@ def _elegir_cto_mas_cercano_origen_troncal(
     return best_cto or ctos[0]
 
 
+_TRONCAL_MIN_M_PARA_EXTREMOS = 400
+_EXTREMOS_MIN_SEPARACION_M = 250
+
+
+def _ctos_extremos_inventario_candidatos(ramas_data: list[dict]) -> list[tuple[str, list[str]]]:
+    """Primera y última CTO de cada rama (candidatos a extremos operativos)."""
+    out: list[tuple[str, list[str]]] = []
+    for rd in ramas_data:
+        if rd.get("sin_inventario"):
+            continue
+        ctos = rd.get("ctos") or []
+        if not ctos:
+            continue
+        rama = str(rd.get("rama") or "").strip()
+        if not rama:
+            continue
+        picks = [ctos[0]]
+        if len(ctos) > 1:
+            picks.append(ctos[-1])
+        for pick in picks:
+            cto = (pick.get("cto") or "").strip()
+            if cto:
+                out.append((cto, [rama]))
+    return out
+
+
+def _elegir_par_ctos_extremos_operativos(
+    ramas_data: list[dict],
+    ctos_union: list[dict],
+) -> tuple[dict | None, dict | None, int]:
+    """Par de CTO en extremos del área (primera/última por rama) con mayor separación."""
+    cto_ramas_map = {c["cto"]: list(c.get("ramas") or []) for c in ctos_union}
+    by_cto: dict[str, list[str]] = {}
+    for cto, ramas in _ctos_extremos_inventario_candidatos(ramas_data):
+        if cto not in by_cto:
+            by_cto[cto] = []
+        for r in ramas:
+            if r and r not in by_cto[cto]:
+                by_cto[cto].append(r)
+    ctos = list(by_cto.keys())
+    coords = _resolve_cto_coords_map(ctos)
+    located = [
+        (cto, coords[cto], by_cto[cto])
+        for cto in ctos
+        if cto in coords
+    ]
+    if len(located) < 2:
+        return None, None, 0
+    best_a: dict | None = None
+    best_b: dict | None = None
+    best_d = 0.0
+    for i in range(len(located)):
+        cto_a, ca, ra = located[i]
+        for j in range(i + 1, len(located)):
+            cto_b, cb, rb = located[j]
+            d = _haversine_m(
+                float(ca["lat"]),
+                float(ca["lon"]),
+                float(cb["lat"]),
+                float(cb["lon"]),
+            )
+            if d <= best_d:
+                continue
+            best_d = d
+            best_a = {
+                "cto": cto_a,
+                "ramas": cto_ramas_map.get(cto_a) or ra,
+                "lat": float(ca["lat"]),
+                "lon": float(ca["lon"]),
+            }
+            best_b = {
+                "cto": cto_b,
+                "ramas": cto_ramas_map.get(cto_b) or rb,
+                "lat": float(cb["lat"]),
+                "lon": float(cb["lon"]),
+            }
+    return best_a, best_b, int(round(best_d))
+
+
 def _elegir_cto_mas_cercana_foco_corte(
     zonas_corte: list[dict],
     ctos_union: list[dict],
@@ -1461,7 +1540,10 @@ def _elegir_cto_mas_cercana_foco_corte(
     coords = _resolve_cto_coords_map(ctos)
     best_cto: str | None = None
     best_d = float("inf")
-    for cto, c in coords.items():
+    for cto in ctos:
+        c = coords.get(cto)
+        if not c:
+            continue
         d = _haversine_m(z_la, z_lo, float(c["lat"]), float(c["lon"]))
         if d < best_d:
             best_d = d
@@ -1483,19 +1565,36 @@ def _sugerir_ctos_medicion(
     """Sugiere CTO para medir ante un posible corte de fibra (heurística inventario)."""
     suggestions: list[dict] = []
 
-    def _add(cto: str, prioridad: str, motivo: str, ramas: list[str], score: int) -> None:
+    def _add(
+        cto: str,
+        prioridad: str,
+        motivo: str,
+        ramas: list[str],
+        score: int,
+        *,
+        foco_mapa: bool = False,
+        extremo: str | None = None,
+        lat: float | None = None,
+        lon: float | None = None,
+    ) -> None:
         cto = (cto or "").strip()
         if not cto:
             return
-        suggestions.append(
-            {
-                "cto": cto,
-                "prioridad": prioridad,
-                "motivo": motivo,
-                "ramas": list(ramas),
-                "score": score,
-            }
-        )
+        item: dict[str, Any] = {
+            "cto": cto,
+            "prioridad": prioridad,
+            "motivo": motivo,
+            "ramas": list(ramas),
+            "score": score,
+        }
+        if foco_mapa:
+            item["foco_mapa"] = True
+        if extremo:
+            item["extremo"] = extremo
+        if lat is not None and lon is not None:
+            item["lat"] = round(float(lat), 6)
+            item["lon"] = round(float(lon), 6)
+        suggestions.append(item)
 
     ramas_activas = [
         rd for rd in ramas_data if not rd.get("sin_inventario") and (rd.get("ctos") or [])
@@ -1505,6 +1604,48 @@ def _sugerir_ctos_medicion(
     common_all = _ctos_comunes_todas_ramas(ramas_data)
     tiene_convergencia = len(common_all) >= 1 and n_ramas >= 2
     tiene_foco_gis = False
+    tiene_extremos_troncal = False
+    troncal_len = int((troncal_compartido or {}).get("length_m") or 0)
+
+    if (
+        n_ramas >= 2
+        and not tiene_convergencia
+        and troncal_compartido
+        and troncal_compartido.get("ok")
+        and troncal_len >= _TRONCAL_MIN_M_PARA_EXTREMOS
+    ):
+        ext_a, ext_b, sep_m = _elegir_par_ctos_extremos_operativos(ramas_data, ctos_union)
+        if ext_a and ext_b and sep_m >= _EXTREMOS_MIN_SEPARACION_M:
+            tiene_extremos_troncal = True
+            len_txt = f" Troncal compartido ≈ {troncal_len} m." if troncal_len > 0 else ""
+            _add(
+                ext_a["cto"],
+                "critica",
+                (
+                    f"Extremo geográfico del tramo afectado ({sep_m} m al otro extremo).{len_txt} "
+                    "Medir aquí y en el extremo opuesto para ubicar el corte por bisección."
+                ),
+                ext_a["ramas"],
+                99,
+                foco_mapa=True,
+                extremo="a",
+                lat=ext_a.get("lat"),
+                lon=ext_a.get("lon"),
+            )
+            _add(
+                ext_b["cto"],
+                "critica",
+                (
+                    f"Extremo geográfico opuesto ({sep_m} m al otro extremo).{len_txt} "
+                    "Medir aquí y en el extremo opuesto para ubicar el corte por bisección."
+                ),
+                ext_b["ramas"],
+                99,
+                foco_mapa=True,
+                extremo="b",
+                lat=ext_b.get("lat"),
+                lon=ext_b.get("lon"),
+            )
 
     if tiene_convergencia:
         conv_cto = _elegir_cto_mas_cercano_origen_troncal(common_all, troncal_compartido)
@@ -1525,7 +1666,6 @@ def _sugerir_ctos_medicion(
             zonas_corte_probable, ctos_union
         )
         if foco_cto and foco_meta:
-            tiene_foco_gis = True
             zona = foco_meta.get("zona") or {}
             tipo = str(zona.get("tipo") or "reparto")
             tipo_lbl = (
@@ -1534,16 +1674,31 @@ def _sugerir_ctos_medicion(
                 else "inicio del troncal compartido"
             )
             dist_m = int(foco_meta.get("dist_m") or 0)
-            _add(
-                foco_cto,
-                "critica",
-                (
-                    f"CTO más cercana al {tipo_lbl} ({dist_m} m) — "
-                    f"donde convergen las {n_ramas} ramas en el mapa; medir aquí para acotar el corte."
-                ),
-                ramas_ids,
-                97,
-            )
+            if tiene_extremos_troncal:
+                _add(
+                    foco_cto,
+                    "media",
+                    (
+                        f"Referencia GIS: CTO más cercana al {tipo_lbl} ({dist_m} m) — "
+                        f"convergencia de las {n_ramas} ramas; útil como punto intermedio, "
+                        "no sustituye medir en los extremos del tramo."
+                    ),
+                    ramas_ids,
+                    52,
+                )
+            else:
+                tiene_foco_gis = True
+                _add(
+                    foco_cto,
+                    "critica",
+                    (
+                        f"CTO más cercana al {tipo_lbl} ({dist_m} m) — "
+                        f"donde convergen las {n_ramas} ramas en el mapa; medir aquí para acotar el corte."
+                    ),
+                    ramas_ids,
+                    97,
+                    foco_mapa=True,
+                )
 
     for c in ctos_union:
         ramas_c = list(c.get("ramas") or [])
@@ -1562,7 +1717,7 @@ def _sugerir_ctos_medicion(
                 score,
             )
 
-    if n_ramas < 2 or (not tiene_convergencia and not tiene_foco_gis):
+    if n_ramas < 2 or (not tiene_convergencia and not tiene_foco_gis and not tiene_extremos_troncal):
         for rd in ramas_data:
             if rd.get("sin_inventario"):
                 continue

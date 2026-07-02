@@ -1034,7 +1034,7 @@
     var html = '<div class="camino-masivo-zonas-corte">';
     html +=
       '<p class="camino-masivo-zonas-corte__title"><strong>Posibles focos de corte</strong> ' +
-      '<span class="muted">(referencia GIS del troncal; el foco para medir es la CTO sugerida abajo)</span></p>';
+      '<span class="muted">(referencia GIS del troncal; las CTO sugeridas para medir están abajo)</span></p>';
     html +=
       '<div class="table-wrap"><table><thead><tr><th>Foco</th><th>Prioridad</th><th>Ramas</th><th>Troncal</th><th>Ubicación</th><th>FOSC / snap</th><th>Motivo</th></tr></thead><tbody>';
     zonas.forEach(function (z) {
@@ -1096,7 +1096,7 @@
       return '<p class="muted camino-masivo-warn">Sin sugerencias de medición (sin CTO en inventario).</p>';
     }
     var html = '<div class="camino-masivo-sugerencias">';
-    html += "<p class=\"camino-masivo-sugerencias__title\"><strong>CTO sugeridas para medir</strong> <span class=\"muted\">(★ foco en mapa = CTO más cercana al reparto GIS)</span></p>";
+    html += "<p class=\"camino-masivo-sugerencias__title\"><strong>CTO sugeridas para medir</strong> <span class=\"muted\">(★ balizas en mapa = extremos del tramo o foco GIS)</span></p>";
     html += '<div class="table-wrap"><table><thead><tr><th>Prioridad</th><th>CTO</th><th>Motivo</th><th>Ramas</th></tr></thead>';
     html += '<tbody id="camino-masivo-sugerencias-body">';
     sugerencias.forEach(function (s, idx) {
@@ -1124,6 +1124,10 @@
         motivo: s.motivo,
         ramas: (s.ramas || []).slice(),
         score: s.score || 0,
+        foco_mapa: s.foco_mapa,
+        extremo: s.extremo,
+        lat: s.lat,
+        lon: s.lon,
       };
     });
     refined.forEach(function (s) {
@@ -2423,9 +2427,16 @@
 
   function masivoSugerenciaCtoRank(data) {
     var out = {};
-    var top = (data.sugerencias_medicion || [])[0];
-    if (top && top.cto) {
-      out[top.cto] = "principal";
+    (data.sugerencias_medicion || []).forEach(function (s) {
+      if (s && s.cto && (s.foco_mapa || s.extremo)) {
+        out[s.cto] = "principal";
+      }
+    });
+    if (!Object.keys(out).length) {
+      var top = (data.sugerencias_medicion || [])[0];
+      if (top && top.cto) {
+        out[top.cto] = "principal";
+      }
     }
     return out;
   }
@@ -2433,7 +2444,9 @@
   function caminoCtoSugeridaBeaconTooltipHtml(top) {
     var html = '<div class="camino-corte-zona-tip camino-corte-zona-tip--cto-sugerida">';
     html +=
-      '<div class="camino-corte-zona-tip__title"><strong>★ CTO sugerida para medir</strong></div>';
+      '<div class="camino-corte-zona-tip__title"><strong>' +
+      (top.extremo ? "★ Extremo sugerido para medir" : "★ CTO sugerida para medir") +
+      "</strong></div>";
     html +=
       '<p class="camino-corte-zona-tip__cto mono small">' + esc(top.cto) + "</p>";
     if (top.motivo) {
@@ -2447,29 +2460,37 @@
   function drawMasivoCtoFocoSugerido(map, data, target) {
     clearMasivoCtoFocoLayer(map);
     if (!map || !data) return;
-    var top = (data.sugerencias_medicion || [])[0];
-    if (!top || !top.cto) return;
-    var lat = top.lat;
-    var lon = top.lon;
-    var list = (window._caminoMasivoMarkersByCto || {})[top.cto];
-    if (list && list.length && list[0].getLatLng) {
-      var llMk = list[0].getLatLng();
-      if (llMk) {
-        lat = llMk.lat;
-        lon = llMk.lng;
-      }
+    var focos = (data.sugerencias_medicion || []).filter(function (s) {
+      return s && s.cto && (s.foco_mapa || s.extremo);
+    });
+    if (!focos.length && (data.sugerencias_medicion || []).length) {
+      focos = [(data.sugerencias_medicion || [])[0]];
     }
-    if (lat == null || lon == null) return;
+    if (!focos.length) return;
     masivoCtoFocoLayer = L.layerGroup();
-    var tip = caminoCtoSugeridaBeaconTooltipHtml(top);
-    addCaminoMapBeacon(
-      lat,
-      lon,
-      tip,
-      masivoCtoFocoLayer,
-      "cto",
-      "Click en la CTO sugerida para copiar coordenadas"
-    );
+    focos.forEach(function (top) {
+      if (!top || !top.cto) return;
+      var lat = top.lat;
+      var lon = top.lon;
+      var list = (window._caminoMasivoMarkersByCto || {})[top.cto];
+      if (list && list.length && list[0].getLatLng) {
+        var llMk = list[0].getLatLng();
+        if (llMk) {
+          lat = llMk.lat;
+          lon = llMk.lng;
+        }
+      }
+      if (lat == null || lon == null) return;
+      var tip = caminoCtoSugeridaBeaconTooltipHtml(top);
+      addCaminoMapBeacon(
+        lat,
+        lon,
+        tip,
+        masivoCtoFocoLayer,
+        "cto",
+        "Click en la CTO sugerida para copiar coordenadas"
+      );
+    });
     masivoCtoFocoLayer.addTo(target || map);
   }
 
@@ -2741,7 +2762,7 @@
     if ((data.sugerencias_medicion || []).length) {
       html +=
         '<p class="camino-masivo-map-legend__cto-foco muted small">' +
-        '<span class="camino-masivo-legend-cto-foco-swatch" aria-hidden="true"></span> ★ Baliza CTO sugerida</p>';
+        '<span class="camino-masivo-legend-cto-foco-swatch" aria-hidden="true"></span> ★ Baliza CTO sugerida (extremos / foco)</p>';
     }
     html += "</div>";
     return html;
@@ -2872,8 +2893,20 @@
         );
         var sugerenciaNote = "";
         if (rank === "principal") {
+          var sugItem = null;
+          (data.sugerencias_medicion || []).some(function (s) {
+            if (s.cto === m.cto) {
+              sugItem = s;
+              return true;
+            }
+            return false;
+          });
           sugerenciaNote =
-            '<div class="camino-popup-cto__sugerida"><strong>★ Foco sugerido para medir</strong></div>';
+            '<div class="camino-popup-cto__sugerida"><strong>' +
+            (sugItem && sugItem.extremo
+              ? "★ Extremo sugerido para medir"
+              : "★ Foco sugerido para medir") +
+            "</strong></div>";
         }
         var cm = L.circleMarker([ll.lat, ll.lon], opts);
         var pop =
@@ -3011,10 +3044,18 @@
         var zll = normalizeCtoLatLon(zf.lat, zf.lon);
         b.extend(L.latLng(zll.lat, zll.lon));
       });
-      var topSug = (data.sugerencias_medicion || [])[0];
-      if (topSug && topSug.lat != null && topSug.lon != null) {
+      (data.sugerencias_medicion || []).forEach(function (topSug) {
+        if (!topSug || topSug.lat == null || topSug.lon == null) return;
+        if (!topSug.foco_mapa && !topSug.extremo) return;
         var sll = normalizeCtoLatLon(topSug.lat, topSug.lon);
         b.extend(L.latLng(sll.lat, sll.lon));
+      });
+      if (!(data.sugerencias_medicion || []).some(function (s) { return s.foco_mapa || s.extremo; })) {
+        var topSug = (data.sugerencias_medicion || [])[0];
+        if (topSug && topSug.lat != null && topSug.lon != null) {
+          var sll = normalizeCtoLatLon(topSug.lat, topSug.lon);
+          b.extend(L.latLng(sll.lat, sll.lon));
+        }
       }
       var foscFit = ((data.infra_fosc || {}).fosc || {}).markers || [];
       foscFit.forEach(function (fm) {

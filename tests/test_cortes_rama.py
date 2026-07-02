@@ -875,7 +875,8 @@ def test_dashboard_alarm_analyzer_get_renders(client):
     assert "estadisticas-flatpickr.css" in html
     assert "noc-estadisticas-flatpickr.js" in html
     assert "calidad-estadisticas-fecha-wrap" in html
-    assert 'placeholder="Hoy"' in html
+    assert 'placeholder="Todas las fechas"' in html
+    assert 'value="60000" selected>1 minuto</option>' in html
     assert 'id="cortes-fecha-preset"' not in html
     assert 'id="cortes-estado"' in html
     assert "Activas + Cleared" not in html
@@ -888,7 +889,8 @@ def test_dashboard_alarm_analyzer_get_renders(client):
     assert "dashboard-cortes-rama.js" in html
     assert "dashboard-cortes-rama.css" in html
     js = open("static/js/dashboard-cortes-rama.js", encoding="utf-8").read()
-    assert "_setCortesFechaHoy" in js
+    assert "_setCortesFechaAll" in js
+    assert "_DEFAULT_REFRESH_MS = 60000" in js
     assert "noc-fp-footer-btn" in js
     assert "Todas las fechas" in js
     assert "cortesRamaSeenPonKeysV1" in js

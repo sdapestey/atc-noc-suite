@@ -49,6 +49,7 @@ const _TZ_ART = "America/Argentina/Buenos_Aires";
 const _SEEN_KEY = "cortesRamaSeenPonKeysV1";
 const _STATE_KEY = "cortesRamaStateV1";
 const _REFRESH_KEY = "cortesRamaRefreshMsV1";
+const _DEFAULT_REFRESH_MS = 60000;
 const _STATE_MAX_AGE_MS = 30 * 60 * 1000;
 let _refreshTimerId = null;
 let _hintFreshTimerId = null;
@@ -499,10 +500,10 @@ function _syncToolbarContext() {
   const fechaInput = document.getElementById("cortes-fecha-dia");
   if (fechaWrap) fechaWrap.classList.toggle("cortes-fecha-wrap--cleared", cleared);
   if (fechaInput) {
-    fechaInput.placeholder = cleared ? "Elegí un día" : "Hoy";
+    fechaInput.placeholder = cleared ? "Elegí un día" : "Todas las fechas";
     fechaInput.title = cleared
       ? "Recomendado en Cleared: filtrar por día de raised (hora Argentina). Sin fecha se listan todos los cleared devueltos por Altiplano."
-      : "Por defecto hoy (hora Argentina). Abrí el calendario para otro día o «Todas las fechas».";
+      : "Por defecto todas las fechas. Abrí el calendario para un día concreto o «Hoy».";
   }
   _syncCortesFechaDisplay();
 }
@@ -1761,9 +1762,9 @@ function resetCortes() {
   document.getElementById("cortes-vno").value = "ALL";
   const sortSel = document.getElementById("cortes-sort");
   if (sortSel) sortSel.value = "reciente";
-  _setCortesFechaHoy();
+  _setCortesFechaAll();
   const refreshSel = document.getElementById("cortes-refresh");
-  if (refreshSel) refreshSel.value = "0";
+  if (refreshSel) refreshSel.value = String(_DEFAULT_REFRESH_MS);
   _applyAutoRefresh();
   currentPage = 0;
   fetchCortes({ fresh: true });
@@ -2016,8 +2017,8 @@ function initCortesRamaDashboard() {
   });
   const refreshSel = document.getElementById("cortes-refresh");
   const savedRefresh = _loadRefreshMs();
-  if (refreshSel && savedRefresh) {
-    refreshSel.value = String(savedRefresh);
+  if (refreshSel) {
+    refreshSel.value = String(savedRefresh > 0 ? savedRefresh : _DEFAULT_REFRESH_MS);
   }
   refreshSel?.addEventListener("change", () => {
     _applyAutoRefresh();
@@ -2074,7 +2075,7 @@ function initCortesRamaDashboard() {
     /* estado de sesión corrupto no debe impedir la consulta inicial */
   }
   if (!restored) {
-    _setCortesFechaHoy();
+    _setCortesFechaAll();
   }
   _syncTableLayout();
   _syncToolbarContext();

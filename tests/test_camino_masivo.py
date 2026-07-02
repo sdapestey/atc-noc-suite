@@ -176,6 +176,99 @@ def test_sugerir_ctos_medicion_foco_gis_sin_cto_comun(monkeypatch):
     assert all(s["cto"] != "SF01-FATC-8-102240" or s["score"] < sug[0]["score"] for s in sug)
 
 
+def test_sugerir_ctos_medicion_extremos_troncal_largo(monkeypatch):
+    """Troncal largo sin CTO común: prioriza los dos extremos geográficos del inventario."""
+    ramas_data = [
+        {
+            "rama": "SF01-RATC-0-000270",
+            "sin_inventario": False,
+            "ctos": [
+                {"cto": "SF01-FATC-8-102454", "onts": 1},
+                {"cto": "SF01-FATC-8-202454", "onts": 1},
+            ],
+        },
+        {
+            "rama": "SF01-RATC-0-000268",
+            "sin_inventario": False,
+            "ctos": [
+                {"cto": "SF01-FATC-8-100010", "onts": 1},
+                {"cto": "SF01-FATC-8-200010", "onts": 1},
+            ],
+        },
+    ]
+    union = co._build_ctos_union(ramas_data)
+    troncal = {"ok": True, "length_m": 2658, "points": [{"lat": -34.44, "lon": -58.56}]}
+    zonas = [
+        {
+            "tipo": "troncal_origen",
+            "lat": -34.437472,
+            "lon": -58.564219,
+            "selected": True,
+            "rama_count": 2,
+        }
+    ]
+
+    def fake_coords(ctos):
+        all_coords = {
+            "SF01-FATC-8-102454": {"lat": -34.433831, "lon": -58.564287},
+            "SF01-FATC-8-202454": {"lat": -34.434088, "lon": -58.56397},
+            "SF01-FATC-8-100010": {"lat": -34.440298, "lon": -58.559999},
+            "SF01-FATC-8-200010": {"lat": -34.44006, "lon": -58.559734},
+        }
+        return {c: all_coords[c] for c in ctos if c in all_coords}
+
+    monkeypatch.setattr(co, "_resolve_cto_coords_map", fake_coords)
+    sug = co._sugerir_ctos_medicion(ramas_data, union, troncal, zonas)
+
+    top_ctos = {s["cto"] for s in sug[:2]}
+    assert top_ctos == {"SF01-FATC-8-102454", "SF01-FATC-8-100010"}
+    assert all(s["prioridad"] == "critica" for s in sug[:2])
+    assert all(s.get("foco_mapa") for s in sug[:2])
+    assert all("bisección" in s["motivo"] for s in sug[:2])
+    ref_gis = [s for s in sug if "Referencia GIS" in (s.get("motivo") or "")]
+    assert len(ref_gis) == 1
+    assert ref_gis[0]["prioridad"] == "media"
+    assert ref_gis[0]["cto"] in {"SF01-FATC-8-102454", "SF01-FATC-8-202454"}
+
+
+def test_elegir_par_ctos_extremos_operativos(monkeypatch):
+    ramas_data = [
+        {
+            "rama": "SF01-RATC-0-000270",
+            "sin_inventario": False,
+            "ctos": [
+                {"cto": "SF01-FATC-8-102454", "onts": 1},
+                {"cto": "SF01-FATC-8-202454", "onts": 1},
+            ],
+        },
+        {
+            "rama": "SF01-RATC-0-000268",
+            "sin_inventario": False,
+            "ctos": [
+                {"cto": "SF01-FATC-8-100010", "onts": 1},
+                {"cto": "SF01-FATC-8-200010", "onts": 1},
+            ],
+        },
+    ]
+    union = co._build_ctos_union(ramas_data)
+
+    def fake_coords(ctos):
+        all_coords = {
+            "SF01-FATC-8-102454": {"lat": -34.433831, "lon": -58.564287},
+            "SF01-FATC-8-202454": {"lat": -34.434088, "lon": -58.56397},
+            "SF01-FATC-8-100010": {"lat": -34.440298, "lon": -58.559999},
+            "SF01-FATC-8-200010": {"lat": -34.44006, "lon": -58.559734},
+        }
+        return {c: all_coords[c] for c in ctos if c in all_coords}
+
+    monkeypatch.setattr(co, "_resolve_cto_coords_map", fake_coords)
+    ext_a, ext_b, sep_m = co._elegir_par_ctos_extremos_operativos(ramas_data, union)
+    assert ext_a and ext_b
+    assert sep_m >= 250
+    par = {ext_a["cto"], ext_b["cto"]}
+    assert par == {"SF01-FATC-8-102454", "SF01-FATC-8-100010"}
+
+
 def test_dashboard_camino_optico_ramas_masivo_route(client, monkeypatch):
     import web.routes as routes
 
@@ -228,6 +321,7 @@ def test_camino_template_has_masivo_ui():
     assert "Capas del mapa" in html
     assert "Baliza inicio troncal" in html
     assert "CTO sugerida para medir" in html
+    assert "extremos del tramo" in html
     assert "function wireCaminoMasivoSugerenciasClick" in html
     assert "zonas_corte_probable" in html
     assert "drawMasivoColoredOnMap" in html
